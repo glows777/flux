@@ -5,6 +5,7 @@
   <p>An autonomous agent that discovers its own trading strategy through live experimentation,
   powered by a full-stack financial intelligence platform.</p>
   <p>
+    <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: Alpha" />
     <img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js" />
     <img src="https://img.shields.io/badge/Hono-4-orange" alt="Hono" />
     <img src="https://img.shields.io/badge/Prisma-7-2D3748" alt="Prisma" />
@@ -17,6 +18,9 @@
   </p>
   <p><strong>English</strong> | <a href="README.zh-CN.md">中文</a></p>
 </div>
+
+> [!WARNING]
+> **Flux is in very early development.** APIs, database schemas, and configuration formats may introduce breaking changes at any time without prior notice. This is an immature, experimental project — use at your own risk.
 
 ## Why Flux
 

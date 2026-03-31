@@ -5,6 +5,7 @@
   <p>一个通过实盘实验自主发现交易策略的自主代理，
   由全栈金融情报平台驱动。</p>
   <p>
+    <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: Alpha" />
     <img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js" />
     <img src="https://img.shields.io/badge/Hono-4-orange" alt="Hono" />
     <img src="https://img.shields.io/badge/Prisma-7-2D3748" alt="Prisma" />
@@ -17,6 +18,9 @@
   </p>
   <p><a href="README.md">English</a> | <strong>中文</strong></p>
 </div>
+
+> [!WARNING]
+> **Flux 目前处于非常早期的开发阶段。** API、数据库结构和配置格式随时可能发生破坏性变更（breaking changes），且不会提前通知。这是一个尚不成熟的实验性项目，请谨慎使用。
 
 ## 为什么选择 Flux
 
