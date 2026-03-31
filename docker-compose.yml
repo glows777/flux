@@ -1,0 +1,40 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    ports: ["5432:5432"]
+    environment:
+      POSTGRES_DB: flux
+      POSTGRES_USER: flux_user
+      POSTGRES_PASSWORD: flux_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  server:
+    build:
+      context: .
+      dockerfile: packages/server/Dockerfile
+    ports: ["3001:3001"]
+    env_file: .env
+    depends_on: [db]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./packages/server/src:/app/packages/server/src
+      - ./packages/shared/src:/app/packages/shared/src
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+    ports: ["3000:3000"]
+    env_file: .env
+    depends_on: [server]
+    volumes:
+      - ./packages/web:/app/packages/web
+
+volumes:
+  pgdata:

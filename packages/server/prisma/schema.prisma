@@ -1,0 +1,232 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  extensions = [vector]
+}
+
+// Watchlist (自选股列表)
+model Watchlist {
+  id        String   @id @default(cuid())
+  symbol    String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// StockHistory (历史 OHLCV 数据)
+model StockHistory {
+  id        String   @id @default(cuid())
+  symbol    String
+  date      DateTime
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    BigInt?
+  fetchedAt DateTime @default(now())
+
+  @@unique([symbol, date])
+  @@index([symbol])
+  @@index([symbol, date])
+}
+
+// StockInfo (公司基本面)
+model StockInfo {
+  id            String   @id @default(cuid())
+  symbol        String   @unique
+  name          String?  // 公司名称 (from Yahoo shortName/longName)
+  pe            Float?   // 市盈率
+  marketCap     BigInt?  // 总市值
+  eps           Float?   // 每股收益
+  dividendYield Float?   // 股息率
+  sector        String?  // 行业
+  fetchedAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// AIReport (AI 研报缓存)
+model AIReport {
+  id        String   @id @default(cuid())
+  symbol    String
+  content   String   @db.Text // Markdown 内容
+  createdAt DateTime @default(now())
+
+  @@index([symbol, createdAt(sort: Desc)])
+}
+
+// StockHistoryCoverage (历史数据覆盖范围追踪)
+model StockHistoryCoverage {
+  id          String   @id @default(cuid())
+  symbol      String   @unique
+  coveredFrom DateTime
+  updatedAt   DateTime @updatedAt
+}
+
+// NewsArticle (新闻缓存)
+model NewsArticle {
+  id          String   @id @default(cuid())
+  symbol      String
+  headline    String
+  source      String
+  url         String   @unique
+  summary     String?  @db.Text
+  sentiment   String   @default("neutral")
+  imageUrl    String?
+  publishedAt DateTime
+  fetchedAt   DateTime @default(now())
+
+  @@index([symbol, publishedAt(sort: Desc)])
+}
+
+// StockSearchQuery (AI 生成的搜索词缓存)
+model StockSearchQuery {
+  id        String   @id @default(cuid())
+  symbol    String   @unique
+  cnName    String               // AI 生成的中文名 (如 "英伟达")
+  sector    String?              // 板块 (如 "半导体")
+  queries   String[]             // 搜索词数组
+  ambiguous Boolean  @default(false) // 中文名是否有歧义
+  createdAt DateTime @default(now())
+}
+
+// ChatSession (AI 对话会话)
+model ChatSession {
+  id        String   @id @default(cuid())
+  symbol    String?                       // nullable: 通用对话无固定 symbol
+  title     String                        // 首条用户消息前 20 字
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  channel          String    @default("web")  // 来源渠道: "web" | "discord" | ...
+  channelUserId    String?                    // 渠道用户 ID (如 Discord user ID)
+  channelSessionId String?                    // 渠道会话 ID (如 Discord channel ID)
+
+  messages  ChatMessage[]
+
+  @@index([updatedAt(sort: Desc)])                  // 全局按时间排序
+  @@index([symbol, updatedAt(sort: Desc)])          // 按 symbol 过滤 (兼容)
+  @@index([channel, channelSessionId])              // 按渠道 + 会话 ID 查询
+}
+
+// ChatMessage (AI 对话消息)
+model ChatMessage {
+  id        String   @id @default(cuid())
+  sessionId String
+  messageId String?                         // UIMessage.id (用于增量写入去重)
+  content   String   @db.Text              // JSON.stringify(UIMessage)
+  createdAt DateTime @default(now())
+
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, messageId])          // 防重复写入 (nullable unique 允许历史行)
+  @@index([sessionId, createdAt])           // 按序加载
+}
+
+// EarningsCache (财报数据缓存 — L1 硬数据 + L2 AI 分析 + 手动上传 Transcript)
+model EarningsCache {
+  id         String   @id @default(cuid())
+  symbol     String
+  quarter    String                  // "2024-Q3"
+  type       String                  // "L1" | "L2" | "TRANSCRIPT"
+  content    String   @db.Text       // JSON.stringify(EarningsL1 | EarningsL2) or raw transcript text
+  reportDate DateTime                // 财报实际发布日 (用于计算过期)
+  createdAt  DateTime @default(now())
+
+  @@unique([symbol, quarter, type])
+  @@index([symbol, quarter])
+}
+
+// MorningBriefCache (每日 AI 简报缓存)
+model MorningBriefCache {
+  id        String   @id @default(cuid())
+  date      String   @unique          // "2026-02-21"（北京时间自然日）
+  content   String   @db.Text         // JSON.stringify(MorningBrief)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt       // 手动刷新时更新
+}
+
+// MemoryDocument (Memory System — 文档)
+model MemoryDocument {
+  id        String        @id @default(cuid())
+  path      String        @unique
+  content   String        @db.Text
+  evergreen Boolean       @default(false)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  chunks    MemoryChunk[]
+}
+
+// CronJob (定时任务配置)
+model CronJob {
+  id            String    @id @default(cuid())
+  name          String
+  schedule      String                   // cron 表达式 (如 "0 9 * * 1-5")
+  taskType      String                   // 任务类型 (如 "morning-brief", "watchlist-alert")
+  taskPayload   Json                     // 任务参数
+  channel       String                   // 目标渠道: "discord" | "web" | ...
+  channelTarget Json?                    // 渠道目标 (如 { guildId, channelId })
+  userId        String                   // 创建者用户 ID
+  enabled       Boolean   @default(true)
+  lastRunAt     DateTime?
+  lastRunStatus String?                  // "success" | "failure" | "running"
+  lastRunError  String?
+  nextRunAt     DateTime?
+  retryCount    Int       @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+// MemoryChunk (Memory System — 文档分块 + 向量)
+model MemoryChunk {
+  id        String                      @id @default(cuid())
+  docId     String
+  content   String                      @db.Text
+  embedding Unsupported("vector(768)")?
+  lineStart Int
+  lineEnd   Int
+  entities  String[]                    @default([])
+  doc       MemoryDocument              @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@index([docId])
+  @@index([entities], type: Gin)
+}
+
+// Order (交易订单历史 — Alpaca Paper Trading)
+model Order {
+  id             String    @id @default(cuid())
+  alpacaOrderId  String    @unique
+  symbol         String
+  side           String    // buy | sell
+  qty            Float
+  type           String    @default("market")
+  limitPrice     Float?
+  stopPrice      Float?
+  trailPercent   Float?
+  timeInForce    String    @default("day")
+  status         String    // new | filled | cancelled | expired | rejected
+  filledQty      Float?
+  filledAvgPrice Float?
+  filledAt       DateTime?
+  reasoning      String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([symbol])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// TradingAgentConfig (Trading Agent 配置 — 存储 baseline equity 等不可篡改配置)
+model TradingAgentConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

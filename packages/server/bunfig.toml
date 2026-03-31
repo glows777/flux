@@ -1,0 +1,6 @@
+# Preload env for all bun commands (dev, run, etc.)
+preload = ["./src/env.ts"]
+
+[test]
+preload = ["./__tests__/setup.ts"]
+root = "./__tests__"

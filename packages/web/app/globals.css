@@ -1,0 +1,235 @@
+@import "tailwindcss";
+
+/**
+ * Tailwind CSS v4 主题配置
+ * 使用 @theme inline 扩展 Tailwind 默认主题
+ */
+@theme inline {
+    /* === Flux 颜色系统 === */
+    --color-flux-void: #030303;
+    --color-flux-surface: rgba(255, 255, 255, 0.02);
+    --color-flux-surface-hover: rgba(255, 255, 255, 0.05);
+    --color-flux-surface-active: rgba(255, 255, 255, 0.08);
+
+    --color-flux-text-primary: #ffffff;
+    --color-flux-text-secondary: #94a3b8;
+    --color-flux-text-tertiary: #64748b;
+    --color-flux-text-muted: #475569;
+
+    --color-flux-border: rgba(255, 255, 255, 0.05);
+    --color-flux-border-hover: rgba(255, 255, 255, 0.1);
+    --color-flux-border-focus: rgba(16, 185, 129, 0.3);
+
+    /* === 字体配置 === */
+    --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+    --font-mono: var(--font-jetbrains-mono), "Courier New", monospace;
+
+    /* === 自定义动画 === */
+    --animate-fade-in: fade-in 0.5s ease-out;
+    --animate-slide-in: slide-in 0.5s ease-out;
+    --animate-slide-in-from-bottom: slide-in-from-bottom 0.7s ease-out;
+    --animate-slide-in-from-right: slide-in-from-right 0.5s ease-out;
+
+    @keyframes fade-in {
+        from {
+            opacity: 0;
+        }
+        to {
+            opacity: 1;
+        }
+    }
+
+    @keyframes slide-in {
+        from {
+            transform: translateY(-10px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    @keyframes slide-in-from-bottom {
+        from {
+            transform: translateY(20px);
+            opacity: 0;
+        }
+        to {
+            transform: translateY(0);
+            opacity: 1;
+        }
+    }
+
+    @keyframes slide-in-from-right {
+        from {
+            transform: translateX(30px);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-4px); }
+        75% { transform: translateX(4px); }
+    }
+}
+
+/**
+ * CSS Reset & Base Styles
+ * 注意: margin/padding/box-sizing 重置已由 Tailwind v4 preflight 内置处理
+ * 手动在此声明会因 CSS Layers 优先级覆盖 Tailwind 工具类
+ */
+
+html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    background: #030303;
+    color: #ffffff;
+    font-family: var(--font-sans);
+    overflow-x: hidden;
+}
+
+/**
+ * 全局氛围背景层
+ * 这些背景层会在 layout.tsx 中应用
+ */
+.flux-ambient-bg {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* 氛围光效 - 左上角绿色光晕 */
+.flux-ambient-glow-1 {
+    position: absolute;
+    top: -20%;
+    left: -10%;
+    width: 1000px;
+    height: 1000px;
+    background: radial-gradient(
+        circle,
+        rgba(16, 185, 129, 0.05) 0%,
+        transparent 70%
+    );
+    border-radius: 50%;
+    filter: blur(150px);
+    opacity: 0.3;
+    animation: pulse 8s ease-in-out infinite;
+}
+
+/* 氛围光效 - 右下角灰色光晕 */
+.flux-ambient-glow-2 {
+    position: absolute;
+    bottom: -20%;
+    right: -10%;
+    width: 800px;
+    height: 800px;
+    background: radial-gradient(
+        circle,
+        rgba(148, 163, 184, 0.1) 0%,
+        transparent 70%
+    );
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.2;
+}
+
+/* 噪点纹理 */
+.flux-noise {
+    position: absolute;
+    inset: 0;
+    opacity: 0.03;
+    background-image: url("https://grainy-gradients.vercel.app/noise.svg");
+    background-repeat: repeat;
+    pointer-events: none;
+}
+
+/**
+ * 滚动条样式
+ */
+/* 隐藏滚动条 - 保持可滚动 */
+.scrollbar-none::-webkit-scrollbar {
+    display: none;
+}
+
+.scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+/* 美化滚动条 */
+.scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+/* Firefox */
+.scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+}
+
+/**
+ * 选中文字样式
+ */
+::selection {
+    background: rgba(16, 185, 129, 0.3);
+    color: #ffffff;
+}
+
+::-moz-selection {
+    background: rgba(16, 185, 129, 0.3);
+    color: #ffffff;
+}
+
+/**
+ * 实用工具类
+ */
+.animate-in {
+    animation: var(--animate-fade-in);
+}
+
+.fade-in {
+    animation: var(--animate-fade-in);
+}
+
+.slide-in-from-bottom-4 {
+    animation: var(--animate-slide-in-from-bottom);
+}
+
+.slide-in-from-right-8 {
+    animation: var(--animate-slide-in-from-right);
+}
+
+/* 无滚动条工具类（备用） */
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
+.no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}

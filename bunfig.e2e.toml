@@ -1,0 +1,4 @@
+[test]
+preload = ["./__tests__/e2e/setup.ts"]
+root = "./__tests__/e2e"
+timeout = 30000
