@@ -44,7 +44,9 @@ const dashboard = new Hono()
 
         // Sync portfolio to AI memory (fire-and-forget)
         if (positions.length > 0) {
-            syncPortfolioDocument(positions).catch(() => {})
+            syncPortfolioDocument(positions).catch((e) =>
+                console.error('[memory] portfolio sync failed:', e),
+            )
         }
 
         let brief: Awaited<ReturnType<typeof generateBrief>>['data'] | null = null

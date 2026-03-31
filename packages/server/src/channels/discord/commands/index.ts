@@ -28,7 +28,9 @@ export class CommandRegistry {
             const reply = interaction.replied || interaction.deferred
                 ? interaction.followUp.bind(interaction)
                 : interaction.reply.bind(interaction)
-            await reply({ content: 'Something went wrong.', flags: MessageFlags.Ephemeral }).catch(() => {})
+            await reply({ content: 'Something went wrong.', flags: MessageFlags.Ephemeral }).catch((e) =>
+                console.error('[discord] failed to send error reply:', e),
+            )
         }
     }
 }

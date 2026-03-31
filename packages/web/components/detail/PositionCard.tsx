@@ -10,7 +10,7 @@ interface PositionCardProps {
 
 export function PositionCard({ symbol }: PositionCardProps) {
     const { data: position } = useSWR<HoldingItem | null>(
-        `/api/stocks/${symbol}/position`,
+        `/api/stocks/${encodeURIComponent(symbol)}/position`,
         fetcher,
     )
 
@@ -62,7 +62,7 @@ export function PositionCard({ symbol }: PositionCardProps) {
 // Export hook for PriceChart to consume (SWR deduplicates same key)
 export function usePosition(symbol: string) {
     return useSWR<HoldingItem | null>(
-        `/api/stocks/${symbol}/position`,
+        `/api/stocks/${encodeURIComponent(symbol)}/position`,
         fetcher,
     )
 }

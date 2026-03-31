@@ -219,10 +219,14 @@ export async function loadMessagesForTranscript(
         orderBy: { createdAt: 'asc' },
     })
 
-    return rows.map((row) => ({
-        message: JSON.parse(row.content) as UIMessage,
-        createdAt: row.createdAt,
-    }))
+    return rows.flatMap((row) => {
+        try {
+            return [{ message: JSON.parse(row.content) as UIMessage, createdAt: row.createdAt }]
+        } catch {
+            console.error(`[session] corrupted message ${row.id} in session ${sessionId}, skipping`)
+            return []
+        }
+    })
 }
 
 // --- Truncation ---

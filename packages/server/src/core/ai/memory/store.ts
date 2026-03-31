@@ -112,7 +112,9 @@ export async function writeDocument(
   }
 
   // Fire-and-forget reindex
-  reindexDocument(docId, deps ?? getDefaultDeps()).catch(() => {})
+  reindexDocument(docId, deps ?? getDefaultDeps()).catch((e) =>
+    console.error(`[memory] reindex failed for doc ${docId}:`, e),
+  )
 }
 
 export async function appendDocument(

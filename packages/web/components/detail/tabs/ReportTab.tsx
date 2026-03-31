@@ -91,7 +91,7 @@ export function ReportTab({ symbol }: ReportTabProps) {
     const [isRefreshing, setIsRefreshing] = useState(false)
 
     const { data: report, error, isLoading, mutate } = useSWR(
-        `/api/stocks/${symbol}/report`,
+        `/api/stocks/${encodeURIComponent(symbol)}/report`,
         async () => {
             const res = await client.api.stocks[':symbol'].report.$post({
                 param: { symbol },

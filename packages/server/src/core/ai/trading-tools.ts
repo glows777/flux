@@ -29,9 +29,38 @@ const TOOL_TIMEOUTS = {
     getTradeHistory: 5_000,
 } as const
 
+const MARKET_TZ = 'America/New_York'
+
+/** Get midnight of "today" in US Eastern time as a UTC Date. */
+function getStartOfTradingDay(now: Date = new Date()): Date {
+    const dateStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: MARKET_TZ,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(now) // e.g. '2026-03-31'
+
+    const [year, month, day] = dateStr.split('-').map(Number)
+
+    // Try EST (UTC-5) then EDT (UTC-4) — midnight is always unambiguous
+    // because DST transitions happen at 2 AM
+    for (const offsetHours of [5, 4]) {
+        const candidate = new Date(Date.UTC(year, month - 1, day, offsetHours))
+        const check = new Intl.DateTimeFormat('en-CA', {
+            timeZone: MARKET_TZ,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+        }).format(candidate)
+        if (check === dateStr) return candidate
+    }
+
+    // Fallback — should never reach for America/New_York
+    return new Date(Date.UTC(year, month - 1, day, 5))
+}
+
 async function getTodayFilledOrders(db: TradingToolDeps['db']): Promise<OrderRecord[]> {
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const today = getStartOfTradingDay()
 
     const orders = await db.order.findMany({
         where: {
