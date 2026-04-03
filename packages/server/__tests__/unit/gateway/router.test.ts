@@ -1,5 +1,5 @@
 import { describe, expect, test, mock } from 'bun:test'
-import { GatewayRouter } from '@/gateway/router'
+import { Router } from '@/gateway/router'
 import type { GatewayInput } from '@/gateway/router'
 import type { AIRuntime, ChatOutput, AgentType } from '@/core/ai/runtime/types'
 
@@ -33,12 +33,12 @@ function createMockRuntime(): AIRuntime {
     }
 }
 
-describe('GatewayRouter', () => {
+describe('Router', () => {
     test('chat delegates to correct runtime based on agentType', async () => {
         const tradingRuntime = createMockRuntime()
         const autoTradingRuntime = createMockRuntime()
 
-        const router = new GatewayRouter({
+        const router = new Router({
             runtimes: {
                 'trading-agent': tradingRuntime,
                 'auto-trading-agent': autoTradingRuntime,
@@ -47,9 +47,10 @@ describe('GatewayRouter', () => {
 
         const input: GatewayInput = {
             channel: 'discord',
+            mode: 'conversation',
             agentType: 'trading-agent',
             content: 'What is NVDA price?',
-            channelId: 'guild123:channel456',
+            sourceId: 'guild123:channel456',
             userId: 'user789',
         }
 
@@ -62,7 +63,7 @@ describe('GatewayRouter', () => {
         const tradingRuntime = createMockRuntime()
         const autoTradingRuntime = createMockRuntime()
 
-        const router = new GatewayRouter({
+        const router = new Router({
             runtimes: {
                 'trading-agent': tradingRuntime,
                 'auto-trading-agent': autoTradingRuntime,
@@ -71,6 +72,7 @@ describe('GatewayRouter', () => {
 
         const input: GatewayInput = {
             channel: 'web',
+            mode: 'conversation',
             content: 'Hello',
         }
 
@@ -79,7 +81,7 @@ describe('GatewayRouter', () => {
     })
 
     test('chat throws for unknown agent type', async () => {
-        const router = new GatewayRouter({
+        const router = new Router({
             runtimes: {
                 'trading-agent': createMockRuntime(),
                 'auto-trading-agent': createMockRuntime(),
@@ -88,6 +90,7 @@ describe('GatewayRouter', () => {
 
         const input: GatewayInput = {
             channel: 'web',
+            mode: 'conversation',
             agentType: 'unknown-agent' as AgentType,
             content: 'Hello',
         }
@@ -98,7 +101,7 @@ describe('GatewayRouter', () => {
     test('chat passes through all input fields to runtime', async () => {
         const tradingRuntime = createMockRuntime()
 
-        const router = new GatewayRouter({
+        const router = new Router({
             runtimes: {
                 'trading-agent': tradingRuntime,
                 'auto-trading-agent': createMockRuntime(),
@@ -107,9 +110,10 @@ describe('GatewayRouter', () => {
 
         await router.chat({
             channel: 'discord',
+            mode: 'conversation',
             agentType: 'trading-agent',
             content: 'Check NVDA',
-            channelId: 'guild:ch',
+            sourceId: 'guild:ch',
             userId: 'user-1',
             symbol: 'NVDA',
         })
@@ -117,7 +121,7 @@ describe('GatewayRouter', () => {
         const callArgs = (tradingRuntime.chat as any).mock.calls[0][0]
         expect(callArgs.channel).toBe('discord')
         expect(callArgs.agentType).toBe('trading-agent')
-        expect(callArgs.channelId).toBe('guild:ch')
+        expect(callArgs.sourceId).toBe('guild:ch')
         expect(callArgs.userId).toBe('user-1')
         expect(callArgs.symbol).toBe('NVDA')
     })
@@ -125,7 +129,7 @@ describe('GatewayRouter', () => {
     test('chat returns ChatOutput from runtime', async () => {
         const tradingRuntime = createMockRuntime()
 
-        const router = new GatewayRouter({
+        const router = new Router({
             runtimes: {
                 'trading-agent': tradingRuntime,
                 'auto-trading-agent': createMockRuntime(),
@@ -134,6 +138,7 @@ describe('GatewayRouter', () => {
 
         const output = await router.chat({
             channel: 'web',
+            mode: 'conversation',
             content: 'Hello',
         })
 
@@ -144,7 +149,7 @@ describe('GatewayRouter', () => {
     })
 })
 
-describe('GatewayRouter.clearSession', () => {
+describe('Router.clearSession', () => {
     test('proxies to clearChannelSession with correct params', async () => {
         const mockClearFn = mock(() => Promise.resolve({ id: 'new-session-1' }))
         mock.module('@/core/ai/session', () => ({
@@ -152,7 +157,7 @@ describe('GatewayRouter.clearSession', () => {
         }))
 
         // Re-import to pick up the mock
-        const { GatewayRouter: MockedRouter } = await import('@/gateway/router')
+        const { Router: MockedRouter } = await import('@/gateway/router')
 
         const router = new MockedRouter({
             runtimes: {
@@ -163,15 +168,15 @@ describe('GatewayRouter.clearSession', () => {
 
         const result = await router.clearSession({
             channel: 'discord',
-            channelSessionId: 'guild-1:channel-1',
-            channelUserId: 'user-1',
+            sourceId: 'guild-1:channel-1',
+            createdBy: 'user-1',
         })
 
         expect(result.id).toBe('new-session-1')
         expect(mockClearFn).toHaveBeenCalledWith({
             channel: 'discord',
-            channelSessionId: 'guild-1:channel-1',
-            channelUserId: 'user-1',
+            sourceId: 'guild-1:channel-1',
+            createdBy: 'user-1',
         })
     })
 })

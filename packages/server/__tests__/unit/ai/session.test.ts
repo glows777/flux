@@ -283,8 +283,8 @@ describe('clearChannelSession', () => {
 
         const result = await clearChannelSession({
             channel: 'discord',
-            channelSessionId: 'guild-1:channel-1',
-            channelUserId: 'user-1',
+            sourceId: 'guild-1:channel-1',
+            createdBy: 'user-1',
         }, deps)
 
         expect(result.id).toBe('new-session-1')
@@ -292,8 +292,8 @@ describe('clearChannelSession', () => {
 
         const createArgs = db.chatSession.create.mock.calls[0][0] as any
         expect(createArgs.data.channel).toBe('discord')
-        expect(createArgs.data.channelSessionId).toBe('guild-1:channel-1')
-        expect(createArgs.data.channelUserId).toBe('user-1')
+        expect(createArgs.data.sourceId).toBe('guild-1:channel-1')
+        expect(createArgs.data.createdBy).toBe('user-1')
         expect(createArgs.select).toEqual({ id: true })
     })
 
@@ -307,8 +307,8 @@ describe('clearChannelSession', () => {
 
         await clearChannelSession({
             channel: 'discord',
-            channelSessionId: 'user-1',
-            channelUserId: 'user-1',
+            sourceId: 'user-1',
+            createdBy: 'user-1',
         }, deps)
 
         const createArgs = db.chatSession.create.mock.calls[0][0] as any

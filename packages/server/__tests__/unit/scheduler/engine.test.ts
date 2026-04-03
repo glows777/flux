@@ -15,7 +15,6 @@ describe('CronScheduler', () => {
     test('start loads enabled jobs from DB', async () => {
         const mockFindMany = mock(() => Promise.resolve([]))
         const scheduler = new CronScheduler({
-            channels: new Map(),
             gateway: {} as any,
             prisma: { cronJob: { findMany: mockFindMany, update: mock(), findUnique: mock() } } as any,
         })

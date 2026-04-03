@@ -31,8 +31,9 @@ describe('toGatewayInput', () => {
         const result = toGatewayInput(msg, 'bot-1')
         expect(result).toEqual({
             channel: 'discord',
+            mode: 'conversation',
             content: 'hello bot',
-            channelId: 'user-1',
+            sourceId: 'user-1',
             userId: 'user-1',
         })
     })
@@ -47,8 +48,9 @@ describe('toGatewayInput', () => {
         const result = toGatewayInput(msg, 'bot-1')
         expect(result).toEqual({
             channel: 'discord',
+            mode: 'conversation',
             content: 'what is NVDA?',
-            channelId: 'guild-1:channel-1',
+            sourceId: 'guild-1:channel-1',
             userId: 'user-1',
         })
     })

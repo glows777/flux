@@ -129,7 +129,7 @@ export async function touchSession(id: string, deps?: SessionDeps) {
  * findFirst({ orderBy: { createdAt: 'desc' } }) 命中新记录。
  *
  * 旧 session 不删除，保留作历史记录。
- * 这是 /clear 命令的底层实现——在同一个 channelSessionId 下
+ * 这是 /clear 命令的底层实现——在同一个 sourceId 下
  * 创建一条新的 ChatSession，下次 resolveSession 自然取到它。
  */
 export async function clearChannelSession(

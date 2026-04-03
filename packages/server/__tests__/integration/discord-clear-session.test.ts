@@ -20,8 +20,8 @@ describe('Discord /clear session lifecycle', () => {
 
         const result = await clearChannelSession({
             channel: 'discord',
-            channelSessionId: 'guild-1:channel-1',
-            channelUserId: 'user-1',
+            sourceId: 'guild-1:channel-1',
+            createdBy: 'user-1',
         })
 
         expect(result.id).toBe('new-session')
@@ -31,7 +31,7 @@ describe('Discord /clear session lifecycle', () => {
         mockFindFirst.mockImplementation(() => Promise.resolve(newSession))
 
         const found = await prisma.chatSession.findFirst({
-            where: { channel: 'discord', channelSessionId: 'guild-1:channel-1' },
+            where: { channel: 'discord', sourceId: 'guild-1:channel-1' },
             orderBy: { createdAt: 'desc' },
         })
 
@@ -46,8 +46,8 @@ describe('Discord /clear session lifecycle', () => {
 
         await clearChannelSession({
             channel: 'discord',
-            channelSessionId: 'user-1',
-            channelUserId: 'user-1',
+            sourceId: 'user-1',
+            createdBy: 'user-1',
         })
 
         const { prisma } = await import('@/core/db')

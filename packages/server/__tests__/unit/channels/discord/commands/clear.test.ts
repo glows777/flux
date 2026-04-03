@@ -28,7 +28,7 @@ describe('/clear command', () => {
         expect(json.options ?? []).toHaveLength(0)
     })
 
-    test('DM: calls gateway.clearSession with userId as channelSessionId', async () => {
+    test('DM: calls gateway.clearSession with userId as sourceId', async () => {
         const ctx = createMockContext()
         const interaction = createMockInteraction()
 
@@ -37,12 +37,12 @@ describe('/clear command', () => {
         expect(ctx.gateway.clearSession).toHaveBeenCalledTimes(1)
         expect(ctx.gateway.clearSession).toHaveBeenCalledWith({
             channel: 'discord',
-            channelSessionId: 'user-1',
-            channelUserId: 'user-1',
+            sourceId: 'user-1',
+            createdBy: 'user-1',
         })
     })
 
-    test('Guild: calls gateway.clearSession with guildId:channelId as channelSessionId', async () => {
+    test('Guild: calls gateway.clearSession with guildId:channelId as sourceId', async () => {
         const ctx = createMockContext()
         const interaction = createMockInteraction({
             guild: { id: 'guild-1' },
@@ -53,8 +53,8 @@ describe('/clear command', () => {
 
         expect(ctx.gateway.clearSession).toHaveBeenCalledWith({
             channel: 'discord',
-            channelSessionId: 'guild-1:channel-1',
-            channelUserId: 'user-1',
+            sourceId: 'guild-1:channel-1',
+            createdBy: 'user-1',
         })
     })
 
