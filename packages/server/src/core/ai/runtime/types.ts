@@ -1,4 +1,5 @@
 import type { LanguageModel, UIMessage, Tool, StreamTextResult } from 'ai'
+import type { GatewayMode } from '@/gateway/router'
 
 // ── Tool Definition ──
 
@@ -25,6 +26,7 @@ export interface HookContext {
   sessionId: string
   symbol?: string
   channel: 'web' | 'discord' | 'cron'
+  mode: GatewayMode
   agentType: AgentType
   rawMessages: UIMessage[]
   /** 共享可变存储，hooks 之间传递数据（Vite-style plugin meta） */
@@ -101,8 +103,9 @@ export interface ChatInput {
   messages: UIMessage[]
   symbol?: string
   channel: 'web' | 'discord' | 'cron'
+  mode: GatewayMode
   agentType?: AgentType
-  channelId?: string
+  sourceId?: string
   userId?: string
 }
 
