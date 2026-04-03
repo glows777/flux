@@ -42,7 +42,7 @@ export async function loadOrCreateBaseline(
  *   After-hours: 16:00 – 20:00
  *   Closed:      20:00 – 04:00 (next day), weekends
  */
-export function getMarketStatus(): '盘前' | '开盘' | '收盘前' | '盘后' | '休市（周末）' {
+export function getMarketStatus(): '盘前' | '开盘' | '收盘前' | '盘后' | '休市' | '休市（周末）' {
     const now = new Date()
 
     const etDayStr = now.toLocaleDateString('en-US', {
@@ -73,5 +73,5 @@ export function getMarketStatus(): '盘前' | '开盘' | '收盘前' | '盘后' 
     if (etMinutes >= PRE_CLOSE_START && etMinutes < MARKET_CLOSE) return '收盘前'
     if (etMinutes >= MARKET_CLOSE && etMinutes < AFTER_HOURS_END) return '盘后'
 
-    return '休市（周末）'
+    return '休市'
 }

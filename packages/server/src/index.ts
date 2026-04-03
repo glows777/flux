@@ -100,16 +100,16 @@ async function main() {
     const channels = new Map()
     if (discord) channels.set('discord', discord)
 
-    scheduler = new CronScheduler({ channels, gateway, prisma })
-    await scheduler.start()
-    scheduler.onBeat(() => heartbeat.beat('scheduler'))
-    scheduler.onProgress(() => heartbeat.progress('scheduler'))
-
     try {
         await seedTradingHeartbeat()
     } catch (error) {
         console.error('Failed to seed cron jobs:', error)
     }
+
+    scheduler = new CronScheduler({ channels, gateway, prisma })
+    await scheduler.start()
+    scheduler.onBeat(() => heartbeat.beat('scheduler'))
+    scheduler.onProgress(() => heartbeat.progress('scheduler'))
 
     // 6. HTTP API
     const app = createHonoApp({

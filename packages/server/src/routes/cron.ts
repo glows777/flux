@@ -8,13 +8,24 @@ import {
     listCronJobs,
     updateCronJob,
 } from '@/core/cron/service'
-import type { CronScheduler } from '@/scheduler/engine'
+import { type CronScheduler, parseSchedule } from '@/scheduler/engine'
 
 const createSchema = z.object({
     name: z.string().min(1).max(100),
     schedule: z.string().min(1),
     taskType: z.string().min(1),
     taskPayload: z.object({ prompt: z.string().min(1) }),
+    channelTarget: z.object({
+        type: z.string(),
+        channelId: z.string(),
+    }).optional(),
+})
+
+const updateSchema = z.object({
+    name: z.string().min(1).max(100).optional(),
+    schedule: z.string().min(1).optional(),
+    enabled: z.boolean().optional(),
+    taskPayload: z.object({ prompt: z.string().min(1) }).optional(),
     channelTarget: z.object({
         type: z.string(),
         channelId: z.string(),
@@ -30,7 +41,11 @@ export function createCronRoutes(deps: CronRouteDeps = {}) {
         .get('/', async (c) => {
             try {
                 const jobs = await listCronJobs()
-                return c.json({ success: true, data: jobs })
+                const data = jobs.map((job) => ({
+                    ...job,
+                    nextRunAt: deps.scheduler?.getNextRunAt(job.id) ?? null,
+                }))
+                return c.json({ success: true, data })
             } catch (error) {
                 return c.json({ success: false, error: 'Failed to list cron jobs' }, 500)
             }
@@ -38,6 +53,9 @@ export function createCronRoutes(deps: CronRouteDeps = {}) {
         .post('/', sValidator('json', createSchema), async (c) => {
             try {
                 const body = c.req.valid('json')
+                if (!parseSchedule(body.schedule)) {
+                    return c.json({ success: false, error: 'Invalid or too frequent schedule (minimum interval: 60s)' }, 400)
+                }
                 const job = await createCronJob({
                     ...body,
                     channel: 'web',
@@ -49,10 +67,13 @@ export function createCronRoutes(deps: CronRouteDeps = {}) {
                 return c.json({ success: false, error: 'Failed to create cron job' }, 500)
             }
         })
-        .put('/:id', async (c) => {
+        .put('/:id', sValidator('json', updateSchema), async (c) => {
             try {
                 const id = c.req.param('id')
-                const body = await c.req.json()
+                const body = c.req.valid('json')
+                if (body.schedule && !parseSchedule(body.schedule)) {
+                    return c.json({ success: false, error: 'Invalid or too frequent schedule (minimum interval: 60s)' }, 400)
+                }
                 const job = await updateCronJob(id, body)
                 if (deps.scheduler) {
                     await deps.scheduler.removeJob(id)

@@ -35,7 +35,7 @@ export async function listCronJobs(
 
 export async function updateCronJob(
     id: string,
-    data: Partial<{ name: string; schedule: string; enabled: boolean; taskPayload: unknown }>,
+    data: Partial<{ name: string; schedule: string; enabled: boolean; taskPayload: unknown; channelTarget: unknown }>,
     deps: PrismaLike = prisma,
 ) {
     return deps.cronJob.update({ where: { id }, data: data as any })

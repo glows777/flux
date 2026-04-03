@@ -1,4 +1,5 @@
 import type { TradeNotification, OrderEventNotification } from './types'
+import { proxyFetch } from '@/core/market-data/common/proxy-fetch'
 
 function getWebhookUrl(): string | undefined {
   return process.env.DISCORD_TRADING_WEBHOOK_URL
@@ -9,7 +10,7 @@ async function postWebhook(body: Record<string, unknown>): Promise<void> {
   if (!url) return
 
   try {
-    await fetch(url, {
+    await proxyFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

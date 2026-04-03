@@ -174,9 +174,8 @@ model CronJob {
   userId        String                   // 创建者用户 ID
   enabled       Boolean   @default(true)
   lastRunAt     DateTime?
-  lastRunStatus String?                  // "success" | "failure" | "running"
+  lastRunStatus String?                  // "success" | "error"
   lastRunError  String?
-  nextRunAt     DateTime?
   retryCount    Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
