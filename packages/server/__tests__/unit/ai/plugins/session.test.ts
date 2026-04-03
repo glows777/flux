@@ -17,7 +17,7 @@ describe('sessionPlugin', () => {
       content: `msg ${i}`,
       parts: [{ type: 'text', text: `msg ${i}` }],
     })) as UIMessage[]
-    const ctx: HookContext = { sessionId: 's1', channel: 'web', agentType: 'trading-agent', rawMessages: msgs, meta: new Map() }
+    const ctx: HookContext = { sessionId: 's1', channel: 'web', mode: 'conversation', agentType: 'trading-agent', rawMessages: msgs, meta: new Map() }
     const result = await plugin.transformMessages!(ctx, msgs)
     expect(result).toHaveLength(3)
     expect(result[0].id).toBe('2')
@@ -31,7 +31,7 @@ describe('sessionPlugin', () => {
       content: `msg ${i}`,
       parts: [{ type: 'text', text: `msg ${i}` }],
     })) as UIMessage[]
-    const ctx: HookContext = { sessionId: 's1', channel: 'web', agentType: 'trading-agent', rawMessages: msgs, meta: new Map() }
+    const ctx: HookContext = { sessionId: 's1', channel: 'web', mode: 'conversation', agentType: 'trading-agent', rawMessages: msgs, meta: new Map() }
     const result = await plugin.transformMessages!(ctx, msgs)
     expect(result).toHaveLength(20)
   })
@@ -43,7 +43,7 @@ describe('sessionPlugin', () => {
       deps: { appendMessage: mockAppend, touchSession: mockTouch },
     })
     const ctx: AfterChatContext = {
-      sessionId: 's1', channel: 'web', agentType: 'trading-agent', rawMessages: [], meta: new Map(),
+      sessionId: 's1', channel: 'web', mode: 'conversation', agentType: 'trading-agent', rawMessages: [], meta: new Map(),
       result: { text: 'hi', usage: { inputTokens: 0, outputTokens: 0 }, toolCalls: [] },
       responseMessage: { id: 'msg-1', role: 'assistant', content: 'hi', parts: [] } as any,
       toolCalls: [],
@@ -62,6 +62,7 @@ describe('sessionPlugin', () => {
     const ctx: HookContext = {
       sessionId: '',
       channel: 'web',
+      mode: 'conversation',
       agentType: 'trading-agent',
       rawMessages: [{ id: '1', role: 'user', content: 'hello', parts: [{ type: 'text', text: 'hello' }] }] as UIMessage[],
       meta: new Map(),
@@ -80,6 +81,7 @@ describe('sessionPlugin', () => {
     const ctx: HookContext = {
       sessionId: 'existing-session',
       channel: 'web',
+      mode: 'conversation',
       agentType: 'trading-agent',
       rawMessages: [{ id: '1', role: 'user', content: 'hello', parts: [{ type: 'text', text: 'hello' }] }] as UIMessage[],
       meta: new Map(),
@@ -98,11 +100,61 @@ describe('sessionPlugin', () => {
     const ctx: HookContext = {
       sessionId: 'existing',
       channel: 'web',
+      mode: 'conversation',
       agentType: 'trading-agent',
       rawMessages: [userMsg],
       meta: new Map(),
     }
     await plugin.beforeChat!(ctx)
     expect(mockAppend).toHaveBeenCalledWith('existing', userMsg)
+  })
+
+  test('trigger mode always creates new session even with sourceId', async () => {
+    const mockCreate = mock(() => Promise.resolve('trigger-session'))
+    const mockResolve = mock(() => Promise.resolve('should-not-resolve'))
+    const mockAppend = mock(() => Promise.resolve())
+    const plugin = sessionPlugin({
+      deps: {
+        createSession: mockCreate,
+        resolveSession: mockResolve,
+        appendMessage: mockAppend,
+        touchSession: mock(() => Promise.resolve()),
+      },
+    })
+    const ctx: HookContext = {
+      sessionId: '',
+      channel: 'cron',
+      mode: 'trigger',
+      agentType: 'auto-trading-agent',
+      rawMessages: [{ id: '1', role: 'user', content: 'run analysis', parts: [{ type: 'text', text: 'run analysis' }] }] as UIMessage[],
+      meta: new Map([['sourceId', 'cron:job-123']]),
+    }
+    await plugin.beforeChat!(ctx)
+    expect(mockCreate).toHaveBeenCalled()
+    expect(mockResolve).not.toHaveBeenCalled()
+    expect(ctx.meta.get('sessionId')).toBe('trigger-session')
+  })
+
+  test('trigger mode creates new session even when sessionId already set', async () => {
+    const mockCreate = mock(() => Promise.resolve('fresh-trigger-session'))
+    const mockAppend = mock(() => Promise.resolve())
+    const plugin = sessionPlugin({
+      deps: {
+        createSession: mockCreate,
+        appendMessage: mockAppend,
+        touchSession: mock(() => Promise.resolve()),
+      },
+    })
+    const ctx: HookContext = {
+      sessionId: 'pre-existing',
+      channel: 'cron',
+      mode: 'trigger',
+      agentType: 'auto-trading-agent',
+      rawMessages: [{ id: '1', role: 'user', content: 'run', parts: [{ type: 'text', text: 'run' }] }] as UIMessage[],
+      meta: new Map(),
+    }
+    await plugin.beforeChat!(ctx)
+    expect(mockCreate).toHaveBeenCalled()
+    expect(ctx.meta.get('sessionId')).toBe('fresh-trigger-session')
   })
 })

@@ -17,8 +17,8 @@ interface SessionPluginDeps {
   touchSession: (sessionId: string) => Promise<void>
   resolveSession: (params: {
     channel: string
-    channelId: string
-    userId: string
+    sourceId: string
+    createdBy: string
     symbol?: string
     title?: string
   }) => Promise<string>
@@ -45,8 +45,8 @@ function extractFirstMessageText(messages: UIMessage[]): string {
 
 async function defaultResolveSession(params: {
   channel: string
-  channelId: string
-  userId: string
+  sourceId: string
+  createdBy: string
   symbol?: string
   title?: string
 }): Promise<string> {
@@ -55,7 +55,7 @@ async function defaultResolveSession(params: {
   const existing = await db.chatSession.findFirst({
     where: {
       channel: params.channel,
-      channelSessionId: params.channelId,
+      sourceId: params.sourceId,
     },
     orderBy: { createdAt: 'desc' },
   })
@@ -65,8 +65,8 @@ async function defaultResolveSession(params: {
   const session = await db.chatSession.create({
     data: {
       channel: params.channel,
-      channelSessionId: params.channelId,
-      channelUserId: params.userId,
+      sourceId: params.sourceId,
+      createdBy: params.createdBy,
       symbol: params.symbol ?? null,
       title: params.title ?? 'New session',
     },
@@ -94,17 +94,23 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
     async beforeChat(ctx: HookContext): Promise<void> {
       let sessionId = ctx.sessionId
 
-      if (!sessionId && ctx.meta.has('channelId')) {
-        // Discord/Cron path: resolve by channelId
+      if (ctx.mode === 'trigger') {
+        // Trigger mode: always create a fresh session — no resolution
+        sessionId = await deps.createSession(
+          ctx.symbol,
+          extractFirstMessageText(ctx.rawMessages),
+        )
+      } else if (!sessionId && ctx.meta.has('sourceId')) {
+        // Conversation mode — Discord/Cron path: resolve by sourceId
         sessionId = await deps.resolveSession({
           channel: ctx.channel,
-          channelId: ctx.meta.get('channelId') as string,
-          userId: ctx.meta.get('userId') as string ?? 'system',
+          sourceId: ctx.meta.get('sourceId') as string,
+          createdBy: ctx.meta.get('userId') as string ?? 'system',
           symbol: ctx.symbol,
           title: extractFirstMessageText(ctx.rawMessages),
         })
       } else if (!sessionId) {
-        // Web path: create new session
+        // Conversation mode — Web path: create new session
         sessionId = await deps.createSession(
           ctx.symbol,
           extractFirstMessageText(ctx.rawMessages),
@@ -122,8 +128,8 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
 
     async transformMessages(ctx: HookContext, messages: UIMessage[]): Promise<UIMessage[]> {
       // For discord/cron: load history from DB (already includes the just-appended user message)
-      const channelId = ctx.meta.get('channelId') as string | undefined
-      if (channelId) {
+      const sourceId = ctx.meta.get('sourceId') as string | undefined
+      if (sourceId) {
         const sessionId = ctx.meta.get('sessionId') as string
         if (sessionId) {
           const history = await deps.loadMessages(sessionId)

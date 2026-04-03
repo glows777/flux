@@ -135,8 +135,8 @@ export async function touchSession(id: string, deps?: SessionDeps) {
 export async function clearChannelSession(
     params: {
         readonly channel: string
-        readonly channelSessionId: string
-        readonly channelUserId: string
+        readonly sourceId: string
+        readonly createdBy: string
     },
     deps?: SessionDeps,
 ): Promise<{ id: string }> {
@@ -154,8 +154,8 @@ export async function clearChannelSession(
     return db.chatSession.create({
         data: {
             channel: params.channel,
-            channelSessionId: params.channelSessionId,
-            channelUserId: params.channelUserId,
+            sourceId: params.sourceId,
+            createdBy: params.createdBy,
             title,
         },
         select: { id: true },
