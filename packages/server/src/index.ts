@@ -1,5 +1,6 @@
 import { createHonoApp } from './routes/index'
-import { GatewayRouter } from './gateway/router'
+import { Router } from './gateway/router'
+import { Gateway } from './gateway/gateway'
 import { HeartbeatMonitor } from './gateway/heartbeat'
 import { DiscordAdapter } from './channels/discord/bot'
 import { getDiscordConfig } from './channels/discord/config'
@@ -75,18 +76,25 @@ async function main() {
     })
     orderSync.start()
 
-    // 3. Gateway
-    const gateway = new GatewayRouter({
+    // 3. Router + Gateway
+    const router = new Router({
         runtimes: {
             'trading-agent': tradingRuntime,
             'auto-trading-agent': autoTradingRuntime,
         },
     })
 
-    // 4. Discord bot (optional)
+    // 4. Discord bot (optional) — needs Gateway, but Gateway needs channels Map
+    // Build channels Map first, then Gateway, then start Discord
+    const channels = new Map()
     const discordConfig = getDiscordConfig()
+
+    // Create Gateway with channels map (discord adapter added below)
+    const gateway = new Gateway({ router, channels })
+
     if (discordConfig) {
         discord = new DiscordAdapter(discordConfig, gateway)
+        channels.set('discord', discord)
         await discord.start()
         discord.setCallbacks({
             onBeat: () => heartbeat.beat('discord'),
@@ -97,16 +105,13 @@ async function main() {
     }
 
     // 5. Cron scheduler
-    const channels = new Map()
-    if (discord) channels.set('discord', discord)
-
     try {
         await seedTradingHeartbeat()
     } catch (error) {
         console.error('Failed to seed cron jobs:', error)
     }
 
-    scheduler = new CronScheduler({ channels, gateway, prisma })
+    scheduler = new CronScheduler({ gateway, prisma })
     await scheduler.start()
     scheduler.onBeat(() => heartbeat.beat('scheduler'))
     scheduler.onProgress(() => heartbeat.progress('scheduler'))

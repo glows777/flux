@@ -1,5 +1,6 @@
 import type { CronJob } from '@prisma/client'
-import type { GatewayRouter } from '@/gateway/router'
+import type { Gateway } from '@/gateway/gateway'
+import type { TriggerResult } from '@/gateway/router'
 import type { AgentType } from '@/core/ai/runtime/types'
 
 export interface ExecutionResult {
@@ -9,7 +10,7 @@ export interface ExecutionResult {
 }
 
 interface ExecutorDeps {
-    readonly gateway: GatewayRouter
+    readonly gateway: Gateway
 }
 
 const EXECUTION_TIMEOUT_MS = 20 * 60 * 1000 // 20 minutes
@@ -42,15 +43,21 @@ export class TaskExecutor {
     }
 
     private async run(job: CronJob, prompt: string): Promise<ExecutionResult> {
-        const output = await this.deps.gateway.chat({
+        const channelTarget = job.channelTarget as { type: string; channelId: string } | null
+
+        const triggerResult: TriggerResult = await this.deps.gateway.chat({
             channel: 'cron',
+            mode: 'trigger',
             agentType: job.taskType as AgentType,
             content: prompt,
-            channelId: `cron:${job.id}`,
+            sourceId: `cron:${job.id}`,
             userId: job.userId,
+            ...(channelTarget ? { channelTarget } : {}),
         })
 
-        const { text } = await output.consumeStream()
-        return { success: true, output: text?.trim() || '(no response)' }
+        return {
+            success: triggerResult.success,
+            output: triggerResult.text?.trim() || '(no response)',
+        }
     }
 }
