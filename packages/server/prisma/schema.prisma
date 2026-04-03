@@ -103,15 +103,15 @@ model ChatSession {
   title     String                        // 首条用户消息前 20 字
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  channel          String    @default("web")  // 来源渠道: "web" | "discord" | ...
-  channelUserId    String?                    // 渠道用户 ID (如 Discord user ID)
-  channelSessionId String?                    // 渠道会话 ID (如 Discord channel ID)
+  channel   String    @default("web")  // 来源渠道: "web" | "discord" | "cron"
+  createdBy String?                    // 创建者 ID (如 Discord user ID, cron system)
+  sourceId  String?                    // 来源标识 (如 Discord guildId:channelId, cron jobId)
 
   messages  ChatMessage[]
 
   @@index([updatedAt(sort: Desc)])                  // 全局按时间排序
   @@index([symbol, updatedAt(sort: Desc)])          // 按 symbol 过滤 (兼容)
-  @@index([channel, channelSessionId])              // 按渠道 + 会话 ID 查询
+  @@index([channel, sourceId])                      // 按渠道 + 来源 ID 查询
 }
 
 // ChatMessage (AI 对话消息)
