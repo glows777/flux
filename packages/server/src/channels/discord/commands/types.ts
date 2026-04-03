@@ -3,10 +3,10 @@ import type {
     SlashCommandBuilder,
     SlashCommandOptionsOnlyBuilder,
 } from 'discord.js'
-import type { GatewayRouter } from '@/gateway/router'
+import type { Gateway } from '@/gateway/gateway'
 
 export interface CommandContext {
-    readonly gateway: GatewayRouter
+    readonly gateway: Gateway
 }
 
 export interface SlashCommand {

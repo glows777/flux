@@ -12,18 +12,18 @@ import sessions from './sessions'
 import stocks from './stocks'
 import watchlist from './watchlist'
 import type { CronScheduler } from '@/scheduler/engine'
-import type { GatewayRouter } from '@/gateway/router'
+import type { Gateway } from '@/gateway/gateway'
 
 export function createHonoApp(deps?: {
     getHealthStatus?: () => { healthy: boolean; uptime: number; subsystems: Record<string, unknown> }
     cron?: { scheduler?: CronScheduler }
-    gateway?: GatewayRouter
+    gateway?: Gateway
 }) {
     const health = createHealthRoute(deps)
     const cronRoute = createCronRoutes(deps?.cron)
     const chatRoute = deps?.gateway
         ? createChatRoutes(deps.gateway)
-        : createChatRoutes(undefined as unknown as GatewayRouter)
+        : createChatRoutes(undefined as unknown as Gateway)
     return new Hono()
         .basePath('/api')
         .use('/*', cors({

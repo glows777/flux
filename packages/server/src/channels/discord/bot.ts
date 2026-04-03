@@ -1,7 +1,7 @@
 import { Client, Partials } from 'discord.js'
 import { WebSocketShardEvents } from '@discordjs/ws'
 import type { ChannelAdapter, ChannelMessage, ChannelTarget } from '@/channels/types'
-import type { GatewayRouter } from '@/gateway/router'
+import type { Gateway } from '@/gateway/gateway'
 import type { DiscordConfig } from './config'
 import { CommandRegistry } from './commands/index'
 import { clearCommand } from './commands/clear'
@@ -20,7 +20,7 @@ export class DiscordAdapter implements ChannelAdapter {
 
     constructor(
         private readonly config: DiscordConfig,
-        private readonly gateway: GatewayRouter,
+        private readonly gateway: Gateway,
     ) {}
 
     async start(): Promise<void> {

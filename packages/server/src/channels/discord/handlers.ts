@@ -1,6 +1,6 @@
 import type { Message } from 'discord.js'
 import type { GatewayInput } from '@/gateway/router'
-import { buildChannelSessionId } from './identity'
+import { buildSourceId } from './identity'
 
 export function toGatewayInput(msg: Message, botUserId: string): GatewayInput | null {
     if (msg.author.bot) return null
@@ -14,8 +14,9 @@ export function toGatewayInput(msg: Message, botUserId: string): GatewayInput | 
 
     return {
         channel: 'discord',
+        mode: 'conversation',
         content,
-        channelId: buildChannelSessionId({
+        sourceId: buildSourceId({
             guildId: msg.guild?.id ?? null,
             channelId: msg.channel.id,
             userId: msg.author.id,

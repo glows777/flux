@@ -1,4 +1,4 @@
-export function buildChannelSessionId(source: {
+export function buildSourceId(source: {
     readonly guildId: string | null
     readonly channelId: string
     readonly userId: string

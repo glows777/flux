@@ -3,7 +3,7 @@ import type { UIMessage } from 'ai'
 import { generateId } from 'ai'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import type { GatewayRouter } from '@/gateway/router'
+import type { Gateway } from '@/gateway/gateway'
 import { SessionError } from '@/core/ai/session'
 
 const SESSION_ERROR_CODE_TO_STATUS = {
@@ -27,7 +27,7 @@ const onValidationError = (
     }
 }
 
-export function createChatRoutes(gateway: GatewayRouter) {
+export function createChatRoutes(gateway: Gateway) {
     return new Hono()
         .post(
             '/',
@@ -39,6 +39,7 @@ export function createChatRoutes(gateway: GatewayRouter) {
                 try {
                     const output = await gateway.chat({
                         channel: 'web',
+                        mode: 'conversation',
                         messages: messages as UIMessage[],
                         sessionId: sessionId ?? undefined,
                         symbol: upperSymbol,
