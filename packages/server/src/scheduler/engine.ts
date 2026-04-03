@@ -6,6 +6,42 @@ import { TaskExecutor, type ExecutionResult } from './executor'
 import { NotificationDedup } from './dedup'
 
 const MAX_RETRIES = 5
+const MIN_INTERVAL_S = 60
+
+export function parseSchedule(schedule: string): string | null {
+    let expr: string
+
+    if (schedule.startsWith('every:')) {
+        const match = schedule.slice(6).match(/^(\d+)(s|m|h)$/)
+        if (!match) return null
+
+        const [, value, unit] = match
+        const num = +value
+        if (num <= 0) return null
+
+        switch (unit) {
+            case 's': expr = num <= 59 ? `*/${num} * * * * *` : ''; break
+            case 'm': expr = num <= 59 ? `0 */${num} * * * *` : ''; break
+            case 'h': expr = num <= 23 ? `0 0 */${num} * * *` : ''; break
+            default: return null
+        }
+        if (!expr) return null
+    } else {
+        expr = schedule
+    }
+
+    try {
+        const test = new Cron(expr, { timezone: 'Asia/Shanghai' })
+        const runs = test.nextRuns(10)
+        test.stop()
+        for (let i = 1; i < runs.length; i++) {
+            if (runs[i].getTime() - runs[i - 1].getTime() < MIN_INTERVAL_S * 1000) return null
+        }
+        return expr
+    } catch {
+        return null
+    }
+}
 
 interface CronSchedulerDeps {
     readonly channels: Map<string, ChannelAdapter>
@@ -27,6 +63,7 @@ export class CronScheduler {
     private beatCallback: (() => void) | null = null
     private progressCallback: (() => void) | null = null
     private beatInterval: Timer | null = null
+    private generation = 0
 
     constructor(private readonly deps: CronSchedulerDeps) {
         this.executor = new TaskExecutor({ gateway: deps.gateway })
@@ -43,6 +80,7 @@ export class CronScheduler {
     }
 
     async stop(): Promise<void> {
+        this.generation++
         if (this.beatInterval) {
             clearInterval(this.beatInterval)
             this.beatInterval = null
@@ -51,10 +89,15 @@ export class CronScheduler {
             cron.stop()
         }
         this.jobs.clear()
+        this.running.clear()
     }
 
     async addJob(job: CronJob): Promise<void> {
         this.scheduleJob(job)
+    }
+
+    getNextRunAt(jobId: string): Date | null {
+        return this.jobs.get(jobId)?.nextRun() ?? null
     }
 
     async removeJob(jobId: string): Promise<void> {
@@ -71,13 +114,15 @@ export class CronScheduler {
 
         if (this.running.has(jobId)) throw new Error(`Job ${jobId} is already running`)
 
+        const gen = this.generation
         this.running.add(jobId)
         try {
             const result = await this.executor.execute(job)
+            if (gen !== this.generation) return
             await this.handleResult(jobId, result)
             try { if (result.success) this.progressCallback?.() } catch { /* non-fatal */ }
         } finally {
-            this.running.delete(jobId)
+            if (gen === this.generation) this.running.delete(jobId)
         }
     }
 
@@ -89,39 +134,18 @@ export class CronScheduler {
         this.progressCallback = callback
     }
 
-    parseSchedule(schedule: string): string | null {
-        if (schedule.startsWith('every:')) {
-            const match = schedule.slice(6).match(/^(\d+)(s|m|h)$/)
-            if (!match) return null
-
-            const [, value, unit] = match
-            const num = +value
-            if (num <= 0) return null
-
-            switch (unit) {
-                case 's': return num <= 59 ? `*/${num} * * * * *` : null
-                case 'm': return num <= 59 ? `0 */${num} * * * *` : null
-                case 'h': return num <= 23 ? `0 0 */${num} * * *` : null
-                default: return null
-            }
-        }
-
-        try {
-            new Cron(schedule, { timezone: 'Asia/Shanghai' })
-            return schedule
-        } catch {
-            return null
-        }
-    }
-
     private scheduleJob(job: CronJob): void {
-        const schedule = this.parseSchedule(job.schedule)
+        const schedule = parseSchedule(job.schedule)
         if (!schedule) {
             console.error(`Invalid schedule for job ${job.id}: ${job.schedule}`)
             return
         }
 
-        const cron = new Cron(schedule, { timezone: 'Asia/Shanghai' }, async () => {
+        const existing = this.jobs.get(job.id)
+        if (existing) existing.stop()
+
+        const gen = this.generation
+        const cron = new Cron(schedule, { timezone: 'Asia/Shanghai', interval: MIN_INTERVAL_S }, async () => {
             this.beatCallback?.()
 
             if (this.running.has(job.id)) {
@@ -132,10 +156,11 @@ export class CronScheduler {
             this.running.add(job.id)
             try {
                 const result = await this.executor.execute(job)
+                if (gen !== this.generation) return // stale execution after restart
                 await this.handleResult(job.id, result)
                 try { if (result.success) this.progressCallback?.() } catch { /* non-fatal */ }
             } finally {
-                this.running.delete(job.id)
+                if (gen === this.generation) this.running.delete(job.id)
             }
         })
 
@@ -172,6 +197,7 @@ export class CronScheduler {
             })
 
             if (shouldDisable) {
+                await this.removeJob(jobId)
                 console.error(`Job ${jobId} disabled after ${MAX_RETRIES} consecutive failures`)
             }
         }
