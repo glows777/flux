@@ -130,13 +130,14 @@ export async function createAIRuntime(options: RuntimeOptions): Promise<AIRuntim
       sessionId: input.sessionId ?? '',
       symbol,
       channel,
+      mode: input.mode,
       agentType: input.agentType ?? 'trading-agent',
       rawMessages: messages,
       meta: new Map(),
     }
 
     // Pass through channel-specific identifiers for sessionPlugin
-    if (input.channelId) hookCtx.meta.set('channelId', input.channelId)
+    if (input.sourceId) hookCtx.meta.set('sourceId', input.sourceId)
     if (input.userId) hookCtx.meta.set('userId', input.userId)
 
     try {
