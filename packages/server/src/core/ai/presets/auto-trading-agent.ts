@@ -3,7 +3,7 @@ import type { AIPlugin } from '../runtime/types'
 import type { AlpacaClient } from '@/core/broker/alpaca-client'
 import type { PrismaClient } from '@prisma/client'
 import type { ToolDeps } from '../tools'
-import type { MemoryDeps } from '../memory/types'
+import type { StoreDeps } from '../memory'
 import type { ResearchDeps } from '../research'
 import { autoTradingPromptPlugin } from '../plugins/auto-trading-prompt'
 import { autoTradingToolsPlugin } from '../plugins/auto-trading-tools'
@@ -16,7 +16,7 @@ export interface AutoTradingAgentPresetDeps {
   alpacaClient: AlpacaClient
   db: PrismaClient
   toolDeps: ToolDeps
-  memoryDeps?: MemoryDeps
+  memoryDeps?: StoreDeps
   researchDeps?: ResearchDeps
 }
 
@@ -38,7 +38,7 @@ export function autoTradingAgentPreset(deps: AutoTradingAgentPresetDeps): AIPlug
     }),
     autoTradingPromptPlugin(),
     sessionPlugin(),
-    memoryPlugin({ skipTranscript: true }),
+    memoryPlugin({ includeHistory: true }),
     skillPlugin({ skillsDirectory: resolve(import.meta.dir, '../../../../skills') }),
     autoTradingToolsPlugin({ tradingAgentDeps }),
   ]
