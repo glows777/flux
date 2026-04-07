@@ -12,6 +12,7 @@ import '../helpers/mock-boundaries'
 
 import { cleanupExpiredReports } from '@/core/ai/cache'
 import { prisma } from '@/core/db'
+import { getSlotContent, writeSlot, getSlotHistory, SlotContentTooLongError } from '@/core/ai/memory/store'
 import { truncateAllTables } from '../helpers/db-utils'
 
 describe('Real Database Operations (P4)', () => {
@@ -177,5 +178,55 @@ describe('Real Database Operations (P4)', () => {
         expect(watchlist).not.toBeNull()
         expect(info).not.toBeNull()
         expect(watchlist?.symbol).toBe(info?.symbol)
+    })
+})
+
+// ─── MemoryVersion store functions ───
+
+describe('MemoryVersion store functions', () => {
+    beforeEach(async () => {
+        await prisma.memoryVersion.deleteMany()
+    })
+
+    afterAll(async () => {
+        await prisma.memoryVersion.deleteMany()
+    })
+
+    it('writeSlot then getSlotContent returns the written content', async () => {
+        await writeSlot('user_profile', '成长股偏好', 'agent', '测试写入')
+        const result = await getSlotContent('user_profile')
+        expect(result).toBe('成长股偏好')
+    })
+
+    it('getSlotContent returns null for empty slot', async () => {
+        const result = await getSlotContent('market_views')
+        expect(result).toBeNull()
+    })
+
+    it('multiple writes, getSlotContent returns latest version', async () => {
+        await writeSlot('lessons', '教训1', 'agent')
+        await writeSlot('lessons', '教训2', 'agent')
+        await writeSlot('lessons', '教训3', 'agent')
+        const result = await getSlotContent('lessons')
+        expect(result).toBe('教训3')
+    })
+
+    it('getSlotHistory returns 3 versions in descending order', async () => {
+        await writeSlot('lessons', '教训1', 'agent')
+        await writeSlot('lessons', '教训2', 'agent')
+        await writeSlot('lessons', '教训3', 'agent')
+        const history = await getSlotHistory('lessons', 10)
+        expect(history).toHaveLength(3)
+        expect(history[0].content).toBe('教训3') // latest first
+        expect(history[2].content).toBe('教训1') // oldest last
+    })
+
+    it('writeSlot throws SlotContentTooLongError when content exceeds limit, no DB record created', async () => {
+        const tooLong = 'A'.repeat(501) // user_profile limit is 500
+        await expect(
+            writeSlot('user_profile', tooLong, 'agent'),
+        ).rejects.toBeInstanceOf(SlotContentTooLongError)
+        const result = await getSlotContent('user_profile')
+        expect(result).toBeNull() // no record created
     })
 })
