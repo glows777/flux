@@ -95,11 +95,17 @@ async function main() {
     if (discordConfig) {
         discord = new DiscordAdapter(discordConfig, gateway)
         channels.set('discord', discord)
-        await discord.start()
-        discord.setCallbacks({
-            onBeat: () => heartbeat.beat('discord'),
-            onProgress: () => heartbeat.progress('discord'),
-        })
+        try {
+            await discord.start()
+            discord.setCallbacks({
+                onBeat: () => heartbeat.beat('discord'),
+                onProgress: () => heartbeat.progress('discord'),
+            })
+        } catch (error) {
+            console.error('Discord bot failed to start (continuing without it):', error)
+            channels.delete('discord')
+            discord = null
+        }
     } else {
         console.log('Discord bot disabled (no DISCORD_BOT_TOKEN)')
     }

@@ -62,7 +62,7 @@ describe('getMarketStatus', () => {
     })
 
     it('returns one of the expected market status values', () => {
-        const valid = ['盘前', '开盘', '收盘前', '盘后', '休市（周末）']
+        const valid = ['盘前', '开盘', '收盘前', '盘后', '休市（周末）', '休市']
         const status = getMarketStatus()
         expect(valid).toContain(status)
     })
