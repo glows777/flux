@@ -280,7 +280,7 @@ export function ChatPage() {
 
                                 let messageNode: React.ReactNode = null
                                 if (msg.role === 'user') {
-                                    const textPart = msg.parts.find(p => p.type === 'text')
+                                    const textPart = msg.parts?.find(p => p.type === 'text')
                                     const text = textPart && 'text' in textPart ? textPart.text : ''
                                     messageNode = <UserMessage key={msg.id} content={text} />
                                 } else if (msg.role === 'assistant') {
