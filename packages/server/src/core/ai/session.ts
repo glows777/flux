@@ -8,7 +8,14 @@
 import type { PrismaClient } from '@prisma/client'
 import type { UIMessage } from 'ai'
 import { prisma as defaultPrisma } from '@/core/db'
-import type { TranscriptMessage } from './memory/types'
+
+// --- Types ---
+
+/** Message with timestamp for transcript loading */
+interface TranscriptMessage {
+  readonly message: UIMessage
+  readonly createdAt: Date
+}
 
 // --- Constants ---
 
