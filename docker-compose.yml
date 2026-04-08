@@ -1,13 +1,13 @@
 services:
   db:
     image: pgvector/pgvector:pg17
-    ports: ["5432:5432"]
+    ports: ["5433:5432"]
     environment:
       POSTGRES_DB: flux
       POSTGRES_USER: flux_user
       POSTGRES_PASSWORD: flux_password
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
 
   server:
     build:
@@ -37,4 +37,6 @@ services:
       - ./packages/web:/app/packages/web
 
 volumes:
-  pgdata:
+  postgres_data:
+    external: true
+    name: flux_postgres_data
