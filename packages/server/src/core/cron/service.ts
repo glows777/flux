@@ -78,10 +78,12 @@ export async function listCronJobRuns(
             orderBy: { createdAt: 'desc' },
             skip,
             take: limit,
+            include: { job: { select: { name: true } } },
         }),
         deps.cronJobRun.count({ where: { jobId } }),
     ])
-    return { runs, total }
+    const data = runs.map((r: any) => ({ ...r, jobName: r.job?.name ?? '' }))
+    return { runs: data, total }
 }
 
 export async function listAllRuns(
