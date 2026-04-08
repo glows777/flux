@@ -170,6 +170,7 @@ model CronJob {
   runs  CronJobRun[]
 }
 
+// CronJobRun (定时任务执行记录)
 model CronJobRun {
   id          String   @id @default(cuid())
   jobId       String
@@ -180,6 +181,8 @@ model CronJobRun {
   durationMs  Int?
   triggeredBy String   @default("scheduler")
   createdAt   DateTime @default(now())
+
+  @@index([jobId, createdAt(sort: Desc)])
 }
 
 // MemoryVersion (Memory System v2 — Slot 版本化存储)
