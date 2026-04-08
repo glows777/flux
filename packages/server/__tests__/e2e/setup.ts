@@ -17,6 +17,7 @@ import {
     mockCleanMessages,
     mockConvertToModelMessages,
     mockCreateMemoryTools,
+    mockCreateHistoryTool,
     // research mocks
     mockCreateResearchTools,
     mockDeleteDocument,
@@ -32,10 +33,13 @@ import {
     mockGetEmbeddingModel,
     mockGetModel,
     mockGetToolName,
+    mockGetSlotContent,
+    mockWriteSlot,
+    mockGetSlotHistory,
     mockIsToolUIPart,
     mockListDocuments,
     mockLoadMemoryContext,
-    // memory mocks
+    // memory mocks (legacy, kept for any remaining references)
     mockReadDocument,
     mockReindexDocument,
     mockScheduleReindex,
@@ -130,29 +134,23 @@ mock.module('@/core/ai/providers', () => ({
 }))
 
 mock.module('@/core/ai/memory', () => ({
-    readDocument: mockReadDocument,
-    getDocumentDetail: mockGetDocumentDetail,
-    writeDocument: mockWriteDocument,
-    appendDocument: mockAppendDocument,
-    deleteDocument: mockDeleteDocument,
-    listDocuments: mockListDocuments,
-    searchMemory: mockSearchMemory,
+    // v2 slot-based API
+    getSlotContent: mockGetSlotContent,
+    writeSlot: mockWriteSlot,
+    getSlotHistory: mockGetSlotHistory,
     loadMemoryContext: mockLoadMemoryContext,
-    syncPortfolioDocument: mockSyncPortfolioDocument,
-    generateEmbedding: mockGenerateEmbedding,
     createMemoryTools: mockCreateMemoryTools,
-    cleanMessages: mockCleanMessages,
-    appendTranscript: mockAppendTranscript,
-    reindexDocument: mockReindexDocument,
-    scheduleReindex: mockScheduleReindex,
-    flushReindex: mockFlushReindex,
-    MEMORY_PATHS: {
-        PROFILE: 'profile.md',
-        PORTFOLIO: 'portfolio.md',
-        WATCHLIST_CONTEXT: 'watchlist-context.md',
-        TRADING_LESSONS: 'trading-lessons.md',
+    createHistoryTool: mockCreateHistoryTool,
+    SlotContentTooLongError: class SlotContentTooLongError extends Error {
+        slot: string; actual: number; limit: number
+        constructor(slot: string, actual: number, limit: number) {
+            super(`Slot "${slot}" content too long`)
+            this.name = 'SlotContentTooLongError'
+            this.slot = slot; this.actual = actual; this.limit = limit
+        }
     },
-    MEMORY_DIRS: { OPINIONS: 'opinions', DECISIONS: 'decisions', LOG: 'log' },
+    VALID_SLOTS: ['user_profile', 'portfolio_thesis', 'market_views', 'active_focus', 'lessons', 'agent_strategy'],
+    SLOT_LIMITS: { user_profile: 500, market_views: 500, active_focus: 500, lessons: 1000, portfolio_thesis: 2000, agent_strategy: 2000 },
 }))
 
 mock.module('@/core/ai/research', () => ({

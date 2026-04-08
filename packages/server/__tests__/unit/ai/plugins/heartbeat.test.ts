@@ -43,8 +43,12 @@ const makeDeps = (overrides: Record<string, unknown> = {}) => ({
     },
   },
   memoryDeps: {
-    readDocument: mock(() => Promise.resolve('strategy content')),
-    writeDocument: mock(() => Promise.resolve()),
+    db: {
+      memoryVersion: {
+        findFirst: mock(() => Promise.resolve({ content: 'strategy content' })),
+        create: mock(() => Promise.resolve({ id: 'v1' })),
+      },
+    },
   },
   ...overrides,
 })
@@ -56,8 +60,15 @@ mock.module('../../../../src/core/trading-agent/loop', () => ({
 }))
 
 mock.module('../../../../src/core/ai/memory/store', () => ({
-  readDocument: mock(() => Promise.resolve('strategy content')),
-  writeDocument: mock(() => Promise.resolve()),
+  getSlotContent: mock(() => Promise.resolve('strategy content')),
+  writeSlot: mock(() => Promise.resolve()),
+  getSlotHistory: mock(() => Promise.resolve([])),
+  SlotContentTooLongError: class SlotContentTooLongError extends Error {
+    constructor(slot: string, actual: number, limit: number) {
+      super(`Slot "${slot}" content too long`)
+      this.name = 'SlotContentTooLongError'
+    }
+  },
 }))
 
 mock.module('../../../../src/core/trading-agent/discord-hook', () => ({
