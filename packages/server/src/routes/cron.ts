@@ -6,6 +6,8 @@ import {
     deleteCronJob,
     getCronJob,
     listCronJobs,
+    listCronJobRuns,
+    listAllRuns,
     updateCronJob,
 } from '@/core/cron/service'
 import { type CronScheduler, parseSchedule } from '@/scheduler/engine'
@@ -32,6 +34,13 @@ const updateSchema = z.object({
     }).optional(),
 })
 
+const runsQuerySchema = z.object({
+    page: z.string().optional().transform(v => v ? parseInt(v, 10) : 1),
+    limit: z.string().optional().transform(v => v ? parseInt(v, 10) : 20),
+    jobId: z.string().optional(),
+    status: z.string().optional(),
+})
+
 interface CronRouteDeps {
     scheduler?: CronScheduler
 }
@@ -48,6 +57,25 @@ export function createCronRoutes(deps: CronRouteDeps = {}) {
                 return c.json({ success: true, data })
             } catch (error) {
                 return c.json({ success: false, error: 'Failed to list cron jobs' }, 500)
+            }
+        })
+        .get('/runs', sValidator('query', runsQuerySchema), async (c) => {
+            try {
+                const { page, limit, jobId, status } = c.req.valid('query')
+                const result = await listAllRuns({ jobId, status }, { page, limit })
+                return c.json({ success: true, data: result.runs, total: result.total })
+            } catch (error) {
+                return c.json({ success: false, error: 'Failed to list runs' }, 500)
+            }
+        })
+        .get('/:id/runs', sValidator('query', runsQuerySchema), async (c) => {
+            try {
+                const id = c.req.param('id')
+                const { page, limit } = c.req.valid('query')
+                const result = await listCronJobRuns(id, { page, limit })
+                return c.json({ success: true, data: result.runs, total: result.total })
+            } catch (error) {
+                return c.json({ success: false, error: 'Failed to list job runs' }, 500)
             }
         })
         .post('/', sValidator('json', createSchema), async (c) => {
