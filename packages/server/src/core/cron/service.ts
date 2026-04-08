@@ -68,7 +68,7 @@ export async function listCronJobRuns(
     pagination: { page?: number; limit?: number } = {},
     deps: PrismaLike = prisma,
 ) {
-    const page = pagination.page ?? 1
+    const page = Math.max(1, pagination.page ?? 1)
     const limit = pagination.limit ?? 20
     const skip = (page - 1) * limit
 
@@ -89,7 +89,7 @@ export async function listAllRuns(
     pagination: { page?: number; limit?: number } = {},
     deps: PrismaLike = prisma,
 ) {
-    const page = pagination.page ?? 1
+    const page = Math.max(1, pagination.page ?? 1)
     const limit = pagination.limit ?? 50
     const skip = (page - 1) * limit
 
@@ -108,6 +108,7 @@ export async function listAllRuns(
         deps.cronJobRun.count({ where }),
     ])
 
+    // Prisma loses the relation type when `where` is Record<string, unknown>; cast is safe here
     const data = runs.map((r: any) => ({ ...r, jobName: r.job?.name ?? '' }))
     return { runs: data, total }
 }
