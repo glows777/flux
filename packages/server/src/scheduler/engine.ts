@@ -184,15 +184,19 @@ export class CronScheduler {
                     retryCount: 0,
                 },
             })
-            await this.deps.prisma.cronJobRun.create({
-                data: {
-                    jobId,
-                    status: 'success',
-                    output: result.output ?? null,
-                    durationMs,
-                    triggeredBy,
-                },
-            })
+            try {
+                await this.deps.prisma.cronJobRun.create({
+                    data: {
+                        jobId,
+                        status: 'success',
+                        output: result.output ?? null,
+                        durationMs,
+                        triggeredBy,
+                    },
+                })
+            } catch (e) {
+                console.error(`Failed to write run record for job ${jobId}:`, e)
+            }
         } else {
             const job = await this.deps.prisma.cronJob.findUnique({ where: { id: jobId } })
             if (!job) return
@@ -210,16 +214,20 @@ export class CronScheduler {
                     enabled: shouldDisable ? false : undefined,
                 },
             })
-            await this.deps.prisma.cronJobRun.create({
-                data: {
-                    jobId,
-                    status: 'error',
-                    output: result.output ?? null,
-                    error: result.error ?? null,
-                    durationMs,
-                    triggeredBy,
-                },
-            })
+            try {
+                await this.deps.prisma.cronJobRun.create({
+                    data: {
+                        jobId,
+                        status: 'error',
+                        output: result.output ?? null,
+                        error: result.error ?? null,
+                        durationMs,
+                        triggeredBy,
+                    },
+                })
+            } catch (e) {
+                console.error(`Failed to write run record for job ${jobId}:`, e)
+            }
 
             if (shouldDisable) {
                 await this.removeJob(jobId)
