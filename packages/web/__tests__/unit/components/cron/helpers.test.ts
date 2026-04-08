@@ -27,7 +27,8 @@ describe('formatRelativeTime', () => {
     })
 
     it('returns minutes ago', () => {
-        const past = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+        // Subtract extra 500ms buffer so diff reliably floors to 5m
+        const past = new Date(Date.now() - 5 * 60 * 1000 - 500).toISOString()
         expect(formatRelativeTime(past)).toBe('5m ago')
     })
 
