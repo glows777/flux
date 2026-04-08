@@ -282,12 +282,19 @@ describe('buildTimelineSummary', () => {
     expect(buildTimelineSummary(steps)).toBe('搜索了 "apple"。')
   })
 
-  it('summarizes memory tools', () => {
-    const steps = [
-      makeStep('memory_search', { output: { results: [1, 2] } }),
-      makeStep('memory_read'),
-    ]
-    expect(buildTimelineSummary(steps)).toBe('回忆了 3 条记录。')
+  it('summarizes memory write tools', () => {
+    const steps = [makeStep('update_core_memory', { output: { success: true, slot: 'lessons', message: '已更新 lessons' } })]
+    expect(buildTimelineSummary(steps)).toBe('更新了记忆。')
+  })
+
+  it('summarizes save_lesson', () => {
+    const steps = [makeStep('save_lesson', { output: { success: true } })]
+    expect(buildTimelineSummary(steps)).toBe('更新了记忆。')
+  })
+
+  it('summarizes read_history', () => {
+    const steps = [makeStep('read_history', { output: { slot: 'lessons', versions: [{ id: '1' }] } })]
+    expect(buildTimelineSummary(steps)).toBe('回顾了历史记录。')
   })
 
   it('combines multiple categories', () => {
