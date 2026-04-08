@@ -13,6 +13,7 @@ export interface CronJobRow {
     retryCount: number
     createdAt: string
     nextRunAt: string | null
+    channelTarget?: { type: string; channelId: string }
 }
 
 export interface CronJobRunRow {

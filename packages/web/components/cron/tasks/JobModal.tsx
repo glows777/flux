@@ -32,7 +32,7 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
             setSchedule(job.schedule)
             setTaskType(job.taskType)
             setPrompt(job.taskPayload.prompt)
-            setChannelId((job as any).channelTarget?.channelId ?? '')
+            setChannelId(job.channelTarget?.channelId ?? '')
             setEnabled(job.enabled)
         } else {
             setName('')
@@ -53,10 +53,9 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
         const body = {
             name,
             schedule,
-            taskType,
             taskPayload: { prompt },
+            ...(job ? { enabled } : { taskType }),
             ...(channelId ? { channelTarget: { type: 'discord', channelId } } : {}),
-            ...(job ? { enabled } : {}),
         }
 
         try {
@@ -94,8 +93,9 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
                     <form onSubmit={handleSubmit} className='flex flex-col gap-4'>
                         {/* Name */}
                         <div className='flex flex-col gap-1.5'>
-                            <label className='text-xs text-slate-400'>Name</label>
+                            <label htmlFor='job-name' className='text-xs text-slate-400'>Name</label>
                             <input
+                                id='job-name'
                                 required
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
@@ -106,8 +106,9 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
 
                         {/* Schedule */}
                         <div className='flex flex-col gap-1.5'>
-                            <label className='text-xs text-slate-400'>Schedule</label>
+                            <label htmlFor='job-schedule' className='text-xs text-slate-400'>Schedule</label>
                             <input
+                                id='job-schedule'
                                 required
                                 value={schedule}
                                 onChange={(e) => setSchedule(e.target.value)}
@@ -145,8 +146,9 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
 
                         {/* Prompt */}
                         <div className='flex flex-col gap-1.5'>
-                            <label className='text-xs text-slate-400'>Prompt</label>
+                            <label htmlFor='job-prompt' className='text-xs text-slate-400'>Prompt</label>
                             <textarea
+                                id='job-prompt'
                                 required
                                 rows={3}
                                 value={prompt}
@@ -158,8 +160,9 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
 
                         {/* Channel ID (optional) */}
                         <div className='flex flex-col gap-1.5'>
-                            <label className='text-xs text-slate-400'>Discord Channel ID <span className='text-slate-600'>(optional)</span></label>
+                            <label htmlFor='job-channel-id' className='text-xs text-slate-400'>Discord Channel ID <span className='text-slate-600'>(optional)</span></label>
                             <input
+                                id='job-channel-id'
                                 value={channelId}
                                 onChange={(e) => setChannelId(e.target.value)}
                                 className='px-3 py-2 text-xs bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/50 font-mono'
