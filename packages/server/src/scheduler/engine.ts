@@ -49,6 +49,9 @@ interface CronSchedulerDeps {
             update: (args: any) => Promise<any>
             findUnique: (args: any) => Promise<any>
         }
+        cronJobRun: {
+            create: (args: any) => Promise<any>
+        }
     }
 }
 
@@ -112,10 +115,11 @@ export class CronScheduler {
 
         const gen = this.generation
         this.running.add(jobId)
+        const startMs = Date.now()
         try {
             const result = await this.executor.execute(job)
             if (gen !== this.generation) return
-            await this.handleResult(jobId, result)
+            await this.handleResult(jobId, result, 'manual', Date.now() - startMs)
             try { if (result.success) this.progressCallback?.() } catch { /* non-fatal */ }
         } finally {
             if (gen === this.generation) this.running.delete(jobId)
@@ -150,10 +154,11 @@ export class CronScheduler {
             }
 
             this.running.add(job.id)
+            const startMs = Date.now()
             try {
                 const result = await this.executor.execute(job)
                 if (gen !== this.generation) return // stale execution after restart
-                await this.handleResult(job.id, result)
+                await this.handleResult(job.id, result, 'scheduler', Date.now() - startMs)
                 try { if (result.success) this.progressCallback?.() } catch { /* non-fatal */ }
             } finally {
                 if (gen === this.generation) this.running.delete(job.id)
@@ -163,7 +168,12 @@ export class CronScheduler {
         this.jobs.set(job.id, cron)
     }
 
-    private async handleResult(jobId: string, result: ExecutionResult): Promise<void> {
+    private async handleResult(
+        jobId: string,
+        result: ExecutionResult,
+        triggeredBy: 'scheduler' | 'manual',
+        durationMs: number,
+    ): Promise<void> {
         if (result.success) {
             await this.deps.prisma.cronJob.update({
                 where: { id: jobId },
@@ -172,6 +182,15 @@ export class CronScheduler {
                     lastRunStatus: 'success',
                     lastRunError: null,
                     retryCount: 0,
+                },
+            })
+            await this.deps.prisma.cronJobRun.create({
+                data: {
+                    jobId,
+                    status: 'success',
+                    output: result.output ?? null,
+                    durationMs,
+                    triggeredBy,
                 },
             })
         } else {
@@ -189,6 +208,16 @@ export class CronScheduler {
                     lastRunError: result.error,
                     retryCount: newRetryCount,
                     enabled: shouldDisable ? false : undefined,
+                },
+            })
+            await this.deps.prisma.cronJobRun.create({
+                data: {
+                    jobId,
+                    status: 'error',
+                    output: result.output ?? null,
+                    error: result.error ?? null,
+                    durationMs,
+                    triggeredBy,
                 },
             })
 
