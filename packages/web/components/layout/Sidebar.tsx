@@ -35,7 +35,11 @@ export function Sidebar() {
                     />
                     <NavIcon icon={BarChart2} disabled />
                     <NavIcon icon={Globe} disabled />
-                    <NavIcon icon={Layers} disabled />
+                    <NavIcon
+                        icon={Layers}
+                        active={pathname === '/cron'}
+                        onClick={() => router.push('/cron')}
+                    />
                 </nav>
             </div>
 
