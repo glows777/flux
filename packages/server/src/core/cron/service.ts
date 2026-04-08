@@ -1,6 +1,6 @@
 import { prisma } from '@/core/db'
 
-type PrismaLike = Pick<typeof prisma, 'cronJob'>
+type PrismaLike = Pick<typeof prisma, 'cronJob' | 'cronJobRun'>
 
 export async function createCronJob(
     data: {
@@ -47,6 +47,69 @@ export async function deleteCronJob(id: string, deps: PrismaLike = prisma) {
 
 export async function getCronJob(id: string, deps: PrismaLike = prisma) {
     return deps.cronJob.findUnique({ where: { id } })
+}
+
+export async function createCronJobRun(
+    data: {
+        jobId: string
+        status: string
+        output?: string | null
+        error?: string | null
+        durationMs?: number | null
+        triggeredBy?: string
+    },
+    deps: PrismaLike = prisma,
+) {
+    return deps.cronJobRun.create({ data })
+}
+
+export async function listCronJobRuns(
+    jobId: string,
+    pagination: { page?: number; limit?: number } = {},
+    deps: PrismaLike = prisma,
+) {
+    const page = pagination.page ?? 1
+    const limit = pagination.limit ?? 20
+    const skip = (page - 1) * limit
+
+    const [runs, total] = await Promise.all([
+        deps.cronJobRun.findMany({
+            where: { jobId },
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+        }),
+        deps.cronJobRun.count({ where: { jobId } }),
+    ])
+    return { runs, total }
+}
+
+export async function listAllRuns(
+    filters: { jobId?: string; status?: string } = {},
+    pagination: { page?: number; limit?: number } = {},
+    deps: PrismaLike = prisma,
+) {
+    const page = pagination.page ?? 1
+    const limit = pagination.limit ?? 50
+    const skip = (page - 1) * limit
+
+    const where: Record<string, unknown> = {}
+    if (filters.jobId) where.jobId = filters.jobId
+    if (filters.status) where.status = filters.status
+
+    const [runs, total] = await Promise.all([
+        deps.cronJobRun.findMany({
+            where,
+            orderBy: { createdAt: 'desc' },
+            skip,
+            take: limit,
+            include: { job: { select: { name: true } } },
+        }),
+        deps.cronJobRun.count({ where }),
+    ])
+
+    const data = runs.map((r: any) => ({ ...r, jobName: r.job?.name ?? '' }))
+    return { runs: data, total }
 }
 
 export async function seedTradingHeartbeat(deps?: { db?: typeof prisma }): Promise<void> {
