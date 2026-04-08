@@ -50,32 +50,24 @@ describe('getLoadingLabel', () => {
     expect(getLoadingLabel('searchStock')).toBe('搜索股票')
   })
 
-  it('memory_read always returns fixed label', () => {
-    expect(getLoadingLabel('memory_read')).toBe('读取记忆')
+  it('update_core_memory with slot', () => {
+    expect(getLoadingLabel('update_core_memory', { slot: 'market_views' })).toBe('更新 market_views 记忆')
   })
 
-  it('memory_write always returns fixed label', () => {
-    expect(getLoadingLabel('memory_write')).toBe('记录笔记')
+  it('update_core_memory without input', () => {
+    expect(getLoadingLabel('update_core_memory')).toBe('更新记忆')
   })
 
-  it('memory_append always returns fixed label', () => {
-    expect(getLoadingLabel('memory_append')).toBe('追加记录')
+  it('save_lesson always returns fixed label', () => {
+    expect(getLoadingLabel('save_lesson')).toBe('记录教训')
   })
 
-  it('memory_search with query', () => {
-    expect(getLoadingLabel('memory_search', { query: 'AAPL' })).toBe('回忆关于 AAPL 的记录')
+  it('read_history with slot', () => {
+    expect(getLoadingLabel('read_history', { slot: 'lessons' })).toBe('回顾 lessons 历史')
   })
 
-  it('memory_search with symbol fallback', () => {
-    expect(getLoadingLabel('memory_search', { symbol: 'TSLA' })).toBe('回忆关于 TSLA 的记录')
-  })
-
-  it('memory_search without input', () => {
-    expect(getLoadingLabel('memory_search')).toBe('回忆上下文')
-  })
-
-  it('memory_list always returns fixed label', () => {
-    expect(getLoadingLabel('memory_list')).toBe('查看记忆列表')
+  it('read_history without input', () => {
+    expect(getLoadingLabel('read_history')).toBe('回顾历史记录')
   })
 
   it('webSearch with query', () => {
@@ -192,26 +184,17 @@ describe('getCompletionSummary', () => {
     expect(getCompletionSummary('searchStock', results)).toBe('找到 3 个匹配')
   })
 
-  it('memory_read returns fixed label', () => {
-    expect(getCompletionSummary('memory_read', { content: 'data' })).toBe('已读取')
+  it('update_core_memory returns slot name from message', () => {
+    expect(getCompletionSummary('update_core_memory', { success: true, slot: 'lessons', message: '已更新 lessons' })).toBe('已更新 lessons')
   })
 
-  it('memory_write returns fixed label', () => {
-    expect(getCompletionSummary('memory_write', { success: true })).toBe('已记录')
+  it('save_lesson returns fixed label', () => {
+    expect(getCompletionSummary('save_lesson', { success: true })).toBe('已记录教训')
   })
 
-  it('memory_append returns fixed label', () => {
-    expect(getCompletionSummary('memory_append', { success: true })).toBe('已追加')
-  })
-
-  it('memory_search counts results', () => {
-    const output = { results: [{ text: 'a' }, { text: 'b' }, { text: 'c' }] }
-    expect(getCompletionSummary('memory_search', output)).toBe('找到 3 条相关记录')
-  })
-
-  it('memory_list counts documents', () => {
-    const output = { documents: Array.from({ length: 5 }, () => ({ id: '1' })) }
-    expect(getCompletionSummary('memory_list', output)).toBe('共 5 份文档')
+  it('read_history counts versions', () => {
+    const output = { slot: 'lessons', versions: [{ id: '1' }, { id: '2' }] }
+    expect(getCompletionSummary('read_history', output)).toBe('找到 2 条历史')
   })
 
   it('webFetch extracts hostname from output url', () => {
