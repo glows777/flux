@@ -50,13 +50,16 @@ export function RunsTable({ runs }: RunsTableProps) {
                                 </td>
                                 <td className='px-4 py-3 text-slate-400 font-mono'>{formatDurationMs(run.durationMs)}</td>
                                 <td className='px-4 py-3 max-w-[200px]'>
-                                    {run.output ? (
+                                    {run.output || run.error ? (
                                         <button
                                             type='button'
                                             onClick={() => setSelectedRun(run)}
                                             className='text-slate-500 hover:text-white truncate block max-w-full text-left transition-colors'
                                         >
-                                            {run.output.slice(0, 60)}{run.output.length > 60 && '…'}
+                                            {run.output
+                                                ? (run.output.slice(0, 60) + (run.output.length > 60 ? '…' : ''))
+                                                : <span className='text-red-400/70'>error</span>
+                                            }
                                         </button>
                                     ) : (
                                         <span className='text-slate-700'>—</span>
@@ -80,6 +83,9 @@ export function RunsTable({ runs }: RunsTableProps) {
                                 <X className='w-4 h-4' />
                             </button>
                         </div>
+                        <Dialog.Description className='sr-only'>
+                            Full output for run {selectedRun?.id}
+                        </Dialog.Description>
                         <div className='flex gap-3 mb-4'>
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${statusBadgeClass(selectedRun?.status ?? '')}`}>
                                 {selectedRun?.status}
