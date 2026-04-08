@@ -155,8 +155,17 @@ export const mockGetToolName = mock((part: any) => part?.toolName ?? 'unknown')
 // generateId — returns a stable mock ID
 export const mockGenerateId = mock(() => 'mock-e2e-id-1')
 
-// ─── 3b. @/lib/ai/memory (barrel) ───
+// ─── 3b. @/core/ai/memory (barrel) — v2 slot-based API ───
 
+// v2 slot-based functions
+export const mockGetSlotContent = mock(() => Promise.resolve(null))
+export const mockWriteSlot = mock(() => Promise.resolve())
+export const mockGetSlotHistory = mock(() => Promise.resolve([]))
+export const mockLoadMemoryContext = mock(() => Promise.resolve(''))
+export const mockCreateMemoryTools = mock(() => ({}))
+export const mockCreateHistoryTool = mock(() => ({}))
+
+// ─── 3b-legacy. Kept for imports that haven't been cleaned up ───
 export const mockReadDocument = mock(() => Promise.resolve(null))
 export const mockGetDocumentDetail = mock(() => Promise.resolve(null))
 export const mockWriteDocument = mock(() => Promise.resolve())
@@ -164,12 +173,10 @@ export const mockAppendDocument = mock(() => Promise.resolve())
 export const mockDeleteDocument = mock(() => Promise.resolve())
 export const mockListDocuments = mock(() => Promise.resolve([]))
 export const mockSearchMemory = mock(() => Promise.resolve([]))
-export const mockLoadMemoryContext = mock(() => Promise.resolve(''))
 export const mockSyncPortfolioDocument = mock(() => Promise.resolve())
 export const mockGenerateEmbedding = mock(() =>
     Promise.resolve(new Array(3072).fill(0)),
 )
-export const mockCreateMemoryTools = mock(() => ({}))
 export const mockCleanMessages = mock(
     () => '## 14:32\n\n**User**: test\n\nAI response',
 )

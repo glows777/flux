@@ -1,42 +1,33 @@
 import { sValidator } from '@hono/standard-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import {
-    deleteDocument,
-    getDocumentDetail,
-    listDocuments,
-    searchMemory,
-    writeDocument,
-} from '@/core/ai/memory'
+import { getSlotContent, writeSlot, getSlotHistory } from '@/core/ai/memory'
+import { VALID_SLOTS, type MemorySlot } from '@/core/ai/memory/types'
 
-/** Memory path param: disallow "..", leading "/" etc. */
-const memoryPathParamSchema = z.object({
-    path: z.string().min(1).regex(/^[a-zA-Z0-9_\-/]+(\.[a-zA-Z0-9]+)?$/, 'Invalid memory path'),
+const SLOT_SCHEMA = z.enum(VALID_SLOTS as [MemorySlot, ...MemorySlot[]])
+
+const slotParamSchema = z.object({
+    slot: SLOT_SCHEMA,
 })
 
-/** PUT body: overwrite document content */
-const memoryWriteBodySchema = z.object({
-    content: z.string(),
+const slotWriteBodySchema = z.object({
+    content: z.string().min(1),
+    reason: z.string().optional(),
 })
 
-/** POST body: create new document */
-const memoryCreateBodySchema = z.object({
-    path: z.string().min(1).regex(/^[a-zA-Z0-9_\-/]+(\.[a-zA-Z0-9]+)?$/, 'Invalid memory path'),
-    content: z.string(),
-})
-
-/** GET /memory/search query params */
-const memorySearchQuerySchema = z.object({
-    q: z.string().min(1),
-    symbol: z.string().optional(),
-    limit: z.string().optional().default('5').transform((val, ctx) => {
-        const n = Number(val)
-        if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 20) {
-            ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'limit must be 1-20' })
-            return z.NEVER
-        }
-        return n
-    }),
+const historyQuerySchema = z.object({
+    limit: z
+        .string()
+        .optional()
+        .default('10')
+        .transform((val, ctx) => {
+            const n = Number(val)
+            if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 50) {
+                ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'limit must be 1-50' })
+                return z.NEVER
+            }
+            return n
+        }),
 })
 
 const onValidationError = (
@@ -50,120 +41,82 @@ const onValidationError = (
 }
 
 const memory = new Hono()
-    .get('/', async (c) => {
+
+    // GET /api/memory/slots — 列出所有 slot 最新内容
+    .get('/slots', async (c) => {
         try {
-            const docs = await listDocuments()
-            return c.json({ success: true, data: docs })
-        } catch {
-            return c.json(
-                { success: false, error: 'Failed to list memory documents' },
-                500,
+            const entries = await Promise.all(
+                VALID_SLOTS.map(async (slot) => {
+                    const content = await getSlotContent(slot)
+                    return { slot, content }
+                }),
             )
+            return c.json({ success: true, data: entries })
+        } catch {
+            return c.json({ success: false, error: 'Failed to list slots' }, 500)
         }
     })
 
+    // GET /api/memory/slots/:slot — 获取指定 slot 最新内容
+    .get('/slots/:slot', async (c) => {
+        const parsed = slotParamSchema.safeParse({ slot: c.req.param('slot') })
+        if (!parsed.success) {
+            return c.json({ success: false, error: 'Invalid slot name' }, 400)
+        }
+        try {
+            const content = await getSlotContent(parsed.data.slot)
+            return c.json({ success: true, data: { slot: parsed.data.slot, content } })
+        } catch {
+            return c.json({ success: false, error: 'Failed to read slot' }, 500)
+        }
+    })
+
+    // GET /api/memory/slots/:slot/history — 获取版本历史
     .get(
-        '/search',
-        sValidator('query', memorySearchQuerySchema, onValidationError),
+        '/slots/:slot/history',
+        sValidator('query', historyQuerySchema, onValidationError),
         async (c) => {
+            const parsed = slotParamSchema.safeParse({ slot: c.req.param('slot') })
+            if (!parsed.success) {
+                return c.json({ success: false, error: 'Invalid slot name' }, 400)
+            }
             try {
-                const { q, symbol, limit } = c.req.valid('query')
-                const results = await searchMemory(q, undefined, { symbol, limit })
-                const data = results.map((r) => ({
-                    id: r.id,
-                    docPath: r.docPath,
-                    content: r.content.length > 500 ? r.content.slice(0, 500) : r.content,
-                    score: r.score,
-                    entities: r.entities,
-                }))
-                return c.json({ success: true, data })
+                const { limit } = c.req.valid('query')
+                const history = await getSlotHistory(parsed.data.slot, limit)
+                return c.json({
+                    success: true,
+                    data: history.map((v) => ({
+                        id: v.id,
+                        author: v.author,
+                        reason: v.reason,
+                        createdAt: v.createdAt.toISOString(),
+                        content: v.content,
+                    })),
+                })
             } catch {
-                return c.json(
-                    { success: false, error: 'Failed to search memory' },
-                    500,
-                )
+                return c.json({ success: false, error: 'Failed to read slot history' }, 500)
             }
         },
     )
 
-    .get(
-        '/:path{.+}',
-        async (c) => {
-            try {
-                const path = c.req.param('path')
-                const parsed = memoryPathParamSchema.safeParse({ path })
-                if (!parsed.success) {
-                    return c.json({ success: false, error: 'Invalid memory path' }, 400)
-                }
-                const doc = await getDocumentDetail(parsed.data.path)
-                if (doc === null) {
-                    return c.json({ success: false, error: 'Document not found' }, 404)
-                }
-                return c.json({ success: true, data: doc })
-            } catch {
-                return c.json(
-                    { success: false, error: 'Failed to read memory document' },
-                    500,
-                )
-            }
-        },
-    )
-
+    // PUT /api/memory/slots/:slot — 用户手动写入
     .put(
-        '/:path{.+}',
-        sValidator('json', memoryWriteBodySchema, onValidationError),
+        '/slots/:slot',
+        sValidator('json', slotWriteBodySchema, onValidationError),
         async (c) => {
-            try {
-                const path = c.req.param('path')
-                const parsed = memoryPathParamSchema.safeParse({ path })
-                if (!parsed.success) {
-                    return c.json({ success: false, error: 'Invalid memory path' }, 400)
-                }
-                const { content } = c.req.valid('json')
-                await writeDocument(parsed.data.path, content)
-                return c.json({ success: true })
-            } catch {
-                return c.json(
-                    { success: false, error: 'Failed to write memory document' },
-                    500,
-                )
+            const parsed = slotParamSchema.safeParse({ slot: c.req.param('slot') })
+            if (!parsed.success) {
+                return c.json({ success: false, error: 'Invalid slot name' }, 400)
             }
-        },
-    )
-
-    .post(
-        '/',
-        sValidator('json', memoryCreateBodySchema, onValidationError),
-        async (c) => {
             try {
-                const { path, content } = c.req.valid('json')
-                await writeDocument(path, content)
-                return c.json({ success: true }, 201)
-            } catch {
-                return c.json(
-                    { success: false, error: 'Failed to create memory document' },
-                    500,
-                )
-            }
-        },
-    )
-
-    .delete(
-        '/:path{.+}',
-        async (c) => {
-            try {
-                const path = c.req.param('path')
-                const parsed = memoryPathParamSchema.safeParse({ path })
-                if (!parsed.success) {
-                    return c.json({ success: false, error: 'Invalid memory path' }, 400)
-                }
-                await deleteDocument(parsed.data.path)
+                const { content, reason } = c.req.valid('json')
+                await writeSlot(parsed.data.slot, content, 'user', reason)
                 return c.json({ success: true })
-            } catch {
-                return c.json(
-                    { success: false, error: 'Failed to delete memory document' },
-                    500,
-                )
+            } catch (e: any) {
+                if (e?.name === 'SlotContentTooLongError') {
+                    return c.json({ success: false, error: e.message }, 422)
+                }
+                return c.json({ success: false, error: 'Failed to write slot' }, 500)
             }
         },
     )

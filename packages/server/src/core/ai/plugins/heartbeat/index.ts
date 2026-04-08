@@ -1,13 +1,12 @@
 import type { AIPlugin, HookContext, ChatParams } from '../../runtime/types'
 import type { AlpacaClient } from '@/core/broker/alpaca-client'
 import type { PrismaClient } from '@prisma/client'
-import type { MemoryDeps } from '@/core/ai/memory/types'
+import type { StoreDeps } from '@/core/ai/memory/store'
 import { loadOrCreateBaseline, getMarketStatus } from '@/core/trading-agent/loop'
-import { readDocument, writeDocument } from '@/core/ai/memory/store'
+import { getSlotContent, writeSlot } from '@/core/ai/memory/store'
 import { notifyError } from '@/core/trading-agent/discord-hook'
 import {
   MAX_STEPS,
-  STRATEGY_PATH,
   SEED_STRATEGY_CONTENT,
   type HeartbeatContext,
 } from '@/core/trading-agent/types'
@@ -15,7 +14,7 @@ import {
 export interface HeartbeatPluginDeps {
   readonly alpacaClient: AlpacaClient
   readonly db: PrismaClient
-  readonly memoryDeps?: MemoryDeps
+  readonly memoryDeps?: StoreDeps
 }
 
 export function heartbeatPlugin(deps: HeartbeatPluginDeps): AIPlugin {
@@ -82,9 +81,9 @@ export function heartbeatPlugin(deps: HeartbeatPluginDeps): AIPlugin {
       ctx.meta.set('heartbeat', heartbeatCtx)
 
       // 5. Ensure seed strategy exists
-      const strategyContent = await readDocument(STRATEGY_PATH, memoryDeps)
+      const strategyContent = await getSlotContent('agent_strategy', memoryDeps)
       if (!strategyContent) {
-        await writeDocument(STRATEGY_PATH, SEED_STRATEGY_CONTENT, memoryDeps)
+        await writeSlot('agent_strategy', SEED_STRATEGY_CONTENT, 'system', 'initial seed', memoryDeps)
       }
     },
 

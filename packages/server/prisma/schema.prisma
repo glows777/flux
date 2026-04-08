@@ -2,13 +2,11 @@
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider        = "prisma-client-js"
-  previewFeatures = ["postgresqlExtensions"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider   = "postgresql"
-  extensions = [vector]
+  provider = "postgresql"
 }
 
 // Watchlist (自选股列表)
@@ -151,17 +149,6 @@ model MorningBriefCache {
   updatedAt DateTime @updatedAt       // 手动刷新时更新
 }
 
-// MemoryDocument (Memory System — 文档)
-model MemoryDocument {
-  id        String        @id @default(cuid())
-  path      String        @unique
-  content   String        @db.Text
-  evergreen Boolean       @default(false)
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  chunks    MemoryChunk[]
-}
-
 // CronJob (定时任务配置)
 model CronJob {
   id            String    @id @default(cuid())
@@ -181,19 +168,16 @@ model CronJob {
   updatedAt     DateTime  @updatedAt
 }
 
-// MemoryChunk (Memory System — 文档分块 + 向量)
-model MemoryChunk {
-  id        String                      @id @default(cuid())
-  docId     String
-  content   String                      @db.Text
-  embedding Unsupported("vector(768)")?
-  lineStart Int
-  lineEnd   Int
-  entities  String[]                    @default([])
-  doc       MemoryDocument              @relation(fields: [docId], references: [id], onDelete: Cascade)
+// MemoryVersion (Memory System v2 — Slot 版本化存储)
+model MemoryVersion {
+  id        String   @id @default(cuid())
+  slot      String
+  content   String   @db.Text
+  author    String
+  reason    String?
+  createdAt DateTime @default(now())
 
-  @@index([docId])
-  @@index([entities], type: Gin)
+  @@index([slot, createdAt(sort: Desc)])
 }
 
 // Order (交易订单历史 — Alpaca Paper Trading)

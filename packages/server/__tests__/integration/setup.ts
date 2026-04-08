@@ -58,22 +58,12 @@ import {
     // session — loadMessagesForTranscript
     mockLoadMessagesForTranscript,
     // memory (barrel) mocks
-    mockReadDocument,
-    mockGetDocumentDetail,
-    mockWriteDocument,
-    mockAppendDocument,
-    mockDeleteDocument,
-    mockListDocuments,
-    mockSearchMemory,
+    mockGetSlotContent,
+    mockWriteSlot,
+    mockGetSlotHistory,
     mockLoadMemoryContext,
-    mockSyncPortfolioDocument,
-    mockGenerateEmbedding,
     mockCreateMemoryTools,
-    mockCleanMessages,
-    mockAppendTranscript,
-    mockReindexDocument,
-    mockScheduleReindex,
-    mockFlushReindex,
+    mockCreateHistoryTool,
     // prompts mock
     mockBuildAgentSystemPrompt,
     mockBuildGlobalSystemPrompt,
@@ -231,24 +221,22 @@ mock.module('@/core/ai/providers', () => ({
 }))
 
 mock.module('@/core/ai/memory', () => ({
-    readDocument: mockReadDocument,
-    getDocumentDetail: mockGetDocumentDetail,
-    writeDocument: mockWriteDocument,
-    appendDocument: mockAppendDocument,
-    deleteDocument: mockDeleteDocument,
-    listDocuments: mockListDocuments,
-    searchMemory: mockSearchMemory,
+    getSlotContent: mockGetSlotContent,
+    writeSlot: mockWriteSlot,
+    getSlotHistory: mockGetSlotHistory,
     loadMemoryContext: mockLoadMemoryContext,
-    syncPortfolioDocument: mockSyncPortfolioDocument,
-    generateEmbedding: mockGenerateEmbedding,
     createMemoryTools: mockCreateMemoryTools,
-    cleanMessages: mockCleanMessages,
-    appendTranscript: mockAppendTranscript,
-    reindexDocument: mockReindexDocument,
-    scheduleReindex: mockScheduleReindex,
-    flushReindex: mockFlushReindex,
-    MEMORY_PATHS: { PROFILE: 'profile.md', PORTFOLIO: 'portfolio.md', WATCHLIST_CONTEXT: 'watchlist-context.md' },
-    MEMORY_DIRS: { OPINIONS: 'opinions', DECISIONS: 'decisions', LOG: 'log' },
+    createHistoryTool: mockCreateHistoryTool,
+    SlotContentTooLongError: class SlotContentTooLongError extends Error {
+        slot: string; actual: number; limit: number
+        constructor(slot: string, actual: number, limit: number) {
+            super(`Slot "${slot}" content too long`)
+            this.name = 'SlotContentTooLongError'
+            this.slot = slot; this.actual = actual; this.limit = limit
+        }
+    },
+    VALID_SLOTS: ['user_profile', 'portfolio_thesis', 'market_views', 'active_focus', 'lessons', 'agent_strategy'],
+    SLOT_LIMITS: { user_profile: 500, market_views: 500, active_focus: 500, lessons: 1000, portfolio_thesis: 2000, agent_strategy: 2000 },
 }))
 
 mock.module('@/core/ai/prompts', () => ({

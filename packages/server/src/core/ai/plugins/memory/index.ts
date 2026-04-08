@@ -1,56 +1,34 @@
-import type { AIPlugin, HookContext, AfterChatContext, ToolMap } from '../../runtime/types'
-import { createMemoryTools as defaultCreateMemoryTools } from '../../memory/tools'
-import { appendTranscript } from '../../memory/store'
-import { loadMessagesForTranscript } from '../../session'
-import { cleanMessages } from '../../memory/transcript-cleaner'
-import { scheduleReindex } from '../../memory/transcript-indexer'
-
-interface MemoryPluginDeps {
-  createMemoryTools: (deps?: any) => Record<string, any>
-  processTranscript: (ctx: AfterChatContext) => Promise<void>
-}
+import type { AIPlugin, HookContext, ToolMap } from '../../runtime/types'
+import { createMemoryTools, createHistoryTool } from '../../memory/tools'
+import type { StoreDeps } from '../../memory/store'
 
 interface MemoryPluginOptions {
-  withTranscript?: boolean
-  skipTranscript?: boolean
-  deps?: MemoryPluginDeps
+  /** 是否包含 read_history 工具（仅 auto-trading-agent 使用）*/
+  includeHistory?: boolean
+  /** 测试用依赖注入 */
+  deps?: StoreDeps
 }
 
-async function defaultProcessTranscript(ctx: AfterChatContext): Promise<void> {
-  const allMessages = await loadMessagesForTranscript(ctx.sessionId)
-  // Only process the latest round (last 2 messages: user + assistant)
-  // to match finalizeChatRound behavior and avoid transcript bloat
-  const latestRound = allMessages.slice(-2)
-  const cleaned = cleanMessages(latestRound)
-  if (!cleaned) return
-  const docId = await appendTranscript(ctx.sessionId, cleaned, ctx.symbol)
-  if (docId) scheduleReindex(docId)
-}
-
-function wrapToolsAsDefinitions(rawTools: Record<string, any>): ToolMap {
+function wrapTools(rawTools: Record<string, any>): ToolMap {
   const map: ToolMap = {}
-  for (const [name, tool] of Object.entries(rawTools)) {
-    map[name] = { tool }
+  for (const [name, t] of Object.entries(rawTools)) {
+    map[name] = { tool: t }
   }
   return map
 }
 
 export function memoryPlugin(options?: MemoryPluginOptions): AIPlugin {
-  const withTranscript = options?.withTranscript !== false && options?.skipTranscript !== true
-  const deps: MemoryPluginDeps = options?.deps ?? {
-    createMemoryTools: defaultCreateMemoryTools,
-    processTranscript: defaultProcessTranscript,
-  }
-
   return {
     name: 'memory',
+
     tools(_ctx: HookContext): ToolMap {
-      return wrapToolsAsDefinitions(deps.createMemoryTools())
-    },
-    async afterChat(ctx: AfterChatContext): Promise<void> {
-      if (withTranscript) {
-        await deps.processTranscript(ctx)
+      const base = createMemoryTools(options?.deps)
+      if (options?.includeHistory) {
+        const history = createHistoryTool(options?.deps)
+        return wrapTools({ ...base, ...history })
       }
+      return wrapTools(base)
     },
+    // afterChat 暂不实现（background extraction 后续 cron 迭代）
   }
 }

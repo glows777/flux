@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { generateBrief } from '@/core/ai/brief'
-import { syncPortfolioDocument } from '@/core/ai/memory'
 import { getAlpacaClient } from '@/core/broker/alpaca-client'
 import { calculateSummary, mapAlpacaPositionToHoldingItem } from '@/core/broker/portfolio-calc'
 import { getWatchlistItems } from '@/core/api/watchlist'
@@ -40,13 +39,6 @@ const dashboard = new Hono()
             const vixData = macro ? findVixFromMacro(macro) : null
             const vix = vixData ? parseFloat(vixData.val) || 0 : 0
             portfolio = { holdings: holdingItems, summary: calculateSummary(holdingItems, vix) }
-        }
-
-        // Sync portfolio to AI memory (fire-and-forget)
-        if (positions.length > 0) {
-            syncPortfolioDocument(positions).catch((e) =>
-                console.error('[memory] portfolio sync failed:', e),
-            )
         }
 
         let brief: Awaited<ReturnType<typeof generateBrief>>['data'] | null = null

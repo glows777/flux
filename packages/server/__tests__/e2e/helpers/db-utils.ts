@@ -17,6 +17,7 @@ export async function truncateAllTables(prisma: PrismaClient): Promise<void> {
     await prisma.stockHistory.deleteMany()
     await prisma.stockInfo.deleteMany()
     await prisma.watchlist.deleteMany()
+    await prisma.memoryVersion.deleteMany()
 }
 
 export async function backdateInfoFetchedAt(
