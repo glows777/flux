@@ -166,6 +166,20 @@ model CronJob {
   retryCount    Int       @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+
+  runs  CronJobRun[]
+}
+
+model CronJobRun {
+  id          String   @id @default(cuid())
+  jobId       String
+  job         CronJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status      String   // "success" | "error" | "timeout"
+  output      String?
+  error       String?
+  durationMs  Int?
+  triggeredBy String   @default("scheduler")
+  createdAt   DateTime @default(now())
 }
 
 // MemoryVersion (Memory System v2 — Slot 版本化存储)
