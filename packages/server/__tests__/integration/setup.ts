@@ -110,6 +110,9 @@ import {
     mockUpdateCronJob,
     mockDeleteCronJob,
     mockGetCronJob,
+    mockCreateCronJobRun,
+    mockListCronJobRuns,
+    mockListAllRuns,
 } from './helpers/mock-boundaries'
 
 // ─── Env vars ───
@@ -148,6 +151,11 @@ mock.module('@/core/db', () => ({
             update: mockUpdateCronJob,
             delete: mockDeleteCronJob,
             findUnique: mockGetCronJob,
+        },
+        cronJobRun: {
+            create: mockCreateCronJobRun,
+            findMany: mock(() => Promise.resolve([])),
+            count: mock(() => Promise.resolve(0)),
         },
         chatSession: {
             findFirst: mock(() => Promise.resolve(null)),
@@ -333,6 +341,9 @@ mock.module('@/core/cron/service', () => ({
     updateCronJob: mockUpdateCronJob,
     deleteCronJob: mockDeleteCronJob,
     getCronJob: mockGetCronJob,
+    listCronJobRuns: mockListCronJobRuns,
+    listAllRuns: mockListAllRuns,
+    createCronJobRun: mockCreateCronJobRun,
 }))
 
 mock.module('@/core/ai/runtime/create', () => ({

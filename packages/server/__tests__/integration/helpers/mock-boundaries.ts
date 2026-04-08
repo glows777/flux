@@ -362,6 +362,9 @@ export const mockListCronJobs = mock(() => Promise.resolve([]))
 export const mockUpdateCronJob = mock(() => Promise.resolve({ id: 'cron-1', enabled: false }))
 export const mockDeleteCronJob = mock(() => Promise.resolve({ id: 'cron-1' }))
 export const mockGetCronJob = mock(() => Promise.resolve(null))
+export const mockCreateCronJobRun = mock(() => Promise.resolve({ id: 'run-1', jobId: 'cron-1', status: 'success' }))
+export const mockListCronJobRuns = mock(() => Promise.resolve({ runs: [], total: 0 }))
+export const mockListAllRuns = mock(() => Promise.resolve({ runs: [], total: 0 }))
 
 // ─── @/lib/finance (earnings) ───
 

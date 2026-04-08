@@ -6,6 +6,9 @@ import {
     mockUpdateCronJob,
     mockDeleteCronJob,
     mockGetCronJob,
+    mockCreateCronJobRun,
+    mockListCronJobRuns,
+    mockListAllRuns,
 } from './helpers/mock-boundaries'
 
 import { Hono } from 'hono'
@@ -37,6 +40,9 @@ function resetMocks() {
     mockScheduler.addJob.mockReset()
     mockScheduler.removeJob.mockReset()
     mockScheduler.runNow.mockReset()
+    mockCreateCronJobRun.mockReset()
+    mockListCronJobRuns.mockReset()
+    mockListAllRuns.mockReset()
 
     mockCreateCronJob.mockImplementation(() =>
         Promise.resolve({ id: 'cron-1', name: 'test', enabled: true }),
@@ -47,6 +53,9 @@ function resetMocks() {
     )
     mockDeleteCronJob.mockImplementation(() => Promise.resolve({ id: 'cron-1' }))
     mockGetCronJob.mockImplementation(() => Promise.resolve(null))
+    mockCreateCronJobRun.mockImplementation(() => Promise.resolve({ id: 'run-1', jobId: 'cron-1', status: 'success' }))
+    mockListCronJobRuns.mockImplementation(() => Promise.resolve({ runs: [], total: 0 }))
+    mockListAllRuns.mockImplementation(() => Promise.resolve({ runs: [], total: 0 }))
 }
 
 const validBody = {
@@ -315,6 +324,87 @@ describe('Cron API', () => {
                 method: 'POST',
             })
 
+            expect(res.status).toBe(500)
+        })
+    })
+
+    // ─── GET /api/cron/runs ───
+
+    describe('GET /api/cron/runs', () => {
+        it('returns 200 with empty run list', async () => {
+            const res = await app.request('/api/cron/runs')
+            const json = await res.json()
+
+            expect(res.status).toBe(200)
+            expect(json.success).toBe(true)
+            expect(json.data).toEqual([])
+            expect(json.total).toBe(0)
+        })
+
+        it('returns 200 with run records', async () => {
+            mockListAllRuns.mockImplementation(() =>
+                Promise.resolve({
+                    runs: [
+                        { id: 'run-1', jobId: 'cron-1', jobName: 'Job A', status: 'success', triggeredBy: 'scheduler', durationMs: 1200, createdAt: new Date().toISOString() },
+                    ],
+                    total: 1,
+                }),
+            )
+
+            const res = await app.request('/api/cron/runs')
+            const json = await res.json()
+
+            expect(res.status).toBe(200)
+            expect(json.data).toHaveLength(1)
+            expect(json.total).toBe(1)
+        })
+
+        it('passes jobId and status filters', async () => {
+            await app.request('/api/cron/runs?jobId=cron-1&status=error')
+            expect(mockListAllRuns).toHaveBeenCalledTimes(1)
+        })
+
+        it('returns 500 on service error', async () => {
+            mockListAllRuns.mockImplementation(() => Promise.reject(new Error('DB down')))
+
+            const res = await app.request('/api/cron/runs')
+            expect(res.status).toBe(500)
+        })
+    })
+
+    // ─── GET /api/cron/:id/runs ───
+
+    describe('GET /api/cron/:id/runs', () => {
+        it('returns 200 with empty run list for job', async () => {
+            const res = await app.request('/api/cron/cron-1/runs')
+            const json = await res.json()
+
+            expect(res.status).toBe(200)
+            expect(json.success).toBe(true)
+            expect(json.data).toEqual([])
+        })
+
+        it('returns 200 with run records for job', async () => {
+            mockListCronJobRuns.mockImplementation(() =>
+                Promise.resolve({
+                    runs: [
+                        { id: 'run-1', jobId: 'cron-1', status: 'success', triggeredBy: 'manual', durationMs: 800, createdAt: new Date().toISOString() },
+                    ],
+                    total: 1,
+                }),
+            )
+
+            const res = await app.request('/api/cron/cron-1/runs')
+            const json = await res.json()
+
+            expect(res.status).toBe(200)
+            expect(json.data).toHaveLength(1)
+        })
+
+        it('returns 500 on service error', async () => {
+            mockListCronJobRuns.mockImplementation(() => Promise.reject(new Error('DB down')))
+
+            const res = await app.request('/api/cron/cron-1/runs')
             expect(res.status).toBe(500)
         })
     })
