@@ -1,8 +1,8 @@
 import { sValidator } from '@hono/standard-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { getSlotContent, writeSlot, getSlotHistory } from '@/core/ai/memory'
-import { VALID_SLOTS, SLOT_LIMITS, type MemorySlot } from '@/core/ai/memory/types'
+import { getSlotContent, writeSlot, getSlotHistory, VALID_SLOTS, SLOT_LIMITS } from '@/core/ai/memory'
+import type { MemorySlot } from '@/core/ai/memory'
 
 const SLOT_SCHEMA = z.enum(VALID_SLOTS as [MemorySlot, ...MemorySlot[]])
 
