@@ -35,6 +35,16 @@ describe('formatRelativeTime', () => {
     it('returns dash for null', () => {
         expect(formatRelativeTime(null)).toBe('—')
     })
+
+    it('returns "in Xm" for future timestamps', () => {
+        const future = new Date(Date.now() + 10 * 60 * 1000).toISOString()
+        expect(formatRelativeTime(future)).toBe('in 10m')
+    })
+
+    it('returns "in Xh" for future timestamps hours away', () => {
+        const future = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString()
+        expect(formatRelativeTime(future)).toBe('in 3h')
+    })
 })
 
 describe('statusBadgeClass', () => {

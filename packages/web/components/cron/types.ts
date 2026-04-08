@@ -8,7 +8,7 @@ export interface CronJobRow {
     taskPayload: { prompt: string }
     enabled: boolean
     lastRunAt: string | null
-    lastRunStatus: string | null
+    lastRunStatus: 'success' | 'error' | 'timeout' | null
     lastRunError: string | null
     retryCount: number
     createdAt: string
@@ -42,6 +42,16 @@ export function formatDurationMs(ms: number | null | undefined): string {
 export function formatRelativeTime(dateStr: string | null | undefined): string {
     if (!dateStr) return '—'
     const diff = Date.now() - new Date(dateStr).getTime()
+    if (diff < 0) {
+        const abs = -diff
+        const minutes = Math.floor(abs / 60000)
+        if (minutes < 1) return 'in <1m'
+        const hours = Math.floor(minutes / 60)
+        if (hours < 1) return `in ${minutes}m`
+        const days = Math.floor(hours / 24)
+        if (days < 1) return `in ${hours}h`
+        return `in ${days}d`
+    }
     const minutes = Math.floor(diff / 60000)
     if (minutes < 1) return 'just now'
     const hours = Math.floor(minutes / 60)

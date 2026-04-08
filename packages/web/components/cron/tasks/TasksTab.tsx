@@ -9,7 +9,7 @@ import { JobModal } from './JobModal'
 import type { CronJobRow } from '../types'
 
 export function TasksTab() {
-    const { data, mutate } = useSWR<CronJobRow[]>('/api/cron', fetcher, { refreshInterval: 5000 })
+    const { data, error, isLoading, mutate } = useSWR<CronJobRow[]>('/api/cron', fetcher, { refreshInterval: 5000 })
     const jobs = data ?? []
 
     const [search, setSearch] = useState('')
@@ -45,18 +45,36 @@ export function TasksTab() {
 
     const handleDelete = async (job: CronJobRow) => {
         if (!confirm(`Delete "${job.name}"?`)) return
-        await fetch(`/api/cron/${job.id}`, { method: 'DELETE' })
+        const res = await fetch(`/api/cron/${job.id}`, { method: 'DELETE' })
+        if (!res.ok) return
         mutate()
     }
 
     const handleRunNow = async (job: CronJobRow) => {
         await fetch(`/api/cron/${job.id}/run`, { method: 'POST' })
+        mutate()
     }
 
     const handleSaved = () => {
         setModalOpen(false)
         setEditingJob(null)
         mutate()
+    }
+
+    if (isLoading) {
+        return (
+            <div className='flex items-center justify-center h-full text-xs text-slate-600'>
+                Loading...
+            </div>
+        )
+    }
+
+    if (error) {
+        return (
+            <div className='flex items-center justify-center h-full text-xs text-red-400'>
+                Failed to load cron jobs
+            </div>
+        )
     }
 
     return (
