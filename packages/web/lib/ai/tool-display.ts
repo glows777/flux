@@ -77,14 +77,15 @@ const LOADING_LABELS: Record<string, (input?: unknown) => string> = {
     const q = getString(input, 'query')
     return q ? `搜索 "${q}"` : '搜索股票'
   },
-  memory_read: () => '读取记忆',
-  memory_write: () => '记录笔记',
-  memory_append: () => '追加记录',
-  memory_search: (input) => {
-    const q = getString(input, 'query') ?? getSymbol(input)
-    return q ? `回忆关于 ${q} 的记录` : '回忆上下文'
+  update_core_memory: (input) => {
+    const slot = getString(input, 'slot')
+    return slot ? `更新 ${slot} 记忆` : '更新记忆'
   },
-  memory_list: () => '查看记忆列表',
+  save_lesson: () => '记录教训',
+  read_history: (input) => {
+    const slot = getString(input, 'slot')
+    return slot ? `回顾 ${slot} 历史` : '回顾历史记录'
+  },
   webSearch: (input) => {
     const q = getString(input, 'query')
     return q ? `搜索 "${q}"` : '搜索互联网'
@@ -190,20 +191,18 @@ const COMPLETION_HANDLERS: Record<string, (output: unknown) => string | null> = 
     if (len !== null) return `找到 ${len} 个匹配`
     return null
   },
-  memory_read: () => '已读取',
-  memory_write: () => '已记录',
-  memory_append: () => '已追加',
-  memory_search: (output) => {
-    if (output && typeof output === 'object' && 'results' in output) {
-      const results = (output as InputRecord).results
-      if (Array.isArray(results)) return `找到 ${results.length} 条相关记录`
+  update_core_memory: (output) => {
+    if (output && typeof output === 'object' && 'message' in output) {
+      const msg = (output as InputRecord).message
+      if (typeof msg === 'string') return msg
     }
-    return null
+    return '已更新记忆'
   },
-  memory_list: (output) => {
-    if (output && typeof output === 'object' && 'documents' in output) {
-      const documents = (output as InputRecord).documents
-      if (Array.isArray(documents)) return `共 ${documents.length} 份文档`
+  save_lesson: () => '已记录教训',
+  read_history: (output) => {
+    if (output && typeof output === 'object' && 'versions' in output) {
+      const versions = (output as InputRecord).versions
+      if (Array.isArray(versions)) return `找到 ${versions.length} 条历史`
     }
     return null
   },
