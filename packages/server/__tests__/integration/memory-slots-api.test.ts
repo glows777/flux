@@ -85,6 +85,60 @@ describe('GET /api/memory/slots/:slot/history', () => {
     })
 })
 
+describe('GET /api/memory/slots/full', () => {
+    beforeEach(() => {
+        mockGetSlotContent.mockReset()
+        mockGetSlotContent.mockImplementation(() => Promise.resolve(null))
+        mockGetSlotHistory.mockReset()
+        mockGetSlotHistory.mockImplementation(() => Promise.resolve([]))
+    })
+
+    it('returns 6 entries with null content and empty history by default', async () => {
+        const res = await app.request('/api/memory/slots/full')
+        expect(res.status).toBe(200)
+        const json = await res.json()
+        expect(json.success).toBe(true)
+        expect(json.data).toHaveLength(6)
+        const first = json.data[0]
+        expect(first.slot).toBeTruthy()
+        expect(first.content).toBeNull()
+        expect(first.limit).toBeGreaterThan(0)
+        expect(Array.isArray(first.history)).toBe(true)
+        expect(first.history).toHaveLength(0)
+    })
+
+    it('includes slot limit from SLOT_LIMITS', async () => {
+        const res = await app.request('/api/memory/slots/full')
+        const json = await res.json()
+        const portfolioEntry = json.data.find((d: any) => d.slot === 'portfolio_thesis')
+        expect(portfolioEntry.limit).toBe(2000)
+        const userEntry = json.data.find((d: any) => d.slot === 'user_profile')
+        expect(userEntry.limit).toBe(500)
+    })
+
+    it('returns content and history when data exists', async () => {
+        mockGetSlotContent.mockImplementation((slot: string) => {
+            if (slot === 'market_views') return Promise.resolve('看多科技')
+            return Promise.resolve(null)
+        })
+        mockGetSlotHistory.mockImplementation((slot: string) => {
+            if (slot === 'market_views') return Promise.resolve([
+                { id: 'v1', slot: 'market_views', content: '看多科技', author: 'agent', reason: '市场信号', createdAt: new Date('2026-04-01') },
+            ])
+            return Promise.resolve([])
+        })
+
+        const res = await app.request('/api/memory/slots/full')
+        const json = await res.json()
+        const entry = json.data.find((d: any) => d.slot === 'market_views')
+        expect(entry.content).toBe('看多科技')
+        expect(entry.history).toHaveLength(1)
+        expect(entry.history[0].author).toBe('agent')
+        expect(entry.history[0].reason).toBe('市场信号')
+        expect(entry.history[0].createdAt).toMatch(/2026-04-01/)
+    })
+})
+
 describe('PUT /api/memory/slots/:slot', () => {
     beforeEach(() => {
         mockWriteSlot.mockReset()
