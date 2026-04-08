@@ -163,9 +163,10 @@ export function buildGlobalSystemPrompt(
         readonly memoryContext?: string
     },
 ): string {
-    const memorySection = options?.memoryContext
-        ? `\n${options.memoryContext}\n\n## 记忆工具\n你的上下文在每次新对话时会重置。你的 core memory 是你跨对话保持连续性的唯一方式。任何重要信息必须通过 update_core_memory 或 save_lesson 保存，否则下次对话将遗失。\n\n### 记忆更新规则\n- 执行交易后 → 立即更新 portfolio_thesis（记录买入/卖出理由）\n- 用户表达新偏好或风险容忍度变化 → 更新 user_profile\n- 讨论板块或宏观观点 → 更新 market_views\n- 识别到自己的行为模式或错误 → 调用 save_lesson\n- 做交易决策前 → 先读取 lessons 中的相关教训`
+    const existingMemory = options?.memoryContext
+        ? `\n${options.memoryContext}\n\n`
         : ''
+    const memorySection = `${existingMemory}## 记忆工具\n你的上下文在每次新对话时会重置。你的 core memory 是你跨对话保持连续性的唯一方式。任何重要信息必须通过 update_core_memory 或 save_lesson 保存，否则下次对话将遗失。\n\n### 记忆更新规则\n- 执行交易后 → 立即更新 portfolio_thesis（记录买入/卖出理由）\n- 用户表达新偏好或风险容忍度变化 → 更新 user_profile\n- 讨论板块或宏观观点 → 更新 market_views\n- 识别到自己的行为模式或错误 → 调用 save_lesson\n- 做交易决策前 → 先读取 lessons 中的相关教训`
 
     const symbolContext = options?.symbol
         ? `\n用户当前关注 ${options.symbol}${options.name ? ` (${options.name})` : ''}，优先使用该股票上下文回答。\n`
