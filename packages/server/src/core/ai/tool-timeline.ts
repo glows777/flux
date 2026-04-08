@@ -211,14 +211,6 @@ function getSourcesCount(output: unknown): number {
   return 0
 }
 
-function getMemoryResultsCount(output: unknown): number {
-  if (output && typeof output === 'object' && 'results' in output) {
-    const results = (output as Record<string, unknown>).results
-    if (Array.isArray(results)) return results.length
-  }
-  return 0
-}
-
 // ─── Summary ───
 
 export function buildTimelineSummary(steps: readonly TimelineStep[]): string {
@@ -292,15 +284,13 @@ export function buildTimelineSummary(steps: readonly TimelineStep[]): string {
     parts.push(typeof query === 'string' ? `搜索了 "${query}"` : '搜索了股票')
   }
 
-  // Memory
-  let memoryCount = 0
-  for (const s of okSteps) {
-    if (s.toolName === 'memory_search') memoryCount += getMemoryResultsCount(s.output) || 1
-    if (s.toolName === 'memory_read' || s.toolName === 'memory_list') memoryCount += 1
-  }
-  if (memoryCount > 0) {
-    parts.push(`回忆了 ${memoryCount} 条记录`)
-  }
+  // Memory v2
+  const hasMemoryWrite = okSteps.some(
+    (s) => s.toolName === 'update_core_memory' || s.toolName === 'save_lesson',
+  )
+  const hasMemoryRead = okSteps.some((s) => s.toolName === 'read_history')
+  if (hasMemoryWrite) parts.push('更新了记忆')
+  if (hasMemoryRead) parts.push('回顾了历史记录')
 
   if (parts.length === 0) return ''
 

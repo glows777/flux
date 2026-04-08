@@ -1,8 +1,8 @@
 import { sValidator } from '@hono/standard-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { getSlotContent, writeSlot, getSlotHistory } from '@/core/ai/memory'
-import { VALID_SLOTS, type MemorySlot } from '@/core/ai/memory/types'
+import { getSlotContent, writeSlot, getSlotHistory, VALID_SLOTS, SLOT_LIMITS } from '@/core/ai/memory'
+import type { MemorySlot } from '@/core/ai/memory'
 
 const SLOT_SCHEMA = z.enum(VALID_SLOTS as [MemorySlot, ...MemorySlot[]])
 
@@ -54,6 +54,35 @@ const memory = new Hono()
             return c.json({ success: true, data: entries })
         } catch {
             return c.json({ success: false, error: 'Failed to list slots' }, 500)
+        }
+    })
+
+    // GET /api/memory/slots/full — 聚合端点，一次返回所有 slot 的当前内容 + 版本历史
+    .get('/slots/full', async (c) => {
+        try {
+            const data = await Promise.all(
+                VALID_SLOTS.map(async (slot) => {
+                    const [content, history] = await Promise.all([
+                        getSlotContent(slot),
+                        getSlotHistory(slot, 20),
+                    ])
+                    return {
+                        slot,
+                        content,
+                        limit: SLOT_LIMITS[slot],
+                        history: history.map((v) => ({
+                            id: v.id,
+                            author: v.author,
+                            reason: v.reason,
+                            createdAt: v.createdAt.toISOString(),
+                            content: v.content,
+                        })),
+                    }
+                }),
+            )
+            return c.json({ success: true, data })
+        } catch {
+            return c.json({ success: false, error: 'Failed to load full slot data' }, 500)
         }
     })
 

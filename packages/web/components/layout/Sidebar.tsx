@@ -1,6 +1,6 @@
 'use client'
 
-import { BarChart2, Bell, Globe, Home, Layers, MessageSquare, Settings } from 'lucide-react'
+import { BarChart2, Bell, Brain, Globe, Home, Layers, MessageSquare, Settings } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useRouter } from 'next/navigation'
 import { Logo } from './Logo'
@@ -27,6 +27,11 @@ export function Sidebar() {
                         icon={MessageSquare}
                         active={pathname.startsWith('/chat')}
                         onClick={() => router.push('/chat')}
+                    />
+                    <NavIcon
+                        icon={Brain}
+                        active={pathname === '/memory'}
+                        onClick={() => router.push('/memory')}
                     />
                     <NavIcon icon={BarChart2} disabled />
                     <NavIcon icon={Globe} disabled />
