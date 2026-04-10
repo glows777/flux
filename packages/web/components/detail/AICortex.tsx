@@ -2,13 +2,12 @@
 
 import { useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Cpu, FileText, PieChart } from 'lucide-react'
+import { Cpu, FileText } from 'lucide-react'
 import { TabButton } from './TabButton'
 import { ReportTab } from './tabs/ReportTab'
-import { FinanceTab } from './tabs/FinanceTab'
 import { ContextInput } from './ContextInput'
 
-const VALID_TABS = new Set<string>(['report', 'finance'])
+const VALID_TABS = new Set<string>(['report'])
 
 interface AICortexProps {
     symbol: string
@@ -21,9 +20,9 @@ export function AICortex({ symbol, assetName, aiThinking = false }: AICortexProp
     const router = useRouter()
     const [inputValue, setInputValue] = useState('')
 
-    const [activeTab, setActiveTab] = useState<'report' | 'finance'>(() => {
+    const [activeTab, setActiveTab] = useState<'report'>(() => {
         const tab = searchParams.get('tab')
-        return tab && VALID_TABS.has(tab) ? (tab as 'report' | 'finance') : 'report'
+        return tab && VALID_TABS.has(tab) ? 'report' : 'report'
     })
 
     const handleSend = () => {
@@ -58,18 +57,11 @@ export function AICortex({ symbol, assetName, aiThinking = false }: AICortexProp
                     icon={FileText}
                     label='研报'
                 />
-                <TabButton
-                    active={activeTab === 'finance'}
-                    onClick={() => setActiveTab('finance')}
-                    icon={PieChart}
-                    label='财报'
-                />
             </div>
 
             {/* Content */}
             <div className='flex-1 p-6 overflow-y-auto flex flex-col space-y-6 scrollbar-thin scrollbar-thumb-white/10'>
                 {activeTab === 'report' && <ReportTab symbol={symbol} />}
-                {activeTab === 'finance' && <FinanceTab symbol={symbol} />}
             </div>
 
             {/* Always-visible input — redirects to /chat */}

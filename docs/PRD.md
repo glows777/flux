@@ -56,7 +56,6 @@
 | AI 研报 (Gemini + 24h 缓存) | v0.02 | 真实数据 |
 | AI 问答 (流式对话 + 上下文注入) | v0.03 P1 | 真实数据 |
 | Dashboard 持仓管理 (Portfolio CRUD + 统计卡片) | v0.03 P2 | 真实数据 |
-| 财报分析 (L1 硬数据 + L2 AI 分析 + Transcript fallback) | v0.03 P3 | 真实数据 |
 | Agentic AI (Tool Calling + 多轮对话 + 会话管理) | v0.04 | 真实数据 |
 | AI 深度推理 (Thinking + 结构化输出 + 模型路由) | v0.05 | 真实数据 |
 
@@ -69,7 +68,6 @@
 | ~~AI Thinking 展示~~ | ~~无~~ | ~~v0.05~~ ✅ |
 | ~~结构化输出~~ | ~~纯文本~~ | ~~v0.05~~ ✅ |
 | Detail UI/UX 打磨 | 进行中 | v0.07 |
-| Morning Brief (AI 日报) | 设计完成，待实现 | v0.09 |
 
 ---
 
@@ -78,11 +76,11 @@
 > **原则**: AI 能力优先演进，Dashboard/Portfolio 等功能模块靠后。
 
 ```
-v0.01 ── v0.02 ── v0.03 ────── v0.04 ────────── v0.05 ──── v0.07 ──── v0.09
-MVP UI   后端集成  Dashboard    Agentic AI       深度推理    Detail     Morning Brief
-(Mock)   (真实数据) +财报       (多轮对话+Tool   (Thinking   UI/UX      (AI 日报)
+v0.01 ── v0.02 ── v0.03 ────── v0.04 ────────── v0.05 ──── v0.07
+MVP UI   后端集成  Dashboard    Agentic AI       深度推理    Detail
+(Mock)   (真实数据)             (多轮对话+Tool   (Thinking   UI/UX
   ✅       ✅       ✅         Calling+会话)    +结构化)    打磨
-                                  ✅               ✅       进行中      📋 计划中
+                                  ✅               ✅       进行中
 ```
 
 ---
@@ -95,12 +93,11 @@ MVP UI   后端集成  Dashboard    Agentic AI       深度推理    Detail     
 |-------|------|------|-------|
 | P1 | AI 问答 + ContextInput | ✅ 已完成 | — |
 | P2 | Dashboard 数据接入 (持仓/盈亏/风险) | ✅ 已完成 | — |
-| P3 | 财报分析 (L1 硬数据 + L2 AI + Transcript fallback) | ✅ 已完成 | — |
 | ~~P4~~ | ~~新闻情感分析~~ | 推迟至 v0.05+ | — |
 
-**决策 (2026-02)**: 原 P3 (情感分析) 推迟，原 P4 (财报) 提前为新 P3：
+**决策 (2026-02)**: 原 P3 (情感分析) 推迟，原 P4 (财报) 曾提前为新 P3，后于 2026-04 从产品中移除：
 - **情感分析 → 推迟**: 当前新闻源 (RSS 聚合 + Finnhub 兜底) 时效滞后、标题信息量不足，AI 情感标签在低质量数据上 ROI 不高。v0.04 Tool Calling 落地后，AI 可实时搜索+分析新闻，比静态标签更有价值。
-- **财报分析 → 保留**: 财报是结构化权威一手数据，不存在数据源质量问题，且是产品核心功能之一。
+- **财报分析 → 已移除**: Detail 财报 tab 与相关 transcript / earnings API 已在 2026-04 下线，当前产品不再包含该功能。
 
 v0.03 全部 Phase 已完成，下一步进入 v0.04。
 
@@ -181,35 +178,13 @@ v0.03 全部 Phase 已完成，下一步进入 v0.04。
 
 ---
 
-### v0.09 — Morning Brief (AI 日报)
-
-**目标**: 将 Dashboard 从"数据展示板"升级为"每日决策简报"。AI 主动分析持仓+自选股，每天打开即看到个性化建议，不需要用户自己提问。
-
-核心交付：
-
-| 能力 | 说明 |
-|------|------|
-| **宏观信号** | 一句话判断市场 risk-on / risk-off / neutral |
-| **Spotlight** | 选出 1-2 只最值得关注的股票，给出数据支撑的理由和具体可操作建议 |
-| **持仓感知** | AI 感知用户成本价、浮盈浮亏，建议与持仓状态挂钩 |
-| **催化剂日历** | 14 天内财报事件提醒（仅展示已有缓存数据） |
-| **自然日缓存** | 北京时间自然日缓存 + 美股收盘后失效 + 手动刷新 |
-
-UI 方案：Morning Brief 嵌入 Dashboard 欢迎区域，宏观信号作为副标题，Spotlight (8/12) + Catalysts (4/12) 横向两列，不新增独立区块。
-
-**前置依赖**: v0.04 (Agentic AI 基础设施)、v0.03 P2 (Portfolio)、v0.03 P3 (财报缓存)
-
-> 详见 [docs/v0.09/design.md](./v0.09/design.md)
-
----
-
 ## 5. AI 能力演进总览
 
 ```
-v0.03           v0.04                          v0.05              v0.09
-单轮问答    →   Agentic AI                 →   深度推理        →   AI 日报
-(预收集上下文)   (Tool Calling+多轮对话       (Thinking+结构化     (Morning Brief
-  ✅            +会话管理) ✅                +模型路由) ✅        持仓感知+宏观信号)
+v0.03           v0.04                          v0.05
+单轮问答    →   Agentic AI                 →   深度推理
+(预收集上下文)   (Tool Calling+多轮对话       (Thinking+结构化
+  ✅            +会话管理) ✅                +模型路由) ✅
 ```
 
 ---
@@ -288,14 +263,6 @@ v0.03           v0.04                          v0.05              v0.09
 |------|------|
 | Issue 清单 | `docs/v0.07/detail-uiux-polish.md` |
 
-### v0.09 — Morning Brief
-
-| 文档 | 路径 | 说明 |
-|------|------|------|
-| 技术设计 | `docs/v0.09/design.md` | UI/缓存/后端/前端/Prompt 完整设计 |
-
-
-
 ---
 
 ## 8. 开放问题
@@ -322,8 +289,6 @@ v0.03           v0.04                          v0.05              v0.09
 | v0.02 | ✅ 完成 | 后端 API + 真实数据 + AI 研报 |
 | v0.03 P1 | ✅ 完成 | AI 流式问答 + ContextInput |
 | v0.03 P2 | ✅ 完成 | Dashboard 持仓管理 (Portfolio CRUD + 统计卡片 + 风险评分) |
-| v0.03 P3 | ✅ 完成 | 财报分析 (FMP L1 硬数据 + Gemini L2 AI 分析 + Transcript fallback) |
 | v0.04 | ✅ 完成 | Agentic AI (多轮对话 + Tool Calling + 会话管理)，合并原 v0.04+v0.05 |
 | v0.05 | ✅ 完成 | Thinking + 结构化输出 + 模型路由 |
 | v0.07 | 🚧 进行中 | Detail 页面 UI/UX 打磨 (涨跌幅同步、可拖拽面板、研报结构化等) |
-| v0.09 | 📋 计划中 | Morning Brief — AI 日报 (宏观信号 + Spotlight + 催化剂日历) |

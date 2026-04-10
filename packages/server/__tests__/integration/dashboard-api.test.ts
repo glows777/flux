@@ -2,9 +2,8 @@
  * Dashboard composite API integration test suite
  *
  * Test scenarios:
- * - GET /api/dashboard returns combined portfolio + watchlist + brief + positionSymbols
+ * - GET /api/dashboard returns combined portfolio + watchlist + positionSymbols
  * - Portfolio is built from Alpaca account + positions
- * - generateBrief receives prefetched data
  * - Error handling: graceful degradation on dependency failure
  */
 
@@ -15,14 +14,9 @@ import {
     mockGetPositions,
     mockGetMacroIndicators,
     mockGetWatchlistItems,
-    mockGenerateBrief,
     mockGetInfoWithCache,
 } from './helpers/mock-boundaries'
-
-// Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
-
-// ==================== Mock data ====================
 
 const mockAlpacaPosition = {
     symbol: 'AAPL',
@@ -47,22 +41,7 @@ const mockMacroData = [
     { sym: '恐慌指数', val: '15', chg: '-1.0%', trend: 'down' },
 ]
 
-const mockBriefData = {
-    generatedAt: '2026-03-02T01:00:00Z',
-    macro: {
-        summary: '标普500: 5843 (+0.7%)',
-        signal: 'risk-on' as const,
-        keyMetrics: [{ label: '标普500', value: '5843', change: '+0.7%' }],
-    },
-    spotlight: [],
-    catalysts: [],
-}
-
-// ==================== Test app setup ====================
-
 const app = createHonoApp()
-
-// ==================== Tests ====================
 
 describe('GET /api/dashboard', () => {
     beforeEach(() => {
@@ -70,7 +49,6 @@ describe('GET /api/dashboard', () => {
         mockGetPositions.mockReset()
         mockGetWatchlistItems.mockReset()
         mockGetMacroIndicators.mockReset()
-        mockGenerateBrief.mockReset()
         mockGetInfoWithCache.mockReset()
     })
 
@@ -78,8 +56,11 @@ describe('GET /api/dashboard', () => {
         beforeEach(() => {
             mockGetAccount.mockImplementation(() =>
                 Promise.resolve({
-                    equity: 100000, cash: 50000, buyingPower: 100000,
-                    lastEquity: 99500, longMarketValue: 50000,
+                    equity: 100000,
+                    cash: 50000,
+                    buyingPower: 100000,
+                    lastEquity: 99500,
+                    longMarketValue: 50000,
                 }),
             )
             mockGetPositions.mockImplementation(() =>
@@ -100,13 +81,6 @@ describe('GET /api/dashboard', () => {
             mockGetMacroIndicators.mockImplementation(() =>
                 Promise.resolve(mockMacroData),
             )
-            mockGenerateBrief.mockImplementation(() =>
-                Promise.resolve({
-                    data: mockBriefData,
-                    cached: false,
-                    generatedAt: '2026-03-02T01:00:00Z',
-                }),
-            )
         })
 
         it('returns 200 status code', async () => {
@@ -121,8 +95,8 @@ describe('GET /api/dashboard', () => {
             expect(json.success).toBe(true)
             expect(json.data).toHaveProperty('portfolio')
             expect(json.data).toHaveProperty('watchlist')
-            expect(json.data).toHaveProperty('brief')
             expect(json.data).toHaveProperty('positionSymbols')
+            expect(json.data).not.toHaveProperty('brief')
         })
 
         it('returns portfolio built from Alpaca account and positions', async () => {
@@ -144,67 +118,11 @@ describe('GET /api/dashboard', () => {
             expect(json.data.watchlist).toEqual(mockWatchlistData)
         })
 
-        it('returns brief data from generateBrief', async () => {
-            const res = await app.request('/api/dashboard')
-            const json = await res.json()
-
-            expect(json.data.brief).toEqual(mockBriefData)
-        })
-
         it('returns positionSymbols from Alpaca positions', async () => {
             const res = await app.request('/api/dashboard')
             const json = await res.json()
 
             expect(json.data.positionSymbols).toEqual(['AAPL'])
-        })
-    })
-
-    describe('prefetched parameter passing', () => {
-        beforeEach(() => {
-            mockGetAccount.mockImplementation(() =>
-                Promise.resolve({
-                    equity: 100000, cash: 50000, buyingPower: 100000,
-                    lastEquity: 99500, longMarketValue: 50000,
-                }),
-            )
-            mockGetPositions.mockImplementation(() =>
-                Promise.resolve([mockAlpacaPosition]),
-            )
-            mockGetInfoWithCache.mockImplementation(async (symbol: string) => ({
-                symbol,
-                name: 'Apple Inc.',
-                sector: 'Technology',
-                pe: 28.5,
-                marketCap: 2500000000000,
-                eps: 6.5,
-                dividendYield: 0.55,
-            }))
-            mockGetWatchlistItems.mockImplementation(() =>
-                Promise.resolve(mockWatchlistData),
-            )
-            mockGetMacroIndicators.mockImplementation(() =>
-                Promise.resolve(mockMacroData),
-            )
-            mockGenerateBrief.mockImplementation(() =>
-                Promise.resolve({
-                    data: mockBriefData,
-                    cached: false,
-                    generatedAt: '2026-03-02T01:00:00Z',
-                }),
-            )
-        })
-
-        it('calls generateBrief with prefetched data', async () => {
-            await app.request('/api/dashboard')
-
-            expect(mockGenerateBrief).toHaveBeenCalledTimes(1)
-
-            const args = mockGenerateBrief.mock.calls[0]
-            // args: [forceRefresh, deps, now, prefetched]
-            expect(args[0]).toBe(false) // forceRefresh
-            expect(args[3]).toHaveProperty('portfolio')
-            expect(args[3]).toHaveProperty('macro')
-            expect(args[3]).toHaveProperty('watchlist')
         })
     })
 
@@ -222,13 +140,6 @@ describe('GET /api/dashboard', () => {
             mockGetMacroIndicators.mockImplementation(() =>
                 Promise.resolve(mockMacroData),
             )
-            mockGenerateBrief.mockImplementation(() =>
-                Promise.resolve({
-                    data: mockBriefData,
-                    cached: false,
-                    generatedAt: '2026-03-02T01:00:00Z',
-                }),
-            )
 
             const res = await app.request('/api/dashboard')
             const json = await res.json()
@@ -237,14 +148,18 @@ describe('GET /api/dashboard', () => {
             expect(json.success).toBe(true)
             expect(json.data.portfolio).toBeNull()
             expect(json.data.watchlist).toEqual(mockWatchlistData)
-            expect(json.data.brief).toEqual(mockBriefData)
+            expect(json.data.positionSymbols).toEqual([])
+            expect(json.data).not.toHaveProperty('brief')
         })
 
-        it('returns 200 with macro=null — brief still attempted', async () => {
+        it('returns 200 when macro fetch fails', async () => {
             mockGetAccount.mockImplementation(() =>
                 Promise.resolve({
-                    equity: 100000, cash: 50000, buyingPower: 100000,
-                    lastEquity: 99500, longMarketValue: 50000,
+                    equity: 100000,
+                    cash: 50000,
+                    buyingPower: 100000,
+                    lastEquity: 99500,
+                    longMarketValue: 50000,
                 }),
             )
             mockGetPositions.mockImplementation(() =>
@@ -256,86 +171,24 @@ describe('GET /api/dashboard', () => {
             mockGetMacroIndicators.mockImplementation(() =>
                 Promise.reject(new Error('Macro API down')),
             )
-            mockGenerateBrief.mockImplementation(() =>
-                Promise.resolve({
-                    data: mockBriefData,
-                    cached: false,
-                    generatedAt: '2026-03-02T01:00:00Z',
-                }),
-            )
 
             const res = await app.request('/api/dashboard')
             const json = await res.json()
 
             expect(res.status).toBe(200)
             expect(json.success).toBe(true)
-            expect(json.data.brief).toEqual(mockBriefData)
-        })
-
-        it('returns 200 with brief=null when generateBrief throws', async () => {
-            mockGetAccount.mockImplementation(() =>
-                Promise.resolve({
-                    equity: 100000, cash: 50000, buyingPower: 100000,
-                    lastEquity: 99500, longMarketValue: 50000,
-                }),
-            )
-            mockGetPositions.mockImplementation(() =>
-                Promise.resolve([]),
-            )
-            mockGetWatchlistItems.mockImplementation(() =>
-                Promise.resolve(mockWatchlistData),
-            )
-            mockGetMacroIndicators.mockImplementation(() =>
-                Promise.resolve(mockMacroData),
-            )
-            mockGenerateBrief.mockImplementation(() =>
-                Promise.reject(new Error('AI service unavailable')),
-            )
-
-            const res = await app.request('/api/dashboard')
-            const json = await res.json()
-
-            expect(res.status).toBe(200)
-            expect(json.success).toBe(true)
-            expect(json.data.brief).toBeNull()
-        })
-
-        it('omits failed source from prefetched (only passes successful data)', async () => {
-            mockGetAccount.mockImplementation(() =>
-                Promise.reject(new Error('Alpaca down')),
-            )
-            mockGetPositions.mockImplementation(() =>
-                Promise.resolve([]),
-            )
-            mockGetWatchlistItems.mockImplementation(() =>
-                Promise.resolve(mockWatchlistData),
-            )
-            mockGetMacroIndicators.mockImplementation(() =>
-                Promise.resolve(mockMacroData),
-            )
-            mockGenerateBrief.mockImplementation(() =>
-                Promise.resolve({
-                    data: mockBriefData,
-                    cached: false,
-                    generatedAt: '2026-03-02T01:00:00Z',
-                }),
-            )
-
-            await app.request('/api/dashboard')
-
-            const args = mockGenerateBrief.mock.calls[0]
-            const prefetched = args[3]
-            // portfolio failed → not in prefetched, brief will fetch internally
-            expect(prefetched).not.toHaveProperty('portfolio')
-            expect(prefetched).toHaveProperty('macro')
-            expect(prefetched).toHaveProperty('watchlist')
+            expect(json.data.portfolio).not.toBeNull()
+            expect(json.data.watchlist).toEqual(mockWatchlistData)
         })
 
         it('returns empty positionSymbols when positions fetch fails', async () => {
             mockGetAccount.mockImplementation(() =>
                 Promise.resolve({
-                    equity: 100000, cash: 50000, buyingPower: 100000,
-                    lastEquity: 99500, longMarketValue: 50000,
+                    equity: 100000,
+                    cash: 50000,
+                    buyingPower: 100000,
+                    lastEquity: 99500,
+                    longMarketValue: 50000,
                 }),
             )
             mockGetPositions.mockImplementation(() =>
@@ -346,13 +199,6 @@ describe('GET /api/dashboard', () => {
             )
             mockGetMacroIndicators.mockImplementation(() =>
                 Promise.resolve([]),
-            )
-            mockGenerateBrief.mockImplementation(() =>
-                Promise.resolve({
-                    data: mockBriefData,
-                    cached: false,
-                    generatedAt: '2026-03-02T01:00:00Z',
-                }),
             )
 
             const res = await app.request('/api/dashboard')

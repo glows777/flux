@@ -126,35 +126,12 @@ model ChatMessage {
   @@index([sessionId, createdAt])           // 按序加载
 }
 
-// EarningsCache (财报数据缓存 — L1 硬数据 + L2 AI 分析 + 手动上传 Transcript)
-model EarningsCache {
-  id         String   @id @default(cuid())
-  symbol     String
-  quarter    String                  // "2024-Q3"
-  type       String                  // "L1" | "L2" | "TRANSCRIPT"
-  content    String   @db.Text       // JSON.stringify(EarningsL1 | EarningsL2) or raw transcript text
-  reportDate DateTime                // 财报实际发布日 (用于计算过期)
-  createdAt  DateTime @default(now())
-
-  @@unique([symbol, quarter, type])
-  @@index([symbol, quarter])
-}
-
-// MorningBriefCache (每日 AI 简报缓存)
-model MorningBriefCache {
-  id        String   @id @default(cuid())
-  date      String   @unique          // "2026-02-21"（北京时间自然日）
-  content   String   @db.Text         // JSON.stringify(MorningBrief)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt       // 手动刷新时更新
-}
-
 // CronJob (定时任务配置)
 model CronJob {
   id            String    @id @default(cuid())
   name          String
   schedule      String                   // cron 表达式 (如 "0 9 * * 1-5")
-  taskType      String                   // 任务类型 (如 "morning-brief", "watchlist-alert")
+  taskType      String                   // 任务类型 (如 "trading-agent", "auto-trading-agent")
   taskPayload   Json                     // 任务参数
   channel       String                   // 目标渠道: "discord" | "web" | ...
   channelTarget Json?                    // 渠道目标 (如 { guildId, channelId })

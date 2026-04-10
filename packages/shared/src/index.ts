@@ -12,22 +12,6 @@ export type {
     StockMetrics,
 } from './types/domain'
 
-// ─── Brief / AI Types + Schemas ───
-export type {
-    MorningBrief,
-    MacroBrief,
-    SpotlightItem,
-    CatalystItem,
-    BriefResponse,
-    PortfolioContext,
-} from './types/brief'
-export {
-    MacroSchema,
-    SpotlightSchema,
-    CatalystSchema,
-    MorningBriefSchema,
-} from './types/brief'
-
 // ─── API Types ───
 export type { DashboardData } from './types/api'
 
@@ -49,7 +33,6 @@ export {
     formatDividendYield,
     formatLargeNumber,
     getVixLabel,
-    formatBriefTime,
     getGreeting,
     formatRelativeTime,
 } from './utils/format'

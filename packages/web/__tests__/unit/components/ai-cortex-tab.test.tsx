@@ -1,13 +1,12 @@
 /**
  * Task 12: AICortex Tab URL Query Param Tests
  *
- * Verifies that AICortex reads ?tab= from URL search params
- * and initializes the active tab accordingly.
+ * Verifies that AICortex stays report-only after finance removal.
  *
  * T12-01: 默认 tab = report (无 query)
- * T12-03: ?tab=finance → Finance Tab 激活
+ * T12-03: ?tab=finance → fallback 到 Report Tab
  * T12-04: ?tab=xxx → fallback 到 Report Tab
- * T12-05: 手动切换 Tab 正常工作
+ * T12-05: 不再渲染财报 tab
  */
 
 import { afterEach, describe, expect, it, mock } from 'bun:test'
@@ -43,12 +42,12 @@ describe('AICortex tab initialization from URL query param', () => {
         expect(reportTab.closest('button')?.className).toContain('text-emerald')
     })
 
-    it('T12-03: ?tab=finance activates Finance tab', () => {
+    it('T12-03: ?tab=finance falls back to report tab', () => {
         tabParam = 'finance'
         render(<AICortex symbol="NVDA" assetName="NVIDIA" />)
 
-        const financeTab = screen.getByText('财报')
-        expect(financeTab.closest('button')?.className).toContain('text-emerald')
+        const reportTab = screen.getByText('研报')
+        expect(reportTab.closest('button')?.className).toContain('text-emerald')
     })
 
     it('T12-04: invalid ?tab=xxx falls back to report tab', () => {
@@ -59,18 +58,11 @@ describe('AICortex tab initialization from URL query param', () => {
         expect(reportTab.closest('button')?.className).toContain('text-emerald')
     })
 
-    it('T12-05: manual tab switch works', () => {
-        tabParam = 'finance'
+    it('T12-05: finance tab is not rendered anymore', () => {
+        tabParam = 'report'
         render(<AICortex symbol="NVDA" assetName="NVIDIA" />)
 
-        const financeTab = screen.getByText('财报')
-        expect(financeTab.closest('button')?.className).toContain('text-emerald')
-
-        const reportTab = screen.getByText('研报')
-        fireEvent.click(reportTab.closest('button')!)
-
-        expect(reportTab.closest('button')?.className).toContain('text-emerald')
-        expect(financeTab.closest('button')?.className).not.toContain('text-emerald')
+        expect(screen.queryByText('财报')).toBeNull()
     })
 
     it('T12-06: ?tab=chat falls back to report (chat tab removed)', () => {

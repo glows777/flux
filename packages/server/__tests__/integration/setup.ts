@@ -39,8 +39,6 @@ import {
     mockGetStockHistory,
     // stock-info mock
     mockGetStockInfo,
-    // brief mock
-    mockGenerateBrief,
     // cache mock
     mockGetReportWithCache,
     // session mocks
@@ -97,13 +95,6 @@ import {
     mockGetPosition,
     mockGetOrders,
     mockAlpacaIsConfigured,
-    // finance (earnings) mocks
-    mockGetAvailableFiscalQuarters,
-    mockGetL1WithCache,
-    mockGetL2WithCache,
-    mockGetQuartersWithCache,
-    mockSaveTranscript,
-    MockFmpError,
     // cron service mocks
     mockCreateCronJob,
     mockListCronJobs,
@@ -210,10 +201,6 @@ mock.module('@/core/api/watchlist', () => ({
     RemoveWatchlistError: MockRemoveWatchlistError,
 }))
 
-mock.module('@/core/ai/brief', () => ({
-    generateBrief: mockGenerateBrief,
-}))
-
 mock.module('@/core/ai/cache', () => ({
     getReportWithCache: mockGetReportWithCache,
     getReportFromCache: mock(() => Promise.resolve(null)),
@@ -317,22 +304,6 @@ mock.module('@/core/broker/alpaca-client', () => ({
         isConfigured: mockAlpacaIsConfigured,
     }),
     resetAlpacaClient: mock(() => {}),
-}))
-
-mock.module('@/core/finance', () => ({
-    getAvailableFiscalQuarters: mockGetAvailableFiscalQuarters,
-    getL1WithCache: mockGetL1WithCache,
-    getL2WithCache: mockGetL2WithCache,
-    getQuartersWithCache: mockGetQuartersWithCache,
-    saveTranscript: mockSaveTranscript,
-    FmpError: MockFmpError,
-    FMP_ERROR_CODE_TO_STATUS: {
-        CONFIG_ERROR: 500,
-        API_ERROR: 502,
-        RATE_LIMITED: 429,
-        NOT_FOUND: 404,
-        PARSE_ERROR: 502,
-    },
 }))
 
 mock.module('@/core/cron/service', () => ({

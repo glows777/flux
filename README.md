@@ -81,6 +81,15 @@ bun run db:generate           # Generate Prisma client
 bun run dev                   # Next.js :3000 + Hono :3001
 ```
 
+For destructive schema changes, use the one-time explicit rollout command instead of the default push:
+
+```bash
+bun run db:push:accept-data-loss
+bun run db:generate
+```
+
+Use this only when the release intentionally drops tables or columns. The finance and Morning Brief removal release requires this command because it removes `EarningsCache` and `MorningBriefCache`.
+
 ```bash
 bun run test:all              # Unit + integration + E2E
 bun run lint                  # Biome check

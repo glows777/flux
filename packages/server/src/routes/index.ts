@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
-import brief from './brief'
 import { createChatRoutes } from './chat'
 import { createCronRoutes } from './cron'
 import dashboard from './dashboard'
@@ -44,7 +43,6 @@ export function createHonoApp(deps?: {
         })
         .get('/hello', (c) => c.json({ message: 'Hello from Hono!' }))
         .route('/macro', macro)
-        .route('/brief', brief)
         .route('/dashboard', dashboard)
         .route('/watchlist', watchlist)
         .route('/stocks', stocks)

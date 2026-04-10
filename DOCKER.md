@@ -35,16 +35,23 @@ docker compose down -v
 ### 运行数据库迁移
 
 ```bash
-# 应用已在启动时自动运行 prisma migrate deploy
-# 手动运行迁移
-docker compose exec app bunx prisma migrate deploy
+# 手动推送 schema
+docker compose exec app bun run db:push
+```
+
+如果当前发布包含删除表或列的破坏性 schema 变更，需要显式接受数据丢失：
+
+```bash
+docker compose exec app bun run db:push:accept-data-loss
+docker compose exec app bun run db:generate
 ```
 
 ### 创建新迁移（开发环境）
 
 ```bash
-# 在容器中运行
-docker compose exec app bunx prisma migrate dev --name migration_name
+# 本仓库使用 prisma db push，而不是 prisma migrate dev
+docker compose exec app bun run db:push
+docker compose exec app bun run db:generate
 ```
 
 ### 直接访问 PostgreSQL
@@ -174,4 +181,3 @@ docker images | grep flux
 2. **使用 secrets 管理敏感信息**（Docker Swarm/Kubernetes）
 3. **定期更新基础镜像**
 4. **启用 SSL/TLS** 进行数据库连接（生产环境）
-

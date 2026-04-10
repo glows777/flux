@@ -15,7 +15,7 @@ const GENERIC_SUGGESTIONS = [
 
 function getSymbolSuggestions(symbol: string) {
     return [
-        { icon: BarChart3, text: `分析 ${symbol} 最新财报` },
+        { icon: BarChart3, text: `${symbol} 当前估值怎么看` },
         { icon: ShieldAlert, text: `评估 ${symbol} 近期风险` },
         { icon: TrendingUp, text: `${symbol} 技术面走势分析` },
         { icon: GitCompare, text: `${symbol} 与同行业对比` },

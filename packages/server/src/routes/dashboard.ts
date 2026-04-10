@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import { generateBrief } from '@/core/ai/brief'
 import { getAlpacaClient } from '@/core/broker/alpaca-client'
 import { calculateSummary, mapAlpacaPositionToHoldingItem } from '@/core/broker/portfolio-calc'
 import { getWatchlistItems } from '@/core/api/watchlist'
@@ -41,27 +40,9 @@ const dashboard = new Hono()
             portfolio = { holdings: holdingItems, summary: calculateSummary(holdingItems, vix) }
         }
 
-        let brief: Awaited<ReturnType<typeof generateBrief>>['data'] | null = null
-        try {
-            const prefetched = {
-                ...(portfolio ? { portfolio } : {}),
-                ...(macro ? { macro } : {}),
-                ...(watchlist ? { watchlist } : {}),
-            }
-            const briefResult = await generateBrief(
-                false,
-                undefined,
-                undefined,
-                prefetched,
-            )
-            brief = briefResult.data
-        } catch {
-            // brief generation failed — return null, frontend handles gracefully
-        }
-
         return c.json({
             success: true,
-            data: { portfolio, watchlist, brief, positionSymbols },
+            data: { portfolio, watchlist, positionSymbols },
         })
     })
 

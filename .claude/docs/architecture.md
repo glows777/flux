@@ -43,7 +43,6 @@ packages/
           presets/          # 预设组合 (tradingAgentPreset, autoTradingAgentPreset)
           memory/           # 向量记忆系统 (chunker, embedding, search, store, vector-ops)
           research/         # 研究工具 (web-search, web-fetch, x-search)
-          brief.ts          # 每日 AI 简报生成
           cache.ts          # AI 研报缓存
           prompts.ts        # 系统 prompt 模板
           providers.ts      # AI Provider 配置 (Claude/Gemini/xAI)
@@ -63,7 +62,6 @@ packages/
           pnl.ts            # 盈亏计算
           discord-hook.ts   # Discord 交易通知
         market-data/        # 市场数据 (facade, alpha-vantage, yahoo-finance, finnhub, sync, rss/)
-        finance/            # 财报分析 (fmp-client, l1-service, l2-service, transcript-service, cache)
         services/           # 服务层
           order-sync.ts     # Alpaca 订单同步 (WebSocket 实时)
         cron/               # Cron 服务
@@ -88,7 +86,7 @@ packages/
     components/
       charts/               # MiniChart 迷你图表
       chat/                 # 聊天系统 (ChatPage, ChatSessionSidebar, messages/)
-      dashboard/            # Dashboard 视图 (Watchlist, StatCard, StatsGrid, brief/)
+      dashboard/            # Dashboard 视图 (Watchlist, StatCard, StatsGrid)
       detail/               # 详情视图 (PriceChart, MetricsGrid, NewsFeed, AICortex, tabs/)
       dev/                  # 开发工具 (MemoryInspector, DocEditor, DocTree, SearchBar)
       layout/               # 布局组件 (Sidebar, Header, Logo, NavIcon)
@@ -97,7 +95,6 @@ packages/
       ui/                   # 通用 UI (SearchBox, SignalBadge, Toast)
     lib/
       ai/                   # 前端 AI hooks
-      finance/              # 财报数据前端逻辑
       mock/                 # 前端 Mock 数据
       api.ts                # Hono RPC 客户端 (hc<AppType>)
       fetcher.ts            # SWR fetcher (解包 { success, data } 信封)
@@ -117,9 +114,7 @@ docs/                       # 公开文档 (PRD, README 等)
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/macro` | 宏观指标 (SPY, QQQ, TLT, VIX) |
-| GET | `/brief` | 每日 AI 简报 (带缓存) |
-| POST | `/brief` | 强制刷新 AI 简报 |
-| GET | `/dashboard` | 聚合数据 (Portfolio + Watchlist + Brief + Macro) |
+| GET | `/dashboard` | 聚合数据 (Portfolio + Watchlist + PositionSymbols) |
 | GET | `/watchlist` | 自选股列表 |
 | POST | `/watchlist` | 添加自选股 |
 | DELETE | `/watchlist/:symbol` | 删除自选股 |
@@ -128,10 +123,6 @@ docs/                       # 公开文档 (PRD, README 等)
 | GET | `/stocks/:symbol/news?limit=` | 新闻 (RSS 优先, Finnhub 兜底) |
 | POST | `/stocks/:symbol/report` | AI 研报 (带 24h 缓存) |
 | GET | `/stocks/:symbol/position` | 当前持仓 (Alpaca) |
-| GET | `/stocks/:symbol/earnings/quarters` | 可用财报季度列表 (从 FMP income-statement 导出) |
-| GET | `/stocks/:symbol/earnings?year=&quarter=` | L1 财报硬数据 (季度级缓存) |
-| POST | `/stocks/:symbol/earnings/analysis` | L2 AI 财报分析 (transcript → AI) |
-| PUT | `/stocks/:symbol/earnings/transcript` | 手动上传 earnings call transcript |
 | GET | `/sessions` | 会话列表 |
 | DELETE | `/sessions/:id` | 删除会话 |
 | PATCH | `/sessions/:id` | 重命名会话 |
@@ -162,8 +153,6 @@ docs/                       # 公开文档 (PRD, README 等)
 - `StockSearchQuery` — AI 生成的搜索词缓存 (30d TTL, 含中文名/板块/搜索词)
 - `ChatSession` — AI 对话会话 (支持 web/discord/cron 多渠道, 可选绑定 symbol)
 - `ChatMessage` — 会话消息 (JSON 序列化 UIMessage, sessionId+messageId 去重)
-- `EarningsCache` — 财报缓存 (L1/L2/TRANSCRIPT, 按 reportDate + 100d 过期, symbol+quarter+type 唯一)
-- `MorningBriefCache` — 每日 AI 简报缓存 (date 唯一)
 - `MemoryDocument` — 记忆文档 (path 唯一, evergreen 标记)
 - `MemoryChunk` — 记忆分块 + 向量嵌入 (vector(768), entities GIN 索引)
 - `CronJob` — 定时任务 (cron 表达式, taskType, 渠道目标, 执行状态追踪)
@@ -253,7 +242,7 @@ docs/                       # 公开文档 (PRD, README 等)
 1. **侧边栏导航** (w-16 md:w-20) — Logo, 导航图标 (Home/BarChart2/Globe/Layers), 底部 (Bell/Settings/头像)
 2. **顶部宏观行情栏** (h-16) — 标普500/比特币/十年美债/恐慌指数 + 搜索框 (Cmd+K)
 3. **Dashboard 视图** — AI 简报 + 统计卡片 (总资产/今日盈亏/风险评分) + 自选股列表 (带 MiniChart)
-4. **Detail 视图** — 左 8/12 (主图表/指标卡片/持仓/新闻) + 右 4/12 (AI 面板: 研报/财报/问答)
+4. **Detail 视图** — 左 8/12 (主图表/指标卡片/持仓/新闻) + 右 4/12 (AI 面板: 研报/问答)
 5. **Chat 视图** — 会话列表侧栏 + 聊天主区域 (工具结果可视化)
 6. **Dev 视图** — 记忆文档管理 + 语义搜索
 
@@ -262,7 +251,7 @@ docs/                       # 公开文档 (PRD, README 等)
 - **Dashboard**: `DashboardContent`, `StatsGrid`, `StatCard`, `Watchlist`, `WatchlistItem`, `AddWatchlistInput`
 - **Dashboard Brief**: `BriefSkeleton`, `SpotlightCard`, `CatalystList`
 - **Detail**: `DetailView`, `PriceChart`, `PeriodButton`, `MetricsGrid`, `MetricCard`, `NewsFeed`, `NewsItem`, `AICortex`, `TabButton`, `ContextInput`, `PositionCard`
-- **Detail Tabs**: `ReportTab`, `FinanceTab` (L1/L2 财报分析), `ChatTab`
+- **Detail Tabs**: `ReportTab`, `ChatTab`
 - **Finance**: `QuarterSwitcher`, `L1Section`, `L2Section`
 - **Chat**: `ChatPage`, `ChatSessionSidebar`, `ChatSessionItem`, `ChatWelcome`
 - **Chat Messages**: AssistantMessage, UserMessage, ToolResult 可视化组件

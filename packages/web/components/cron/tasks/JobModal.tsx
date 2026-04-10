@@ -100,7 +100,7 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
                                 className='px-3 py-2 text-xs bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/50'
-                                placeholder='e.g. morning-brief'
+                                placeholder='e.g. nightly-trading-check'
                             />
                         </div>
 

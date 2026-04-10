@@ -81,6 +81,15 @@ bun run db:generate           # Generate Prisma client
 bun run dev                   # Next.js :3000 + Hono :3001
 ```
 
+如果这次发布包含破坏性 schema 变更，不要使用默认的 `db:push`，改用下面这个一次性命令：
+
+```bash
+bun run db:push:accept-data-loss
+bun run db:generate
+```
+
+只在明确要删除表或列时使用它。本次移除 finance 和 Morning Brief 功能的发布就需要这个命令，因为它会删除 `EarningsCache` 和 `MorningBriefCache`。
+
 ```bash
 bun run test:all              # Unit + integration + E2E
 bun run lint                  # Biome check

@@ -135,24 +135,6 @@ export const mockGetStockHistory = mock((): Promise<any> => Promise.resolve({
 // biome-ignore lint: mock functions need flexible typing
 export const mockGetStockInfo = mock((): Promise<any> => Promise.resolve({}))
 
-// ─── @/lib/ai/brief ───
-
-// biome-ignore lint: mock functions need flexible typing
-export const mockGenerateBrief = mock((): Promise<any> => Promise.resolve({
-    data: {
-        generatedAt: '2026-02-28T01:00:00Z',
-        macro: {
-            summary: '标普500: 498.20 (+1.2%)',
-            signal: 'risk-on',
-            keyMetrics: [{ label: '标普500', value: '498.20', change: '+1.2%' }],
-        },
-        spotlight: [],
-        catalysts: [],
-    },
-    cached: true,
-    generatedAt: '2026-02-28T01:00:00Z',
-}))
-
 // ─── @/lib/ai/cache ───
 
 // biome-ignore lint: mock functions need flexible typing
@@ -365,82 +347,3 @@ export const mockGetCronJob = mock(() => Promise.resolve(null))
 export const mockCreateCronJobRun = mock(() => Promise.resolve({ id: 'run-1', jobId: 'cron-1', status: 'success' }))
 export const mockListCronJobRuns = mock(() => Promise.resolve({ runs: [], total: 0 }))
 export const mockListAllRuns = mock(() => Promise.resolve({ runs: [], total: 0 }))
-
-// ─── @/lib/finance (earnings) ───
-
-export class MockFmpError extends Error {
-    code: string
-    constructor(message: string, code: string) {
-        super(message)
-        this.name = 'FmpError'
-        this.code = code
-    }
-}
-
-// biome-ignore lint: mock functions need flexible typing
-export const mockGetAvailableFiscalQuarters = mock((): Promise<any> => Promise.resolve([
-    { year: 2025, quarter: 1, key: '2025-Q1', label: '2025 Q1 (2025-04-27)', date: '2025-04-27' },
-]))
-
-// biome-ignore lint: mock functions need flexible typing
-export const mockGetL1WithCache = mock((): Promise<any> => Promise.resolve({
-    data: {
-        symbol: 'AAPL',
-        name: 'Apple Inc.',
-        period: 'FY2025 Q1',
-        reportDate: '2025-01-30',
-        beatMiss: { revenue: null, eps: null },
-        margins: [],
-        keyFinancials: {
-            revenue: 100000000000,
-            revenueYoY: null,
-            operatingIncome: 30000000000,
-            fcf: null,
-            debtToAssets: null,
-        },
-    },
-    cached: false,
-    cachedAt: null,
-    reportDate: '2025-01-30T00:00:00.000Z',
-}))
-
-// biome-ignore lint: mock functions need flexible typing
-export const mockGetQuartersWithCache = mock((): Promise<any> => Promise.resolve({
-    data: [
-        { year: 2025, quarter: 1, key: '2025-Q1', label: '2025 Q1 (2025-04-27)', date: '2025-04-27' },
-    ],
-    cached: false,
-    cachedAt: null,
-}))
-
-// biome-ignore lint: mock functions need flexible typing
-export const mockSaveTranscript = mock((): Promise<any> => Promise.resolve({
-    symbol: 'AAPL',
-    quarter: '2024-Q3',
-}))
-
-// biome-ignore lint: mock functions need flexible typing
-export const mockGetL2WithCache = mock((): Promise<any> => Promise.resolve({
-    data: {
-        symbol: 'AAPL',
-        period: 'FY2025 Q1',
-        tldr: 'Apple reported strong Q1 results.',
-        guidance: {
-            nextQuarterRevenue: '$90-93B',
-            fullYearAdjustment: '维持',
-            keyQuote: 'We expect continued momentum.',
-            signal: '正面',
-        },
-        segments: [],
-        managementSignals: {
-            tone: '乐观',
-            keyPhrases: [],
-            quotes: [],
-            analystFocus: [],
-        },
-        suggestedQuestions: [],
-    },
-    cached: false,
-    cachedAt: null,
-    reportDate: '2025-01-30T00:00:00.000Z',
-}))

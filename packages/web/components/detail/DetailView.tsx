@@ -24,6 +24,17 @@ interface DetailViewProps {
     symbol: string
 }
 
+const noopStorage: Storage = {
+    getItem: () => null,
+    setItem: () => undefined,
+    removeItem: () => undefined,
+    clear: () => undefined,
+    key: () => null,
+    get length() {
+        return 0
+    },
+}
+
 function BackLink() {
     return (
         <Link
@@ -88,10 +99,10 @@ export function DetailView({ symbol }: DetailViewProps) {
     const { data: position } = usePosition(symbol)
 
     const storage =
-        typeof window !== 'undefined' ? window.localStorage : undefined
+        typeof window !== 'undefined' ? window.localStorage : noopStorage
     const { defaultLayout, onLayoutChanged } = useDefaultLayout({
         id: 'flux-detail-layout',
-        storage: storage as Storage,
+        storage,
     })
 
     // Toggle handlers use isCollapsed() for ground truth, not React state.

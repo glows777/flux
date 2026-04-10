@@ -15,6 +15,7 @@
     "build": "bun build src/index.ts --outdir dist --target bun",
     "start": "bun run dist/index.js",
     "db:push": "bunx prisma db push",
+    "db:push:accept-data-loss": "bunx prisma db push --accept-data-loss",
     "db:generate": "bunx prisma generate",
     "test:unit": "bun test __tests__/unit",
     "test:integration:api": "bun test --preload ./__tests__/integration/setup.ts __tests__/integration/*-api.test.ts __tests__/integration/discord-clear-session.test.ts __tests__/integration/gateway-chat.test.ts __tests__/integration/skill-plugin.test.ts __tests__/integration/trading-tools.test.ts",

@@ -101,24 +101,6 @@ export function getVixLabel(vix: number): string {
 }
 
 /**
- * ISO 时间字符串 → "MM/DD HH:mm" (Asia/Shanghai 时区)
- */
-export function formatBriefTime(isoString: string): string {
-    const date = new Date(isoString)
-    const parts = new Intl.DateTimeFormat('en-US', {
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-        timeZone: 'Asia/Shanghai',
-    }).formatToParts(date)
-    const get = (type: string) =>
-        parts.find((p) => p.type === type)?.value ?? ''
-    return `${get('month')}/${get('day')} ${get('hour')}:${get('minute')}`
-}
-
-/**
  * 根据当前时段返回中文问候语
  */
 export function getGreeting(): string {

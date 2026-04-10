@@ -13,6 +13,7 @@
         "test:server": "bun run --filter @flux/server test:all",
         "test:web": "bun run --filter @flux/web test",
         "db:push": "bun run --filter @flux/server db:push",
+        "db:push:accept-data-loss": "bun run --filter @flux/server db:push:accept-data-loss",
         "db:generate": "bun run --filter @flux/server db:generate",
         "lint": "biome check",
         "format": "biome format --write",

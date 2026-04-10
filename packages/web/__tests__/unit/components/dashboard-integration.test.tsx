@@ -4,15 +4,13 @@
  */
 
 import { afterEach, describe, expect, it, mock } from 'bun:test'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 
 // Mock lucide-react — all icons used in the component tree
 const Stub = () => <span />
 
 mock.module('lucide-react', () => ({
     Sparkles: Stub,
-    Radio: Stub,
-    RefreshCw: Stub,
     ChevronRight: Stub,
     X: Stub,
     Plus: Stub,
@@ -22,11 +20,6 @@ mock.module('lucide-react', () => ({
     Trash2: Stub,
     Ellipsis: Stub,
     ArrowRight: Stub,
-}))
-
-// Mock Toast
-mock.module('@/components/ui/Toast', () => ({
-    showToast: mock(() => {}),
 }))
 
 // Mock next/navigation
@@ -76,14 +69,6 @@ mock.module('@/lib/fetcher', () => ({
     fetcher: mock(() => Promise.resolve({})),
 }))
 
-// Minimal brief that won't trigger the empty-spotlight CTA
-const minimalBrief = {
-    generatedAt: '2026-03-02T01:00:00Z',
-    macro: { summary: '', signal: 'neutral' as const, keyMetrics: [] },
-    spotlight: [{ symbol: 'X', name: 'X', price: 1, change: 0, holding: { shares: 1, avgCost: 1, gainPct: 0 }, reason: 'r', action: 'a', signal: 'neutral' as const }],
-    catalysts: [],
-}
-
 const { DashboardContent } = await import('@/components/dashboard/DashboardContent')
 const { WatchlistItem } = await import('@/components/dashboard/WatchlistItem')
 
@@ -116,7 +101,6 @@ describe('DashboardContent', () => {
                 },
             },
             watchlist: [],
-            brief: minimalBrief,
             positionSymbols: [],
         }
 
@@ -137,7 +121,6 @@ describe('DashboardContent', () => {
                 },
             },
             watchlist: [],
-            brief: minimalBrief,
             positionSymbols: [],
         }
 
