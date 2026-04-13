@@ -140,6 +140,9 @@ export class CronScheduler {
             const result = await this.executor.execute(job)
             if (gen !== this.generation) return
             await this.handleResult(jobId, result, 'manual', Date.now() - startMs)
+        } catch (error) {
+            console.error(`Job ${jobId} manual run error:`, error)
+            throw error
         } finally {
             if (gen === this.generation) this.finishJobExecution(jobId)
         }
