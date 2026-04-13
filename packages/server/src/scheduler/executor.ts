@@ -58,6 +58,7 @@ export class TaskExecutor {
         return {
             success: triggerResult.success,
             output: triggerResult.text?.trim() || '(no response)',
+            ...(triggerResult.error ? { error: triggerResult.error } : {}),
         }
     }
 }

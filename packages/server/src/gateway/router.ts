@@ -22,6 +22,7 @@ export interface TriggerResult {
   readonly text: string
   readonly sessionId: string
   readonly success: boolean
+  readonly error?: string
 }
 
 interface RouterDeps {

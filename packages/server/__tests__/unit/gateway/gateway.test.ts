@@ -140,7 +140,7 @@ describe('Gateway', () => {
     }
 
     const result = await gateway.chat(input)
-    expect(result).toEqual({ text: '', sessionId: '', success: false })
+    expect(result).toEqual({ text: '', sessionId: '', success: false, error: 'AI service down' })
   })
 
   test('clearSession delegates to router', async () => {

@@ -228,6 +228,8 @@ export class CronScheduler {
                 const result = await this.executor.execute(job)
                 if (gen !== this.generation) return // stale execution after restart
                 await this.handleResult(job.id, result, 'scheduler', Date.now() - startMs)
+            } catch (error) {
+                console.error(`Job ${job.id} scheduler error:`, error)
             } finally {
                 if (gen === this.generation) this.finishJobExecution(job.id)
             }
