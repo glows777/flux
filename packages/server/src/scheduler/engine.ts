@@ -5,6 +5,7 @@ import { TaskExecutor, type ExecutionResult } from './executor'
 
 const MAX_RETRIES = 5
 const MIN_INTERVAL_S = 60
+const JOB_STUCK_THRESHOLD_MS = 25 * 60 * 1000
 
 export function parseSchedule(schedule: string): string | null {
     let expr: string
@@ -55,14 +56,24 @@ interface CronSchedulerDeps {
     }
 }
 
+export interface SchedulerHealthResult {
+    readonly status: 'healthy' | 'unhealthy'
+    readonly reason?: string
+    readonly details?: string
+    readonly checkedAt: string
+}
+
 export class CronScheduler {
     private jobs = new Map<string, Cron>()
     private running = new Set<string>()
+    private runningJobStartedAt = new Map<string, number>()
     private executor: TaskExecutor
-    private beatCallback: (() => void) | null = null
-    private progressCallback: (() => void) | null = null
-    private beatInterval: Timer | null = null
     private generation = 0
+    private startedAt: number | null = null
+    private lastEngineActivityAt: number | null = null
+    private lastSuccessfulRunAt: number | null = null
+    private oldestRunningJobStartedAt: number | null = null
+    private isStarted = false
 
     constructor(private readonly deps: CronSchedulerDeps) {
         this.executor = new TaskExecutor({ gateway: deps.gateway })
@@ -73,22 +84,26 @@ export class CronScheduler {
         for (const job of jobs) {
             this.scheduleJob(job)
         }
-        // Independent beat timer — emits heartbeat even when no jobs are due
-        this.beatInterval = setInterval(() => this.beatCallback?.(), 30_000)
+        const now = Date.now()
+        this.startedAt = now
+        this.lastEngineActivityAt = now
+        this.isStarted = true
         console.log(`Cron scheduler started with ${jobs.length} jobs`)
     }
 
     async stop(): Promise<void> {
         this.generation++
-        if (this.beatInterval) {
-            clearInterval(this.beatInterval)
-            this.beatInterval = null
-        }
         for (const [, cron] of this.jobs) {
             cron.stop()
         }
         this.jobs.clear()
         this.running.clear()
+        this.runningJobStartedAt.clear()
+        this.startedAt = null
+        this.lastEngineActivityAt = null
+        this.lastSuccessfulRunAt = null
+        this.oldestRunningJobStartedAt = null
+        this.isStarted = false
     }
 
     async addJob(job: CronJob): Promise<void> {
@@ -104,6 +119,9 @@ export class CronScheduler {
         if (cron) {
             cron.stop()
             this.jobs.delete(jobId)
+            this.running.delete(jobId)
+            this.runningJobStartedAt.delete(jobId)
+            this.recalculateOldestRunningJobStartedAt()
         }
     }
 
@@ -114,24 +132,70 @@ export class CronScheduler {
         if (this.running.has(jobId)) throw new Error(`Job ${jobId} is already running`)
 
         const gen = this.generation
-        this.running.add(jobId)
         const startMs = Date.now()
+        this.markEngineActivity(startMs)
+        this.beginJobExecution(jobId, startMs)
         try {
             const result = await this.executor.execute(job)
             if (gen !== this.generation) return
             await this.handleResult(jobId, result, 'manual', Date.now() - startMs)
-            try { if (result.success) this.progressCallback?.() } catch { /* non-fatal */ }
         } finally {
-            if (gen === this.generation) this.running.delete(jobId)
+            if (gen === this.generation) this.finishJobExecution(jobId)
         }
     }
 
-    onBeat(callback: () => void): void {
-        this.beatCallback = callback
+    async checkHealth(): Promise<SchedulerHealthResult> {
+        const checkedAt = new Date().toISOString()
+
+        if (!this.isStarted) {
+            return {
+                status: 'unhealthy',
+                reason: 'scheduler_not_started',
+                details: 'scheduler has not been started',
+                checkedAt,
+            }
+        }
+
+        if (this.jobs.size === 0) {
+            return {
+                status: 'unhealthy',
+                reason: 'no_active_jobs',
+                details: 'scheduler has no active cron jobs loaded',
+                checkedAt,
+            }
+        }
+
+        for (const [jobId, cron] of this.jobs) {
+            if (!cron.isRunning() || cron.isStopped()) {
+                return {
+                    status: 'unhealthy',
+                    reason: 'engine_stopped',
+                    details: `cron job ${jobId} is not running`,
+                    checkedAt,
+                }
+            }
+        }
+
+        const stuckJob = this.getStuckJob(Date.now())
+        if (stuckJob) {
+            return {
+                status: 'unhealthy',
+                reason: 'job_stuck',
+                details: `job ${stuckJob.jobId} has been running for ${Math.floor(stuckJob.ageMs / 1000)} seconds`,
+                checkedAt,
+            }
+        }
+
+        return {
+            status: 'healthy',
+            details: this.getHealthDetails(),
+            checkedAt,
+        }
     }
 
-    onProgress(callback: () => void): void {
-        this.progressCallback = callback
+    async recoverHealth(): Promise<void> {
+        await this.stop()
+        await this.start()
     }
 
     private scheduleJob(job: CronJob): void {
@@ -146,22 +210,21 @@ export class CronScheduler {
 
         const gen = this.generation
         const cron = new Cron(schedule, { timezone: 'Asia/Shanghai', interval: MIN_INTERVAL_S }, async () => {
-            this.beatCallback?.()
+            const startMs = Date.now()
+            this.markEngineActivity(startMs)
 
             if (this.running.has(job.id)) {
                 console.log(`Job ${job.id} still running, skipping`)
                 return
             }
 
-            this.running.add(job.id)
-            const startMs = Date.now()
+            this.beginJobExecution(job.id, startMs)
             try {
                 const result = await this.executor.execute(job)
                 if (gen !== this.generation) return // stale execution after restart
                 await this.handleResult(job.id, result, 'scheduler', Date.now() - startMs)
-                try { if (result.success) this.progressCallback?.() } catch { /* non-fatal */ }
             } finally {
-                if (gen === this.generation) this.running.delete(job.id)
+                if (gen === this.generation) this.finishJobExecution(job.id)
             }
         })
 
@@ -175,6 +238,7 @@ export class CronScheduler {
         durationMs: number,
     ): Promise<void> {
         if (result.success) {
+            this.lastSuccessfulRunAt = Date.now()
             await this.deps.prisma.cronJob.update({
                 where: { id: jobId },
                 data: {
@@ -234,5 +298,72 @@ export class CronScheduler {
                 console.error(`Job ${jobId} disabled after ${MAX_RETRIES} consecutive failures`)
             }
         }
+    }
+
+    private markEngineActivity(timestamp = Date.now()): void {
+        this.lastEngineActivityAt = timestamp
+    }
+
+    private beginJobExecution(jobId: string, startedAt = Date.now()): void {
+        this.running.add(jobId)
+        this.runningJobStartedAt.set(jobId, startedAt)
+        this.recalculateOldestRunningJobStartedAt()
+    }
+
+    private finishJobExecution(jobId: string): void {
+        this.running.delete(jobId)
+        this.runningJobStartedAt.delete(jobId)
+        this.recalculateOldestRunningJobStartedAt()
+    }
+
+    private recalculateOldestRunningJobStartedAt(): void {
+        let oldest: number | null = null
+        for (const startedAt of this.runningJobStartedAt.values()) {
+            if (oldest === null || startedAt < oldest) {
+                oldest = startedAt
+            }
+        }
+        this.oldestRunningJobStartedAt = oldest
+    }
+
+    private getStuckJob(now: number): { readonly jobId: string; readonly startedAt: number; readonly ageMs: number } | null {
+        let stuckJobId: string | null = null
+        let stuckStartedAt: number | null = null
+
+        for (const [jobId, startedAt] of this.runningJobStartedAt) {
+            if (now - startedAt <= JOB_STUCK_THRESHOLD_MS) continue
+            if (stuckStartedAt === null || startedAt < stuckStartedAt) {
+                stuckJobId = jobId
+                stuckStartedAt = startedAt
+            }
+        }
+
+        if (!stuckJobId || stuckStartedAt === null) return null
+
+        return {
+            jobId: stuckJobId,
+            startedAt: stuckStartedAt,
+            ageMs: now - stuckStartedAt,
+        }
+    }
+
+    private getHealthDetails(): string {
+        const details: string[] = []
+
+        details.push(`runningJobs=${this.running.size}`)
+        if (this.oldestRunningJobStartedAt !== null) {
+            details.push(`oldestRunningJobStartedAt=${new Date(this.oldestRunningJobStartedAt).toISOString()}`)
+        }
+        if (this.startedAt !== null) {
+            details.push(`startedAt=${new Date(this.startedAt).toISOString()}`)
+        }
+        if (this.lastEngineActivityAt !== null) {
+            details.push(`lastEngineActivityAt=${new Date(this.lastEngineActivityAt).toISOString()}`)
+        }
+        if (this.lastSuccessfulRunAt !== null) {
+            details.push(`lastSuccessfulRunAt=${new Date(this.lastSuccessfulRunAt).toISOString()}`)
+        }
+
+        return details.join(', ')
     }
 }

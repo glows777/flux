@@ -1,7 +1,7 @@
 import { createHonoApp } from './routes/index'
 import { Router } from './gateway/router'
 import { Gateway } from './gateway/gateway'
-import { HeartbeatMonitor } from './gateway/heartbeat'
+import { HealthMonitor } from './gateway/health-monitor'
 import { DiscordAdapter } from './channels/discord/bot'
 import { getDiscordConfig } from './channels/discord/config'
 import { CronScheduler } from './scheduler/engine'
@@ -19,36 +19,24 @@ import { createOrderSyncService } from './core/services/order-sync'
 export type { AppType } from './routes/index'
 export { createHonoApp } from './routes/index'
 
-const DEFAULT_RULES = {
-    discord: { graceMs: 60_000, staleMs: 90_000, stuckMs: 25 * 60_000, maxRestartsPerHour: 10, minRestartIntervalMs: 30_000, exempt: false },
-    scheduler: { graceMs: 60_000, staleMs: 90_000, stuckMs: 25 * 60_000, maxRestartsPerHour: 10, minRestartIntervalMs: 30_000, exempt: false },
-    database: { graceMs: 10_000, staleMs: 120_000, stuckMs: 0, maxRestartsPerHour: 0, minRestartIntervalMs: 0, exempt: false },
+const DEFAULT_HEALTH_MONITOR_CONFIG = {
+    checkIntervalMs: 60_000,
+    gracePeriodMs: 120_000,
+    checkTimeoutMs: 20_000,
+    failureThreshold: 3,
+    maxRecoveriesPerHour: 3,
+    minRecoverIntervalMs: 300_000,
 }
 
 async function main() {
     const port = Number(process.env.PORT) || 3001
 
-    // Forward declarations for recovery callbacks
     let discord: DiscordAdapter | null = null
     let scheduler: CronScheduler
+    const discordConfig = getDiscordConfig()
+    const hasDiscordConfig = Boolean(discordConfig)
 
-    // 1. Heartbeat monitor
-    const heartbeat = new HeartbeatMonitor({
-        checkEveryMs: 15_000,
-        rules: DEFAULT_RULES,
-        onRecovery: async (subsystem) => {
-            if (subsystem === 'discord' && discord) {
-                await discord.stop()
-                await discord.start()
-            }
-            if (subsystem === 'scheduler') {
-                await scheduler.stop()
-                await scheduler.start()
-            }
-        },
-    })
-
-    // 2. Create AI runtime instances (2 runtimes only)
+    // 1. Create AI runtime instances (2 runtimes only)
     const model = getModel('main')
     const defaults = { thinkingBudget: THINKING_BUDGET }
 
@@ -70,13 +58,13 @@ async function main() {
         defaults,
     })
 
-    // 2.5 Order sync service (WebSocket — real-time order status to DB + Discord)
+    // 1.5 Order sync service (WebSocket — real-time order status to DB + Discord)
     const orderSync = createOrderSyncService({
         db: prisma as unknown as Parameters<typeof createOrderSyncService>[0]['db'],
     })
     orderSync.start()
 
-    // 3. Router + Gateway
+    // 2. Router + Gateway
     const router = new Router({
         runtimes: {
             'trading-agent': tradingRuntime,
@@ -84,23 +72,18 @@ async function main() {
         },
     })
 
-    // 4. Discord bot (optional) — needs Gateway, but Gateway needs channels Map
+    // 3. Discord bot (optional) — needs Gateway, but Gateway needs channels Map
     // Build channels Map first, then Gateway, then start Discord
     const channels = new Map()
-    const discordConfig = getDiscordConfig()
 
     // Create Gateway with channels map (discord adapter added below)
     const gateway = new Gateway({ router, channels })
 
-    if (discordConfig) {
+    if (hasDiscordConfig && discordConfig) {
         discord = new DiscordAdapter(discordConfig, gateway)
         channels.set('discord', discord)
         try {
             await discord.start()
-            discord.setCallbacks({
-                onBeat: () => heartbeat.beat('discord'),
-                onProgress: () => heartbeat.progress('discord'),
-            })
         } catch (error) {
             console.error('Discord bot failed to start (continuing without it):', error)
             channels.delete('discord')
@@ -110,7 +93,7 @@ async function main() {
         console.log('Discord bot disabled (no DISCORD_BOT_TOKEN)')
     }
 
-    // 5. Cron scheduler
+    // 4. Cron scheduler
     try {
         await seedTradingHeartbeat()
     } catch (error) {
@@ -119,40 +102,54 @@ async function main() {
 
     scheduler = new CronScheduler({ gateway, prisma })
     await scheduler.start()
-    scheduler.onBeat(() => heartbeat.beat('scheduler'))
-    scheduler.onProgress(() => heartbeat.progress('scheduler'))
+
+    // 5. Health monitor
+    const healthMonitor = new HealthMonitor(DEFAULT_HEALTH_MONITOR_CONFIG)
+
+    if (hasDiscordConfig && discordConfig) {
+        healthMonitor.register('discord', {
+            check: async () => {
+                if (!discord) {
+                    return {
+                        status: 'unhealthy',
+                        reason: 'client_not_ready',
+                        details: 'discord adapter is configured but not initialized',
+                        checkedAt: new Date().toISOString(),
+                    }
+                }
+                return discord.checkHealth()
+            },
+            recover: async () => {
+                if (!discord) {
+                    discord = new DiscordAdapter(discordConfig, gateway)
+                    channels.set('discord', discord)
+                }
+                await discord.recoverHealth()
+            },
+        })
+    }
+
+    healthMonitor.register('scheduler', {
+        check: () => scheduler.checkHealth(),
+        recover: () => scheduler.recoverHealth(),
+    })
 
     // 6. HTTP API
     const app = createHonoApp({
-        getHealthStatus: () => heartbeat.getHealthStatus(),
+        getHealthStatus: () => healthMonitor.getHealthStatus(),
         cron: { scheduler },
         gateway,
     })
     Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 })
     console.log(`Flux API server running on http://localhost:${port}`)
 
-    // 7. Start heartbeat monitoring
-    heartbeat.start()
+    // 7. Start health monitoring
+    healthMonitor.start()
 
-    // 8. Database heartbeat ping (SELECT 1 every 60s)
-    const dbPingInterval = setInterval(async () => {
-        try {
-            await prisma.$queryRaw`SELECT 1`
-            heartbeat.beat('database')
-            heartbeat.progress('database')
-        } catch (error) {
-            console.error('Database ping failed:', error)
-        }
-    }, 60_000)
-    // Initial beat
-    heartbeat.beat('database')
-    heartbeat.progress('database')
-
-    // 9. Graceful shutdown
+    // 8. Graceful shutdown
     const shutdown = async () => {
         console.log('Shutting down...')
-        clearInterval(dbPingInterval)
-        heartbeat.stop()
+        healthMonitor.stop()
         orderSync.stop()
         await scheduler.stop()
         if (discord) await discord.stop()

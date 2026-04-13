@@ -8,15 +8,19 @@ import { clearCommand } from './commands/clear'
 import { splitMessage } from './formatter'
 import { toGatewayInput } from './handlers'
 
-interface DiscordCallbacks {
-    readonly onBeat?: () => void
-    readonly onProgress?: () => void
+export interface DiscordHealthStatus {
+    readonly status: 'healthy' | 'unhealthy'
+    readonly reason?: string
+    readonly details?: string
+    readonly checkedAt: string
 }
 
 export class DiscordAdapter implements ChannelAdapter {
     readonly type = 'discord' as const
     private client: Client | null = null
-    private callbacks: DiscordCallbacks = {}
+    private lastGatewayActivityAtMs = 0
+
+    private static readonly healthWindowMs = 120_000
 
     constructor(
         private readonly config: DiscordConfig,
@@ -24,30 +28,35 @@ export class DiscordAdapter implements ChannelAdapter {
     ) {}
 
     async start(): Promise<void> {
-        this.client = new Client({
+        const client = new Client({
             intents: [...this.config.intents],
             partials: [Partials.Channel],
         })
+        this.client = client
+        this.lastGatewayActivityAtMs = 0
 
         const registry = new CommandRegistry({ gateway: this.gateway })
         registry.add(clearCommand)
 
-        this.client.once('clientReady', async () => {
+        client.once('clientReady', async () => {
+            this.markGatewayActivity()
             try {
-                await registry.register(this.client!)
+                await registry.register(client)
                 console.log('Slash commands registered')
             } catch (error) {
                 console.error('Failed to register slash commands:', error)
             }
         })
 
-        this.client.on('interactionCreate', async (interaction) => {
+        client.on('interactionCreate', async (interaction) => {
+            this.markGatewayActivity()
             if (!interaction.isChatInputCommand()) return
             await registry.handle(interaction)
         })
 
-        this.client.on('messageCreate', async (msg) => {
-            const gatewayInput = toGatewayInput(msg, this.client!.user!.id)
+        client.on('messageCreate', async (msg) => {
+            this.markGatewayActivity()
+            const gatewayInput = toGatewayInput(msg, client.user!.id)
             if (!gatewayInput) return
 
             await msg.channel.sendTyping()
@@ -72,8 +81,6 @@ export class DiscordAdapter implements ChannelAdapter {
                 for (const chunk of chunks) {
                     await msg.reply(chunk)
                 }
-
-                this.callbacks.onProgress?.()
             } catch (error) {
                 clearTimeout(softTimer)
                 clearInterval(typingInterval)
@@ -88,20 +95,78 @@ export class DiscordAdapter implements ChannelAdapter {
             console.error('Discord client error:', error)
         })
 
+        // Keep the health window fresh whenever the Discord gateway acks a heartbeat.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(this.client.ws as any).on(WebSocketShardEvents.HeartbeatComplete, () => {
-            this.callbacks.onBeat?.()
+        ;(client.ws as any).on(WebSocketShardEvents.HeartbeatComplete, () => {
+            this.markGatewayActivity()
         })
 
-        await this.client.login(this.config.token)
-        console.log(`Discord bot logged in as ${this.client.user?.tag}`)
+        await client.login(this.config.token)
+        console.log(`Discord bot logged in as ${client.user?.tag}`)
     }
 
     async stop(): Promise<void> {
-        if (this.client) {
-            await this.client.destroy()
-            this.client = null
+        const client = this.client
+        this.client = null
+        this.lastGatewayActivityAtMs = 0
+
+        if (!client) return
+
+        await client.destroy()
+    }
+
+    async checkHealth(): Promise<DiscordHealthStatus> {
+        const checkedAt = new Date().toISOString()
+        const client = this.client
+
+        if (!client || !client.isReady()) {
+            return {
+                status: 'unhealthy',
+                reason: 'client_not_ready',
+                details: 'discord client is not ready',
+                checkedAt,
+            }
         }
+
+        if (!client.ws) {
+            return {
+                status: 'unhealthy',
+                reason: 'gateway_disconnected',
+                details: 'discord gateway websocket is not available',
+                checkedAt,
+            }
+        }
+
+        const lastGatewayActivityAtMs = this.lastGatewayActivityAtMs
+        const activityAgeMs = lastGatewayActivityAtMs > 0 ? Date.now() - lastGatewayActivityAtMs : Number.POSITIVE_INFINITY
+        const ping = typeof client.ws?.ping === 'number' && Number.isFinite(client.ws.ping)
+            ? `${Math.round(client.ws.ping)}ms`
+            : 'unknown'
+
+        if (activityAgeMs > DiscordAdapter.healthWindowMs) {
+            return {
+                status: 'unhealthy',
+                reason: 'no_recent_gateway_event',
+                details: `last gateway activity ${Number.isFinite(activityAgeMs) ? `${Math.round(activityAgeMs / 1000)}s ago` : 'never'}; client.ws.ping=${ping}`,
+                checkedAt,
+            }
+        }
+
+        return {
+            status: 'healthy',
+            details: `last gateway activity ${Math.max(0, Math.round(activityAgeMs / 1000))}s ago; client.ws.ping=${ping}`,
+            checkedAt,
+        }
+    }
+
+    async recoverHealth(): Promise<void> {
+        try {
+            await this.stop()
+        } catch (error) {
+            console.error('Discord recovery stop failed:', error)
+        }
+
+        await this.start()
     }
 
     async send(target: ChannelTarget, message: ChannelMessage): Promise<void> {
@@ -116,7 +181,7 @@ export class DiscordAdapter implements ChannelAdapter {
         }
     }
 
-    setCallbacks(callbacks: DiscordCallbacks): void {
-        this.callbacks = callbacks
+    private markGatewayActivity(): void {
+        this.lastGatewayActivityAtMs = Date.now()
     }
 }

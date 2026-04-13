@@ -2,7 +2,9 @@ import type { Message } from 'discord.js'
 import type { GatewayInput } from '@/gateway/router'
 import { buildSourceId } from './identity'
 
-export function toGatewayInput(msg: Message, botUserId: string): GatewayInput | null {
+type ConversationGatewayInput = GatewayInput & { readonly mode: 'conversation' }
+
+export function toGatewayInput(msg: Message, botUserId: string): ConversationGatewayInput | null {
     if (msg.author.bot) return null
 
     if (msg.guild) {

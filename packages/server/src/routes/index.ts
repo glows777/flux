@@ -12,9 +12,10 @@ import stocks from './stocks'
 import watchlist from './watchlist'
 import type { CronScheduler } from '@/scheduler/engine'
 import type { Gateway } from '@/gateway/gateway'
+import type { HealthStatus } from './health'
 
 export function createHonoApp(deps?: {
-    getHealthStatus?: () => { healthy: boolean; uptime: number; subsystems: Record<string, unknown> }
+    getHealthStatus?: () => HealthStatus
     cron?: { scheduler?: CronScheduler }
     gateway?: Gateway
 }) {

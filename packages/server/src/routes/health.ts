@@ -1,20 +1,20 @@
 import { Hono } from 'hono'
+import type { HealthStatus } from '@/gateway/health-monitor'
+export type { HealthStatus } from '@/gateway/health-monitor'
 
 interface HealthDeps {
-    getHealthStatus?: () => { healthy: boolean; uptime: number; subsystems: Record<string, unknown> }
+    getHealthStatus?: () => HealthStatus
 }
 
 export function createHealthRoute(deps: HealthDeps = {}) {
     return new Hono()
         .get('/', (c) => {
-            if (deps.getHealthStatus) {
-                const status = deps.getHealthStatus()
-                return c.json(status, status.healthy ? 200 : 503)
-            }
-            return c.json({
+            const status = deps.getHealthStatus?.() ?? {
+                monitorStatus: 'healthy' as const,
                 healthy: true,
-                uptime: process.uptime(),
-                subsystems: { api: { status: 'up' } },
-            })
+                subsystems: { api: { status: 'healthy' as const } },
+            }
+
+            return c.json(status, status.healthy && status.monitorStatus === 'healthy' ? 200 : 503)
         })
 }
