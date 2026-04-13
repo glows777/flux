@@ -34,7 +34,8 @@ export class Gateway {
       output = await this.deps.router.chat(input)
     } catch (error) {
       console.error('Gateway trigger AI execution failed:', error)
-      return { text: '', sessionId: '', success: false }
+      const message = error instanceof Error ? error.message : 'Unknown error'
+      return { text: '', sessionId: '', success: false, error: message }
     }
 
     const { text } = await output.consumeStream()
