@@ -28,7 +28,9 @@ export async function listCronJobs(
     deps: PrismaLike = prisma,
 ) {
     return deps.cronJob.findMany({
-        where: scope ? { channel: scope.channel, userId: scope.userId } : undefined,
+        where: scope
+            ? { channel: scope.channel, userId: scope.userId, deletedAt: null }
+            : { deletedAt: null },
         orderBy: { createdAt: 'desc' },
     })
 }
@@ -38,15 +40,17 @@ export async function updateCronJob(
     data: Partial<{ name: string; schedule: string; enabled: boolean; taskPayload: unknown; channelTarget: unknown }>,
     deps: PrismaLike = prisma,
 ) {
+    const existing = await deps.cronJob.findFirst({ where: { id, deletedAt: null } })
+    if (!existing) throw new Error(`Job ${id} not found`)
     return deps.cronJob.update({ where: { id }, data: data as any })
 }
 
 export async function deleteCronJob(id: string, deps: PrismaLike = prisma) {
-    return deps.cronJob.delete({ where: { id } })
+    return deps.cronJob.update({ where: { id }, data: { deletedAt: new Date() } })
 }
 
 export async function getCronJob(id: string, deps: PrismaLike = prisma) {
-    return deps.cronJob.findUnique({ where: { id } })
+    return deps.cronJob.findFirst({ where: { id, deletedAt: null } })
 }
 
 export async function createCronJobRun(
@@ -119,7 +123,7 @@ export async function seedTradingHeartbeat(deps?: { db?: typeof prisma }): Promi
     const db = deps?.db ?? prisma
 
     const existing = await db.cronJob.findFirst({
-        where: { name: 'trading-heartbeat' },
+        where: { name: 'trading-heartbeat', deletedAt: null },
     })
 
     if (!existing) {

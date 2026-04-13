@@ -48,7 +48,8 @@ interface CronSchedulerDeps {
         cronJob: {
             findMany: (args: any) => Promise<any[]>
             update: (args: any) => Promise<any>
-            findUnique: (args: any) => Promise<any>
+            findFirst: (args: any) => Promise<any>
+            count: (args: any) => Promise<number>
         }
         cronJobRun: {
             create: (args: any) => Promise<any>
@@ -80,7 +81,7 @@ export class CronScheduler {
     }
 
     async start(): Promise<void> {
-        const jobs = await this.deps.prisma.cronJob.findMany({ where: { enabled: true } })
+        const jobs = await this.deps.prisma.cronJob.findMany({ where: { enabled: true, deletedAt: null } })
         for (const job of jobs) {
             this.scheduleJob(job)
         }
@@ -126,7 +127,7 @@ export class CronScheduler {
     }
 
     async runNow(jobId: string): Promise<void> {
-        const job = await this.deps.prisma.cronJob.findUnique({ where: { id: jobId } })
+        const job = await this.deps.prisma.cronJob.findFirst({ where: { id: jobId, deletedAt: null } })
         if (!job) throw new Error(`Job ${jobId} not found`)
 
         if (this.running.has(jobId)) throw new Error(`Job ${jobId} is already running`)
@@ -157,6 +158,10 @@ export class CronScheduler {
         }
 
         if (this.jobs.size === 0) {
+            const enabledCount = await this.deps.prisma.cronJob.count({ where: { enabled: true, deletedAt: null } })
+            if (enabledCount === 0) {
+                return { status: 'healthy', details: 'no enabled jobs configured', checkedAt }
+            }
             return {
                 status: 'unhealthy',
                 reason: 'no_active_jobs',
@@ -262,7 +267,7 @@ export class CronScheduler {
                 console.error(`Failed to write run record for job ${jobId}:`, e)
             }
         } else {
-            const job = await this.deps.prisma.cronJob.findUnique({ where: { id: jobId } })
+            const job = await this.deps.prisma.cronJob.findFirst({ where: { id: jobId, deletedAt: null } })
             if (!job) return
 
             const newRetryCount = job.retryCount + 1
@@ -275,7 +280,7 @@ export class CronScheduler {
                     lastRunStatus: 'error',
                     lastRunError: result.error,
                     retryCount: newRetryCount,
-                    enabled: shouldDisable ? false : undefined,
+                    ...(shouldDisable ? { enabled: false, deletedAt: new Date() } : {}),
                 },
             })
             try {

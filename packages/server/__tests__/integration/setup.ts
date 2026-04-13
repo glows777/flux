@@ -143,6 +143,8 @@ mock.module('@/core/db', () => ({
             update: mockUpdateCronJob,
             delete: mockDeleteCronJob,
             findUnique: mockGetCronJob,
+            findFirst: mockGetCronJob,
+            count: mock(() => Promise.resolve(0)),
         },
         cronJobRun: {
             create: mockCreateCronJobRun,

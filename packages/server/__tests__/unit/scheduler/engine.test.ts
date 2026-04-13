@@ -22,11 +22,13 @@ const baseJob = {
 function createScheduler(options?: {
     jobs?: any[]
     gatewayChat?: any
+    enabledCount?: number
 }) {
     const mockFindMany = mock(() => Promise.resolve(options?.jobs ?? []))
     const mockUpdate = mock(() => Promise.resolve({ id: 'job-1', retryCount: 0, enabled: true }))
-    const mockFindUnique = mock(() => Promise.resolve(baseJob))
+    const mockFindFirst = mock(() => Promise.resolve(baseJob))
     const mockRunCreate = mock(() => Promise.resolve({ id: 'run-1' }))
+    const mockCount = mock(() => Promise.resolve(options?.enabledCount ?? 0))
 
     const scheduler = new CronScheduler({
         gateway: {
@@ -36,7 +38,8 @@ function createScheduler(options?: {
             cronJob: {
                 findMany: mockFindMany,
                 update: mockUpdate,
-                findUnique: mockFindUnique,
+                findFirst: mockFindFirst,
+                count: mockCount,
             },
             cronJobRun: { create: mockRunCreate },
         } as any,
@@ -47,8 +50,9 @@ function createScheduler(options?: {
         mocks: {
             mockFindMany,
             mockUpdate,
-            mockFindUnique,
+            mockFindFirst,
             mockRunCreate,
+            mockCount,
         },
     }
 }
@@ -89,14 +93,26 @@ describe('CronScheduler.checkHealth', () => {
         expect(result.reason).toBe('scheduler_not_started')
     })
 
-    test('reports unhealthy when no active cron jobs are loaded', async () => {
-        const { scheduler } = createScheduler()
+    test('reports unhealthy when enabled jobs exist in DB but none are loaded', async () => {
+        const { scheduler } = createScheduler({ enabledCount: 1 })
 
         await scheduler.start()
         const result = await scheduler.checkHealth()
 
         expect(result.status).toBe('unhealthy')
         expect(result.reason).toBe('no_active_jobs')
+
+        await scheduler.stop()
+    })
+
+    test('reports healthy when no enabled jobs are configured (all deleted or none created)', async () => {
+        const { scheduler } = createScheduler({ enabledCount: 0 })
+
+        await scheduler.start()
+        const result = await scheduler.checkHealth()
+
+        expect(result.status).toBe('healthy')
+        expect(result.details).toContain('no enabled jobs')
 
         await scheduler.stop()
     })
@@ -176,20 +192,23 @@ describe('CronScheduler.handleResult via runNow', () => {
         id: 'job-1', retryCount: 0, enabled: true,
     }))
     const mockCronJobRunCreate = mock(() => Promise.resolve({ id: 'run-1' }))
-    const mockCronJobFindUnique = mock(() => Promise.resolve(baseJob))
+    const mockCronJobFindFirst = mock(() => Promise.resolve(baseJob))
+    const mockCronJobCount = mock(() => Promise.resolve(0))
 
     let scheduler: CronScheduler
 
     beforeEach(() => {
         mockCronJobUpdate.mockReset()
         mockCronJobRunCreate.mockReset()
-        mockCronJobFindUnique.mockReset()
+        mockCronJobFindFirst.mockReset()
+        mockCronJobCount.mockReset()
 
         mockCronJobUpdate.mockImplementation(() => Promise.resolve({
             id: 'job-1', retryCount: 0, enabled: true,
         }))
         mockCronJobRunCreate.mockImplementation(() => Promise.resolve({ id: 'run-1' }))
-        mockCronJobFindUnique.mockImplementation(() => Promise.resolve(baseJob))
+        mockCronJobFindFirst.mockImplementation(() => Promise.resolve(baseJob))
+        mockCronJobCount.mockImplementation(() => Promise.resolve(0))
 
         scheduler = new CronScheduler({
             gateway: {
@@ -199,7 +218,8 @@ describe('CronScheduler.handleResult via runNow', () => {
                 cronJob: {
                     findMany: mock(() => Promise.resolve([])),
                     update: mockCronJobUpdate,
-                    findUnique: mockCronJobFindUnique,
+                    findFirst: mockCronJobFindFirst,
+                    count: mockCronJobCount,
                 },
                 cronJobRun: { create: mockCronJobRunCreate },
             } as any,
@@ -232,7 +252,8 @@ describe('CronScheduler.handleResult via runNow', () => {
                 cronJob: {
                     findMany: mock(() => Promise.resolve([])),
                     update: mockCronJobUpdate,
-                    findUnique: mockCronJobFindUnique,
+                    findFirst: mockCronJobFindFirst,
+                    count: mockCronJobCount,
                 },
                 cronJobRun: { create: mockCronJobRunCreate },
             } as any,
@@ -244,5 +265,41 @@ describe('CronScheduler.handleResult via runNow', () => {
         const call = mockCronJobRunCreate.mock.calls[0][0]
         expect(call.data.status).toBe('error')
         expect(call.data.triggeredBy).toBe('manual')
+    })
+
+    test('soft-deletes job and removes from scheduler after MAX_RETRIES failures', async () => {
+        const jobAtMaxRetries = { ...baseJob, retryCount: 4 } // next failure = 5 = MAX_RETRIES
+
+        mockCronJobFindFirst.mockImplementation(() => Promise.resolve(jobAtMaxRetries))
+
+        const failScheduler = new CronScheduler({
+            gateway: {
+                chat: mock(() => Promise.resolve({ success: false, text: 'err' })),
+            } as any,
+            prisma: {
+                cronJob: {
+                    findMany: mock(() => Promise.resolve([jobAtMaxRetries])),
+                    update: mockCronJobUpdate,
+                    findFirst: mockCronJobFindFirst,
+                    count: mockCronJobCount,
+                },
+                cronJobRun: { create: mockCronJobRunCreate },
+            } as any,
+        })
+
+        await failScheduler.start()
+        await failScheduler.runNow('job-1')
+
+        const updateCall = mockCronJobUpdate.mock.calls.find(
+            (c: any) => c[0].data?.deletedAt !== undefined,
+        )
+        expect(updateCall).toBeDefined()
+        expect(updateCall[0].data.enabled).toBe(false)
+        expect(updateCall[0].data.deletedAt).toBeInstanceOf(Date)
+
+        const internal = failScheduler as any
+        expect(internal.jobs.has('job-1')).toBe(false)
+
+        await failScheduler.stop()
     })
 })
