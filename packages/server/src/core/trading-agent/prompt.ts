@@ -6,7 +6,7 @@ export const TRADING_AGENT_PROMPT = `你是一名二级市场交易员。
 将投资组合的账户净值提升 50%。
 
 ## 游戏规则
-- agent_strategy slot 是你的策略文件，用 update_core_memory 维护、进化
+- agent_strategy slot 是你的策略文件（路径：trading-agent/strategy.md），用 update_core_memory 维护、进化
 - 用 save_lesson 追加交易教训（自动带日期戳）
 - 用 read_history 回顾某个 slot 的历史版本
 - 每笔交易的 reasoning 会被永久记录，这是你复盘的数据来源

@@ -66,6 +66,9 @@ import {
     mockUpdateCronJob,
     mockDeleteCronJob,
     mockGetCronJob,
+    mockCreateCronJobRun,
+    mockListCronJobRuns,
+    mockListAllRuns,
     // Alpaca client mocks
     mockGetAccount,
     mockGetPositions,
@@ -187,6 +190,9 @@ mock.module('@/core/cron/service', () => ({
     updateCronJob: mockUpdateCronJob,
     deleteCronJob: mockDeleteCronJob,
     getCronJob: mockGetCronJob,
+    createCronJobRun: mockCreateCronJobRun,
+    listCronJobRuns: mockListCronJobRuns,
+    listAllRuns: mockListAllRuns,
 }))
 
 mock.module('@/core/ai/runtime/create', () => ({

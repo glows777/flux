@@ -19,7 +19,7 @@ expect.extend(matchers)
 // Set a dummy DATABASE_URL for unit tests that import db.ts transitively
 // (actual DB connection is never used in unit tests — only in integration/e2e)
 if (!process.env.DATABASE_URL) {
-    process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/flux_test?schema=public'
+    process.env.DATABASE_URL = 'postgresql://test:test@localhost:5433/flux_test?schema=public'
 }
 
 // Clear proxy env vars so proxyFetch falls back to globalThis.fetch

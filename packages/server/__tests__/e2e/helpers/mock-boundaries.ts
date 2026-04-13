@@ -294,6 +294,9 @@ export const mockListCronJobs = mock(() => Promise.resolve([]))
 export const mockUpdateCronJob = mock(() => Promise.resolve({ id: 'cron-1', enabled: false }))
 export const mockDeleteCronJob = mock(() => Promise.resolve({ id: 'cron-1' }))
 export const mockGetCronJob = mock(() => Promise.resolve(null))
+export const mockCreateCronJobRun = mock(() => Promise.resolve({ id: 'cron-run-1' }))
+export const mockListCronJobRuns = mock(() => Promise.resolve({ runs: [], total: 0 }))
+export const mockListAllRuns = mock(() => Promise.resolve({ runs: [], total: 0 }))
 
 // ─── 7. Alpaca Client mocks ───
 

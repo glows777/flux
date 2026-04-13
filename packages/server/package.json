@@ -19,9 +19,9 @@
     "db:generate": "bunx prisma generate",
     "test:unit": "bun test __tests__/unit",
     "test:integration:api": "bun test --preload ./__tests__/integration/setup.ts __tests__/integration/*-api.test.ts __tests__/integration/discord-clear-session.test.ts __tests__/integration/gateway-chat.test.ts __tests__/integration/skill-plugin.test.ts __tests__/integration/trading-tools.test.ts",
-    "test:integration:db": "DATABASE_URL='postgresql://flux_user:flux_password@localhost:5432/flux_test?schema=public' bun test __tests__/integration/db-models.test.ts",
-    "test:integration:setup": "DATABASE_URL='postgresql://flux_user:flux_password@localhost:5432/flux_test?schema=public' bunx prisma db push --force-reset --schema=prisma/schema.prisma",
-    "test:e2e": "DATABASE_URL='postgresql://flux_user:flux_password@localhost:5432/flux_test?schema=public' FINNHUB_API_KEY=test-key AI_API_KEY=test-key AI_BASE_URL=http://localhost bun test --timeout 30000 --preload ./__tests__/e2e/setup.ts __tests__/e2e",
+    "test:integration:db": "DATABASE_URL='postgresql://flux_user:flux_password@localhost:5433/flux_test?schema=public' bun test __tests__/integration/db-models.test.ts",
+    "test:integration:setup": "DATABASE_URL='postgresql://flux_user:flux_password@localhost:5433/flux_test?schema=public' bunx prisma db push --force-reset --schema=prisma/schema.prisma",
+    "test:e2e": "DATABASE_URL='postgresql://flux_user:flux_password@localhost:5433/flux_test?schema=public' bunx prisma db push --force-reset --schema=prisma/schema.prisma && DATABASE_URL='postgresql://flux_user:flux_password@localhost:5433/flux_test?schema=public' FINNHUB_API_KEY=test-key AI_API_KEY=test-key AI_BASE_URL=http://localhost bun test --timeout 30000 --preload ./__tests__/e2e/setup.ts __tests__/e2e",
     "test:all": "bun run test:unit && bun run test:integration:api && bun run test:integration:db && bun run test:e2e"
   },
   "dependencies": {

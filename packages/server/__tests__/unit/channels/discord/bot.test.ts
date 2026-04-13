@@ -2,12 +2,25 @@ import { describe, expect, it, mock, spyOn } from 'bun:test'
 
 mock.module('discord.js', () => {
   class SlashCommandBuilder {
-    setName(_name: string): SlashCommandBuilder {
+    name?: string
+    description?: string
+
+    setName(name: string): SlashCommandBuilder {
+      this.name = name
       return this
     }
 
-    setDescription(_description: string): SlashCommandBuilder {
+    setDescription(description: string): SlashCommandBuilder {
+      this.description = description
       return this
+    }
+
+    toJSON() {
+      return {
+        name: this.name,
+        description: this.description,
+        options: [],
+      }
     }
   }
 

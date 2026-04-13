@@ -227,6 +227,7 @@ export const mockStreamText = mock(() => ({
 
 export const mockConvertToModelMessages = mock(async (messages: unknown[]) => messages)
 export const mockStepCountIs = mock((count: number) => () => false)
+export const mockTool = mock((config: unknown) => config)
 
 // generateId — returns a stable mock ID
 export const mockGenerateId = mock(() => 'mock-id-1')

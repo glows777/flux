@@ -20,7 +20,7 @@ export function assertTestDatabase(): void {
                 `Current: ${masked}`,
                 'Refusing to run tests against non-test database.',
                 'Set DATABASE_URL to point to flux_test, e.g.:',
-                "  DATABASE_URL='postgresql://flux_user:flux_password@localhost:5432/flux_test?schema=public'",
+                "  DATABASE_URL='postgresql://flux_user:flux_password@localhost:5433/flux_test?schema=public'",
             ].join('\n'),
         )
     }

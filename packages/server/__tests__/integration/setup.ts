@@ -72,6 +72,7 @@ import {
     mockStreamText,
     mockConvertToModelMessages,
     mockStepCountIs,
+    mockTool,
     mockGenerateId,
     // providers mock
     mockGetModel,
@@ -283,6 +284,7 @@ mock.module('@/core/ai/session', () => ({
 mock.module('ai', () => ({
     generateText: mockGenerateText,
     streamText: mockStreamText,
+    tool: mockTool,
     convertToModelMessages: mockConvertToModelMessages,
     stepCountIs: mockStepCountIs,
     generateId: mockGenerateId,
