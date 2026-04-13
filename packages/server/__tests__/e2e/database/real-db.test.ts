@@ -10,9 +10,13 @@ import { afterAll, beforeEach, describe, expect, it } from 'bun:test'
 // Import mock boundaries to prevent real API calls from db.ts transitive imports
 import '../helpers/mock-boundaries'
 
-import { cleanupExpiredReports } from '@/core/ai/cache'
+import {
+    getSlotContent,
+    getSlotHistory,
+    SlotContentTooLongError,
+    writeSlot,
+} from '@/core/ai/memory/store'
 import { prisma } from '@/core/db'
-import { getSlotContent, writeSlot, getSlotHistory, SlotContentTooLongError } from '@/core/ai/memory/store'
 import { truncateAllTables } from '../helpers/db-utils'
 
 describe('Real Database Operations (P4)', () => {
@@ -112,50 +116,6 @@ describe('Real Database Operations (P4)', () => {
             where: { url: articleData.url },
         })
         expect(count).toBe(1)
-    })
-
-    // ─── AIReport time query ───
-
-    it('finds latest report by createdAt desc', async () => {
-        const older = new Date(Date.now() - 3600 * 1000)
-        const newer = new Date()
-
-        await prisma.aIReport.create({
-            data: { symbol: 'AAPL', content: 'Old report', createdAt: older },
-        })
-        await prisma.aIReport.create({
-            data: { symbol: 'AAPL', content: 'New report', createdAt: newer },
-        })
-
-        const latest = await prisma.aIReport.findFirst({
-            where: { symbol: 'AAPL' },
-            orderBy: { createdAt: 'desc' },
-        })
-
-        expect(latest?.content).toBe('New report')
-    })
-
-    // ─── cleanupExpiredReports ───
-
-    it('cleanup removes only expired reports', async () => {
-        const expired = new Date(Date.now() - 25 * 3600 * 1000)
-        const fresh = new Date()
-
-        await prisma.aIReport.create({
-            data: { symbol: 'AAPL', content: 'Expired', createdAt: expired },
-        })
-        await prisma.aIReport.create({
-            data: { symbol: 'AAPL', content: 'Fresh', createdAt: fresh },
-        })
-
-        const deleted = await cleanupExpiredReports()
-        expect(deleted).toBe(1)
-
-        const remaining = await prisma.aIReport.findMany({
-            where: { symbol: 'AAPL' },
-        })
-        expect(remaining).toHaveLength(1)
-        expect(remaining[0].content).toBe('Fresh')
     })
 
     // ─── Cross-table symbol consistency ───

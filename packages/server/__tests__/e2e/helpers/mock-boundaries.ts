@@ -61,9 +61,15 @@ export const mockYahooQuoteSummary = mock((): any =>
 // Finnhub quote/history/overview throw by default — Finnhub is a fallback source
 // in the new FallbackChain architecture. If Yahoo fails, we want Finnhub to also
 // fail so tests that check failure behavior work correctly.
-export const mockFinnhubGetQuote = mock(() => Promise.reject(new Error('Finnhub mock: not configured')))
-export const mockFinnhubGetDailyHistory = mock(() => Promise.reject(new Error('Finnhub mock: not configured')))
-export const mockFinnhubGetCompanyOverview = mock(() => Promise.reject(new Error('Finnhub mock: not configured')))
+export const mockFinnhubGetQuote = mock(() =>
+    Promise.reject(new Error('Finnhub mock: not configured')),
+)
+export const mockFinnhubGetDailyHistory = mock(() =>
+    Promise.reject(new Error('Finnhub mock: not configured')),
+)
+export const mockFinnhubGetCompanyOverview = mock(() =>
+    Promise.reject(new Error('Finnhub mock: not configured')),
+)
 
 export const mockFinnhubGetCompanyNews = mock(() =>
     Promise.resolve([
@@ -110,18 +116,7 @@ export const mockSearchQueryFindUnique = mock(() =>
 
 export const mockGenerateText = mock(() =>
     Promise.resolve({
-        text: `## 核心观点
-Test report content.
-
-## 技术面分析
-MA20 analysis.
-
-## 基本面分析
-PE analysis.
-
-## 风险提示
-- Risk 1
-- Risk 2`,
+        text: 'mock generate text response',
     }),
 )
 
@@ -139,18 +134,30 @@ export const mockStreamText = mock(() => ({
         }),
 }))
 
-// biome-ignore lint: mock functions need flexible typing
 export const mockConvertToModelMessages = mock(
-    async (messages: any[]) => messages,
+    async (messages: unknown[]) => messages,
 )
 export const mockStepCountIs = mock((_count: number) => () => false)
 
-// biome-ignore lint: mock functions need flexible typing
 export const mockIsToolUIPart = mock(
-    (part: any) => part?.type === 'tool-invocation',
+    (part: unknown) =>
+        typeof part === 'object' &&
+        part !== null &&
+        'type' in part &&
+        part.type === 'tool-invocation',
 )
-// biome-ignore lint: mock functions need flexible typing
-export const mockGetToolName = mock((part: any) => part?.toolName ?? 'unknown')
+export const mockGetToolName = mock((part: unknown) => {
+    if (
+        typeof part === 'object' &&
+        part !== null &&
+        'toolName' in part &&
+        typeof part.toolName === 'string'
+    ) {
+        return part.toolName
+    }
+
+    return 'unknown'
+})
 
 // generateId — returns a stable mock ID
 export const mockGenerateId = mock(() => 'mock-e2e-id-1')
@@ -222,45 +229,52 @@ export const mockCreateResearchTools = mock(() => ({
 
 export const mockFinalizeChatRound = mock(() => Promise.resolve())
 
-export const mockChatGenerate = mock(() => Promise.resolve({
-    text: 'mock generate response',
-    responseMessage: {
-        id: 'mock-gen-id',
-        role: 'assistant',
-        parts: [{ type: 'text', text: 'mock generate response' }],
-    },
-}))
+export const mockChatGenerate = mock(() =>
+    Promise.resolve({
+        text: 'mock generate response',
+        responseMessage: {
+            id: 'mock-gen-id',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'mock generate response' }],
+        },
+    }),
+)
 
 // ─── 3f. @/core/ai/runtime ───
 
 export const mockRuntimeFinalize = mock(() => Promise.resolve())
 
-export const mockRuntimeConsumeStream = mock(() => Promise.resolve({
-    text: 'mock pipeline response',
-    responseMessage: {
-        id: 'mock-resp-id',
-        role: 'assistant',
-        parts: [{ type: 'text', text: 'mock pipeline response' }],
-        createdAt: new Date(),
-    },
-    toolCalls: [],
-    usage: { inputTokens: 100, outputTokens: 50 },
-}))
+export const mockRuntimeConsumeStream = mock(() =>
+    Promise.resolve({
+        text: 'mock pipeline response',
+        responseMessage: {
+            id: 'mock-resp-id',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'mock pipeline response' }],
+            createdAt: new Date(),
+        },
+        toolCalls: [],
+        usage: { inputTokens: 100, outputTokens: 50 },
+    }),
+)
 
-export const mockRuntimeChat = mock(() => Promise.resolve({
-    streamResult: {
-        text: Promise.resolve('mock pipeline response'),
-        usage: Promise.resolve({ inputTokens: 100, outputTokens: 50 }),
-        steps: Promise.resolve([]),
-        toUIMessageStreamResponse: (_opts?: unknown) => new Response('mock stream', {
-            headers: { 'Content-Type': 'text/event-stream' },
-        }),
-        toUIMessageStream: (_opts?: unknown) => new ReadableStream(),
-    },
-    sessionId: 'session-1',
-    consumeStream: mockRuntimeConsumeStream,
-    finalize: mockRuntimeFinalize,
-}))
+export const mockRuntimeChat = mock(() =>
+    Promise.resolve({
+        streamResult: {
+            text: Promise.resolve('mock pipeline response'),
+            usage: Promise.resolve({ inputTokens: 100, outputTokens: 50 }),
+            steps: Promise.resolve([]),
+            toUIMessageStreamResponse: (_opts?: unknown) =>
+                new Response('mock stream', {
+                    headers: { 'Content-Type': 'text/event-stream' },
+                }),
+            toUIMessageStream: (_opts?: unknown) => new ReadableStream(),
+        },
+        sessionId: 'session-1',
+        consumeStream: mockRuntimeConsumeStream,
+        finalize: mockRuntimeFinalize,
+    }),
+)
 
 export const mockRuntime = {
     chat: mockRuntimeChat,
@@ -289,21 +303,43 @@ export const mockSearchStocks = mock((): Promise<any[]> => Promise.resolve([]))
 
 // ─── 6. @/core/cron/service ───
 
-export const mockCreateCronJob = mock(() => Promise.resolve({ id: 'cron-1', name: 'test', enabled: true }))
+export const mockCreateCronJob = mock(() =>
+    Promise.resolve({ id: 'cron-1', name: 'test', enabled: true }),
+)
 export const mockListCronJobs = mock(() => Promise.resolve([]))
-export const mockUpdateCronJob = mock(() => Promise.resolve({ id: 'cron-1', enabled: false }))
+export const mockUpdateCronJob = mock(() =>
+    Promise.resolve({ id: 'cron-1', enabled: false }),
+)
 export const mockDeleteCronJob = mock(() => Promise.resolve({ id: 'cron-1' }))
 export const mockGetCronJob = mock(() => Promise.resolve(null))
-export const mockCreateCronJobRun = mock(() => Promise.resolve({ id: 'cron-run-1' }))
-export const mockListCronJobRuns = mock(() => Promise.resolve({ runs: [], total: 0 }))
-export const mockListAllRuns = mock(() => Promise.resolve({ runs: [], total: 0 }))
+export const mockCreateCronJobRun = mock(() =>
+    Promise.resolve({ id: 'cron-run-1' }),
+)
+export const mockListCronJobRuns = mock(() =>
+    Promise.resolve({ runs: [], total: 0 }),
+)
+export const mockListAllRuns = mock(() =>
+    Promise.resolve({ runs: [], total: 0 }),
+)
 
 // ─── 7. Alpaca Client mocks ───
 
-// biome-ignore lint: mock functions need flexible typing
-export const mockGetAccount = mock((): Promise<any> => Promise.resolve({
-    equity: 100000, cash: 50000, buyingPower: 100000, lastEquity: 99500, longMarketValue: 50000,
-}))
+export const mockGetAccount = mock(
+    (): Promise<{
+        equity: number
+        cash: number
+        buyingPower: number
+        lastEquity: number
+        longMarketValue: number
+    }> =>
+        Promise.resolve({
+            equity: 100000,
+            cash: 50000,
+            buyingPower: 100000,
+            lastEquity: 99500,
+            longMarketValue: 50000,
+        }),
+)
 // biome-ignore lint: mock functions need flexible typing
 export const mockGetPositions = mock((): Promise<any[]> => Promise.resolve([]))
 // biome-ignore lint: mock functions need flexible typing

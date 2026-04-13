@@ -1,13 +1,9 @@
 'use client'
 
+import { Cpu } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { Cpu, FileText } from 'lucide-react'
-import { TabButton } from './TabButton'
-import { ReportTab } from './tabs/ReportTab'
 import { ContextInput } from './ContextInput'
-
-const VALID_TABS = new Set<string>(['report'])
 
 interface AICortexProps {
     symbol: string
@@ -15,15 +11,13 @@ interface AICortexProps {
     aiThinking?: boolean
 }
 
-export function AICortex({ symbol, assetName, aiThinking = false }: AICortexProps) {
-    const searchParams = useSearchParams()
+export function AICortex({
+    symbol,
+    assetName,
+    aiThinking = false,
+}: AICortexProps) {
     const router = useRouter()
     const [inputValue, setInputValue] = useState('')
-
-    const [activeTab, setActiveTab] = useState<'report'>(() => {
-        const tab = searchParams.get('tab')
-        return tab && VALID_TABS.has(tab) ? 'report' : 'report'
-    })
 
     const handleSend = () => {
         const text = inputValue.trim()
@@ -47,21 +41,6 @@ export function AICortex({ symbol, assetName, aiThinking = false }: AICortexProp
                         Flux 智能核心
                     </span>
                 </div>
-            </div>
-
-            {/* Tab bar */}
-            <div className='flex border-b border-white/5'>
-                <TabButton
-                    active={activeTab === 'report'}
-                    onClick={() => setActiveTab('report')}
-                    icon={FileText}
-                    label='研报'
-                />
-            </div>
-
-            {/* Content */}
-            <div className='flex-1 p-6 overflow-y-auto flex flex-col space-y-6 scrollbar-thin scrollbar-thumb-white/10'>
-                {activeTab === 'report' && <ReportTab symbol={symbol} />}
             </div>
 
             {/* Always-visible input — redirects to /chat */}

@@ -13,7 +13,6 @@ export async function truncateAllTables(prisma: PrismaClient): Promise<void> {
     assertTestDatabase()
 
     await prisma.newsArticle.deleteMany()
-    await prisma.aIReport.deleteMany()
     await prisma.stockHistory.deleteMany()
     await prisma.stockInfo.deleteMany()
     await prisma.watchlist.deleteMany()
@@ -29,18 +28,6 @@ export async function backdateInfoFetchedAt(
     await prisma.stockInfo.updateMany({
         where: { symbol },
         data: { fetchedAt: past },
-    })
-}
-
-export async function backdateReportCreatedAt(
-    prisma: PrismaClient,
-    reportId: string,
-    hoursAgo: number,
-): Promise<void> {
-    const past = new Date(Date.now() - hoursAgo * 60 * 60 * 1000)
-    await prisma.aIReport.update({
-        where: { id: reportId },
-        data: { createdAt: past },
     })
 }
 

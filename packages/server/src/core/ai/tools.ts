@@ -7,10 +7,10 @@
  * Display tools are pure pass-through (execute returns params).
  */
 
+import type { NewsItem } from '@flux/shared'
 import { tool } from 'ai'
 import { z } from 'zod'
 import type { CompanyOverview, HistoryPoint, Quote } from '@/core/market-data'
-import type { NewsItem } from '@flux/shared'
 import { calculateIndicators } from './prompts'
 import { withTimeout } from './timeout'
 
@@ -20,7 +20,6 @@ export const TOOL_TIMEOUTS = {
     getHistory: 10_000,
     calculateIndicators: 10_000,
     getNews: 10_000,
-    getReport: 3_000,
     searchStock: 8_000,
 } as const
 
@@ -31,11 +30,7 @@ export interface ToolDeps {
         symbol: string,
         days: number,
     ) => Promise<HistoryPoint[]>
-    readonly getNews: (
-        symbol: string,
-        limit: number,
-    ) => Promise<NewsItem[]>
-    readonly getReportFromCache: (symbol: string) => Promise<string | null>
+    readonly getNews: (symbol: string, limit: number) => Promise<NewsItem[]>
     readonly searchStocks: (
         query: string,
     ) => Promise<{ symbol: string; name: string }[]>
@@ -177,30 +172,6 @@ export function createTools(deps: ToolDeps) {
                         'calculateIndicators',
                     )
                     return calculateIndicators(history)
-                } catch (error) {
-                    return {
-                        error:
-                            error instanceof Error
-                                ? error.message
-                                : String(error),
-                    }
-                }
-            },
-        }),
-
-        getReport: tool({
-            description: '获取已缓存的 AI 研报 (只读，不触发新生成)',
-            inputSchema: z.object({
-                symbol: z.string(),
-            }),
-            execute: async ({ symbol }) => {
-                try {
-                    const content = await withTimeout(
-                        deps.getReportFromCache(symbol),
-                        TOOL_TIMEOUTS.getReport,
-                        'getReport',
-                    )
-                    return { content }
                 } catch (error) {
                     return {
                         error:

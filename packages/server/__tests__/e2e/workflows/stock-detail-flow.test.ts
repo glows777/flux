@@ -1,7 +1,7 @@
 /**
  * P0: Stock Detail Flow E2E Test
  *
- * Tests the detail page data loading: history, info, news, report.
+ * Tests the detail page data loading: history, info, news.
  * External boundaries mocked, inter-module calls are REAL.
  */
 
@@ -12,7 +12,6 @@ import { clearMacroCache } from '@/core/market-data'
 import { truncateAllTables } from '../helpers/db-utils'
 import {
     mockFinnhubGetCompanyNews,
-    mockGenerateText,
     mockYahooChart,
     mockYahooQuote,
     mockYahooQuoteSummary,
@@ -70,10 +69,6 @@ describe('Stock Detail Flow (P0)', () => {
             createFinnhubNewsItems('NVDA', 5),
         )
 
-        mockGenerateText.mockImplementation(async () => ({
-            text: `## 核心观点\nNVDA report.\n## 技术面分析\nMA20 up.\n## 基本面分析\nPE is high.\n## 风险提示\n- Risk 1`,
-        }))
-
         // Seed NVDA in watchlist (precondition)
         await jsonPost(app, '/api/watchlist', { symbol: 'NVDA' })
     })
@@ -122,29 +117,8 @@ describe('Stock Detail Flow (P0)', () => {
         expect(json.data.length).toBeGreaterThan(0)
     })
 
-    // Step 4: POST /api/stocks/NVDA/report → first call, cached: false
-    it('step 4: first report request generates new report', async () => {
-        const res = await jsonPost(app, '/api/stocks/NVDA/report')
-        const json = await res.json()
-
-        expect(res.status).toBe(200)
-        expect(json.success).toBe(true)
-        expect(json.data.cached).toBe(false)
-        expect(json.data.content.length).toBeGreaterThan(0)
-        expect(json.data.symbol).toBe('NVDA')
-    })
-
-    // Step 5: POST /api/stocks/NVDA/report → second call, cached: true
-    it('step 5: second report request returns cached report', async () => {
-        const res = await jsonPost(app, '/api/stocks/NVDA/report')
-        const json = await res.json()
-
-        expect(res.status).toBe(200)
-        expect(json.data.cached).toBe(true)
-    })
-
-    // Step 6: GET /api/stocks/NVDA/history?period=1Y → more points
-    it('step 6: 1Y history returns more points than 1M', async () => {
+    // Step 4: GET /api/stocks/NVDA/history?period=1Y → more points
+    it('step 4: 1Y history returns more points than 1M', async () => {
         const res1M = await jsonGet(app, '/api/stocks/NVDA/history?period=1M')
         const json1M = await res1M.json()
 

@@ -1,20 +1,25 @@
-import { createHonoApp } from './routes/index'
-import { Router } from './gateway/router'
-import { Gateway } from './gateway/gateway'
-import { HealthMonitor } from './gateway/health-monitor'
 import { DiscordAdapter } from './channels/discord/bot'
 import { getDiscordConfig } from './channels/discord/config'
-import { CronScheduler } from './scheduler/engine'
-import { seedTradingHeartbeat } from './core/cron/service'
-import { prisma } from './core/db'
-import { createAIRuntime } from './core/ai/runtime'
 import { tradingAgentPreset } from './core/ai/presets'
 import { autoTradingAgentPreset } from './core/ai/presets/auto-trading-agent'
 import { getModel, THINKING_BUDGET } from './core/ai/providers'
+import { createAIRuntime } from './core/ai/runtime'
 import { getAlpacaClient } from './core/broker/alpaca-client'
-import { getReportFromCache } from './core/ai/cache'
-import { getQuote, getInfo, getHistoryRaw, getNews, searchStocks } from './core/market-data'
+import { seedTradingHeartbeat } from './core/cron/service'
+import { prisma } from './core/db'
+import {
+    getHistoryRaw,
+    getInfo,
+    getNews,
+    getQuote,
+    searchStocks,
+} from './core/market-data'
 import { createOrderSyncService } from './core/services/order-sync'
+import { Gateway } from './gateway/gateway'
+import { HealthMonitor } from './gateway/health-monitor'
+import { Router } from './gateway/router'
+import { createHonoApp } from './routes/index'
+import { CronScheduler } from './scheduler/engine'
 
 export type { AppType } from './routes/index'
 export { createHonoApp } from './routes/index'
@@ -40,7 +45,11 @@ async function main() {
     const model = getModel('main')
     const defaults = { thinkingBudget: THINKING_BUDGET }
 
-    const tradingRuntime = await createAIRuntime({ model, plugins: tradingAgentPreset(), defaults })
+    const tradingRuntime = await createAIRuntime({
+        model,
+        plugins: tradingAgentPreset(),
+        defaults,
+    })
     const autoTradingRuntime = await createAIRuntime({
         model,
         plugins: autoTradingAgentPreset({
@@ -51,7 +60,6 @@ async function main() {
                 getInfo,
                 getHistoryRaw,
                 getNews,
-                getReportFromCache,
                 searchStocks,
             },
         }),
@@ -60,7 +68,9 @@ async function main() {
 
     // 1.5 Order sync service (WebSocket — real-time order status to DB + Discord)
     const orderSync = createOrderSyncService({
-        db: prisma as unknown as Parameters<typeof createOrderSyncService>[0]['db'],
+        db: prisma as unknown as Parameters<
+            typeof createOrderSyncService
+        >[0]['db'],
     })
     orderSync.start()
 
@@ -85,7 +95,10 @@ async function main() {
         try {
             await discord.start()
         } catch (error) {
-            console.error('Discord bot failed to start (continuing without it):', error)
+            console.error(
+                'Discord bot failed to start (continuing without it):',
+                error,
+            )
             channels.delete('discord')
             discord = null
         }
@@ -113,7 +126,8 @@ async function main() {
                     return {
                         status: 'unhealthy',
                         reason: 'client_not_ready',
-                        details: 'discord adapter is configured but not initialized',
+                        details:
+                            'discord adapter is configured but not initialized',
                         checkedAt: new Date().toISOString(),
                     }
                 }

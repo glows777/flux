@@ -16,7 +16,6 @@ import {
 } from '../helpers/db-utils'
 import {
     mockFinnhubGetCompanyNews,
-    mockGenerateText,
     mockYahooChart,
     mockYahooQuote,
     mockYahooQuoteSummary,
@@ -75,23 +74,6 @@ describe('Cascade Error (P3)', () => {
         expect(json.success).toBe(false)
     })
 
-    // ─── AI rate limited → report fails ───
-
-    it('returns 500 when AI is rate limited', async () => {
-        await seedWatchlist(prisma, 'AAPL', 'Apple Inc.')
-
-        mockGenerateText.mockImplementation(async () => {
-            throw new Error('429 rate limit exceeded')
-        })
-
-        const res = await jsonPost(app, '/api/stocks/AAPL/report')
-        const json = await res.json()
-
-        expect(res.status).toBe(500)
-        expect(json.success).toBe(false)
-        expect(json.error).toBe('Failed to generate report')
-    })
-
     // ─── Finnhub 403 + stale cache ───
 
     it('returns stale news when Finnhub returns 403', async () => {
@@ -109,27 +91,6 @@ describe('Cascade Error (P3)', () => {
         // Should fall back to stale cache
         expect(res.status).toBe(200)
         expect(json.data.length).toBe(3)
-    })
-
-    // ─── Error messages safe ───
-
-    it('500 responses have generic error messages, no internal details', async () => {
-        await seedWatchlist(prisma, 'AAPL', 'Apple Inc.')
-
-        mockGenerateText.mockImplementation(async () => {
-            throw new Error(
-                'Internal: PostgreSQL connection refused at 127.0.0.1:5432',
-            )
-        })
-
-        const res = await jsonPost(app, '/api/stocks/AAPL/report')
-        const json = await res.json()
-
-        expect(res.status).toBe(500)
-        expect(json.error).toBe('Failed to generate report')
-        // Should NOT leak internal details
-        expect(json.error).not.toContain('PostgreSQL')
-        expect(json.error).not.toContain('127.0.0.1')
     })
 
     // ─── All data sources fail ───

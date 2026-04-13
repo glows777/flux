@@ -1,16 +1,15 @@
 import { sValidator } from '@hono/standard-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { getReportWithCache } from '@/core/ai/cache'
 import { getAlpacaClient } from '@/core/broker/alpaca-client'
 import { mapAlpacaPositionToHoldingItem } from '@/core/broker/portfolio-calc'
 import {
     getHistory,
-    type Period,
-    VALID_PERIODS,
+    getInfo,
     getNews,
     getStockInfo,
-    getInfo,
+    type Period,
+    VALID_PERIODS,
 } from '@/core/market-data'
 
 const NEWS_DEFAULT_LIMIT = 20
@@ -49,10 +48,6 @@ const newsQuerySchema = z.object({
             }
             return n
         }),
-})
-
-const reportBodySchema = z.object({
-    forceRefresh: z.boolean().optional().default(false),
 })
 
 const onValidationError = (
@@ -132,35 +127,6 @@ const stocks = new Hono()
         },
     )
 
-    .post(
-        '/:symbol/report',
-        sValidator('param', symbolParamSchema, onValidationError),
-        sValidator('json', reportBodySchema, onValidationError),
-        async (c) => {
-            try {
-                const symbol = c.req.valid('param').symbol.toUpperCase()
-                const { forceRefresh } = c.req.valid('json')
-
-                const report = await getReportWithCache(symbol, forceRefresh)
-
-                return c.json({
-                    success: true,
-                    data: {
-                        symbol: report.symbol,
-                        content: report.content,
-                        createdAt: report.createdAt.toISOString(),
-                        cached: report.cached,
-                    },
-                })
-            } catch {
-                return c.json(
-                    { success: false, error: 'Failed to generate report' },
-                    500,
-                )
-            }
-        },
-    )
-
     .get(
         '/:symbol/position',
         sValidator('param', symbolParamSchema, onValidationError),
@@ -178,9 +144,14 @@ const stocks = new Hono()
                 try {
                     const info = await getInfo(symbol.toUpperCase())
                     name = info.name ?? null
-                } catch { /* Name lookup failed */ }
+                } catch {
+                    /* Name lookup failed */
+                }
 
-                const holdingItem = mapAlpacaPositionToHoldingItem(position, name)
+                const holdingItem = mapAlpacaPositionToHoldingItem(
+                    position,
+                    name,
+                )
                 return c.json({ success: true as const, data: holdingItem })
             } catch {
                 return c.json({ success: true as const, data: null })

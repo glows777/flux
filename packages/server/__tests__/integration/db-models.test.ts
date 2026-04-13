@@ -31,7 +31,6 @@ describe('P2-02: Data Model Integration Tests', () => {
             expect(schemaContent).toContain('model Watchlist {')
             expect(schemaContent).toContain('model StockHistory {')
             expect(schemaContent).toContain('model StockInfo {')
-            expect(schemaContent).toContain('model AIReport {')
         })
 
         it('should have Watchlist model with correct fields', () => {
@@ -65,15 +64,6 @@ describe('P2-02: Data Model Integration Tests', () => {
             expect(schemaContent).toContain('sector        String?')
         })
 
-        it('should have AIReport model with text content and sorted index', () => {
-            const schemaPath = join(ROOT_DIR, 'prisma/schema.prisma')
-            const schemaContent = readFileSync(schemaPath, 'utf-8')
-
-            expect(schemaContent).toContain('content   String   @db.Text')
-            expect(schemaContent).toContain(
-                '@@index([symbol, createdAt(sort: Desc)])',
-            )
-        })
     })
 
     describe('T02-07: Prisma Generate Verification', () => {
@@ -211,7 +201,7 @@ describe('P2-02: Real Database Operations', () => {
                     await prisma.watchlist.create({
                         data: { symbol: 'UNIQUE_TEST', name: 'Second' },
                     })
-                } catch (error) {
+                } catch {
                     errorThrown = true
                 }
                 expect(errorThrown).toBe(true)
@@ -271,7 +261,7 @@ describe('P2-02: Real Database Operations', () => {
                             close: 105,
                         },
                     })
-                } catch (error) {
+                } catch {
                     errorThrown = true
                 }
                 expect(errorThrown).toBe(true)

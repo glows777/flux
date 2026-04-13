@@ -11,100 +11,95 @@
 
 import { mock } from 'bun:test'
 import {
-    // db mocks
-    mockWatchlistFindMany,
-    mockWatchlistFindUnique,
-    mockWatchlistCreate,
-    mockWatchlistDelete,
-    mockAIReportFindFirst,
-    mockAIReportCreate,
-    mockAIReportDeleteMany,
-    // sync mocks
-    mockGetQuoteWithCache,
-    mockGetHistoryWithCache,
-    mockGetInfoWithCache,
-    // yahoo-finance2 mock
-    mockYahooQuoteFn,
-    // news mock
-    mockGetStockNews,
-    // macro mock
-    mockGetMacroIndicators,
-    // watchlist API mocks
-    mockGetWatchlistItems,
-    mockAddToWatchlist,
-    mockRemoveFromWatchlist,
     MockAddWatchlistError,
     MockRemoveWatchlistError,
+    // session mocks
+    MockSessionError,
+    mockAddToWatchlist,
+    mockAIReportCreate,
+    mockAIReportDeleteMany,
+    mockAIReportFindFirst,
+    mockAlpacaIsConfigured,
+    mockAppendMessage,
+    mockAutoTradingAgentPreset,
+    // prompts mock
+    mockBuildAgentSystemPrompt,
+    mockBuildGlobalSystemPrompt,
+    mockClearChannelSession,
+    mockConvertToModelMessages,
+    // runtime mocks
+    mockCreateAIRuntime,
+    // cron service mocks
+    mockCreateCronJob,
+    mockCreateCronJobRun,
+    mockCreateDefaultResearchDeps,
+    mockCreateHistoryTool,
+    mockCreateMemoryTools,
+    // research mocks
+    mockCreateResearchTools,
+    mockCreateSession,
+    // tools mock
+    mockCreateTools,
+    mockDeleteCronJob,
+    mockDeleteSession,
+    mockGenerateId,
+    // ai mocks
+    mockGenerateText,
+    // Alpaca client mocks
+    mockGetAccount,
+    mockGetCronJob,
+    mockGetEmbeddingModel,
+    mockGetHistoryWithCache,
+    mockGetInfoWithCache,
+    // macro mock
+    mockGetMacroIndicators,
+    // providers mock
+    mockGetModel,
+    mockGetOrders,
+    mockGetPosition,
+    mockGetPositions,
+    // sync mocks
+    mockGetQuoteWithCache,
+    // memory (barrel) mocks
+    mockGetSlotContent,
+    mockGetSlotHistory,
     // history mock
     mockGetStockHistory,
     // stock-info mock
     mockGetStockInfo,
-    // cache mock
-    mockGetReportWithCache,
-    // session mocks
-    MockSessionError,
-    mockListSessions,
+    // news mock
+    mockGetStockNews,
+    // watchlist API mocks
+    mockGetWatchlistItems,
+    mockListAllRuns,
     mockListAllSessions,
-    mockCreateSession,
-    mockDeleteSession,
-    mockRenameSession,
-    mockTouchSession,
-    mockClearChannelSession,
+    mockListCronJobRuns,
+    mockListCronJobs,
+    mockListSessions,
+    mockLoadMemoryContext,
     mockLoadMessages,
-    mockAppendMessage,
-    mockTruncateMessages,
     // session — loadMessagesForTranscript
     mockLoadMessagesForTranscript,
-    // memory (barrel) mocks
-    mockGetSlotContent,
-    mockWriteSlot,
-    mockGetSlotHistory,
-    mockLoadMemoryContext,
-    mockCreateMemoryTools,
-    mockCreateHistoryTool,
-    // prompts mock
-    mockBuildAgentSystemPrompt,
-    mockBuildGlobalSystemPrompt,
-    // tools mock
-    mockCreateTools,
-    // ai mocks
-    mockGenerateText,
-    mockStreamText,
-    mockConvertToModelMessages,
-    mockStepCountIs,
-    mockTool,
-    mockGenerateId,
-    // providers mock
-    mockGetModel,
-    mockGetEmbeddingModel,
+    mockRemoveFromWatchlist,
+    mockRenameSession,
     // search mock
     mockSearchStocks,
-    // research mocks
-    mockCreateResearchTools,
-    mockCreateDefaultResearchDeps,
-    // chat generate mock
-    mockChatGenerate,
-    // runtime mocks
-    mockCreateAIRuntime,
-    mockRuntime,
+    mockStepCountIs,
+    mockStreamText,
+    mockTool,
+    mockTouchSession,
     // preset mocks
     mockTradingAgentPreset,
-    mockAutoTradingAgentPreset,
-    // Alpaca client mocks
-    mockGetAccount,
-    mockGetPositions,
-    mockGetPosition,
-    mockGetOrders,
-    mockAlpacaIsConfigured,
-    // cron service mocks
-    mockCreateCronJob,
-    mockListCronJobs,
+    mockTruncateMessages,
     mockUpdateCronJob,
-    mockDeleteCronJob,
-    mockGetCronJob,
-    mockCreateCronJobRun,
-    mockListCronJobRuns,
-    mockListAllRuns,
+    mockWatchlistCreate,
+    mockWatchlistDelete,
+    // db mocks
+    mockWatchlistFindMany,
+    mockWatchlistFindUnique,
+    mockWriteSlot,
+    // yahoo-finance2 mock
+    mockYahooQuoteFn,
 } from './helpers/mock-boundaries'
 
 // ─── Env vars ───
@@ -175,11 +170,18 @@ mock.module('@/core/market-data', () => ({
     getMacro: mockGetMacroIndicators,
     getMacroIndicators: mockGetMacroIndicators,
     VIX_DISPLAY_NAME: '恐慌指数',
-    findVixFromMacro: (indicators: ReadonlyArray<{ sym: string; val: string }>) =>
-        indicators.find(m => m.sym === '恐慌指数'),
+    findVixFromMacro: (
+        indicators: ReadonlyArray<{ sym: string; val: string }>,
+    ) => indicators.find((m) => m.sym === '恐慌指数'),
     VALID_PERIODS: ['1D', '1W', '1M', '3M', 'YTD', '1Y'],
     getDaysForPeriod: mock((period: string) => {
-        const map: Record<string, number> = { '1D': 1, '1W': 5, '1M': 22, '3M': 65, '1Y': 252 }
+        const map: Record<string, number> = {
+            '1D': 1,
+            '1W': 5,
+            '1M': 22,
+            '3M': 65,
+            '1Y': 252,
+        }
         return map[period] ?? 22
     }),
     isValidSymbol: mock((s: string) => /^[A-Za-z0-9.\-^]{1,10}$/.test(s)),
@@ -204,13 +206,6 @@ mock.module('@/core/api/watchlist', () => ({
     RemoveWatchlistError: MockRemoveWatchlistError,
 }))
 
-mock.module('@/core/ai/cache', () => ({
-    getReportWithCache: mockGetReportWithCache,
-    getReportFromCache: mock(() => Promise.resolve(null)),
-    REPORT_TTL_MS: 24 * 60 * 60 * 1000,
-}))
-
-
 mock.module('@/core/ai/providers', () => ({
     getModel: mockGetModel,
     getEmbeddingModel: mockGetEmbeddingModel,
@@ -226,21 +221,49 @@ mock.module('@/core/ai/memory', () => ({
     createMemoryTools: mockCreateMemoryTools,
     createHistoryTool: mockCreateHistoryTool,
     SlotContentTooLongError: class SlotContentTooLongError extends Error {
-        slot: string; actual: number; limit: number
+        slot: string
+        actual: number
+        limit: number
         constructor(slot: string, actual: number, limit: number) {
             super(`Slot "${slot}" content too long`)
             this.name = 'SlotContentTooLongError'
-            this.slot = slot; this.actual = actual; this.limit = limit
+            this.slot = slot
+            this.actual = actual
+            this.limit = limit
         }
     },
-    VALID_SLOTS: ['user_profile', 'portfolio_thesis', 'market_views', 'active_focus', 'lessons', 'agent_strategy'],
-    SLOT_LIMITS: { user_profile: 500, market_views: 500, active_focus: 500, lessons: 1000, portfolio_thesis: 2000, agent_strategy: 2000 },
+    VALID_SLOTS: [
+        'user_profile',
+        'portfolio_thesis',
+        'market_views',
+        'active_focus',
+        'lessons',
+        'agent_strategy',
+    ],
+    SLOT_LIMITS: {
+        user_profile: 500,
+        market_views: 500,
+        active_focus: 500,
+        lessons: 1000,
+        portfolio_thesis: 2000,
+        agent_strategy: 2000,
+    },
 }))
 
 mock.module('@/core/ai/prompts', () => ({
     buildAgentSystemPrompt: mockBuildAgentSystemPrompt,
     buildGlobalSystemPrompt: mockBuildGlobalSystemPrompt,
-    calculateIndicators: mock(() => ({ ma20: null, rsi: null, ma50: null, ma200: null, trendPosition: null, macd: null, support: null, resistance: null, volumeRatio: null })),
+    calculateIndicators: mock(() => ({
+        ma20: null,
+        rsi: null,
+        ma50: null,
+        ma200: null,
+        trendPosition: null,
+        macd: null,
+        support: null,
+        resistance: null,
+        volumeRatio: null,
+    })),
     buildReportPrompt: mock(() => 'mock report prompt'),
 }))
 
@@ -257,14 +280,22 @@ mock.module('@/core/ai/research', () => ({
     clearFetchCache: mock(() => {}),
     clearXSearchCache: mock(() => {}),
     getXSearchCacheSize: mock(() => 0),
-    RESEARCH_TIMEOUTS: { searchTavily: 15000, webSearch: 60000, webFetch: 30000, searchX: 60000 },
+    RESEARCH_TIMEOUTS: {
+        searchTavily: 15000,
+        webSearch: 60000,
+        webFetch: 30000,
+        searchX: 60000,
+    },
     PAGE_CONTENT_MAX_CHARS: 50000,
     WEB_SEARCH_MAX_STEPS: 8,
     FETCH_CACHE_TTL: 900000,
     FETCH_CACHE_MAX_SIZE: 100,
     X_SEARCH_CACHE_TTL: 300000,
     X_SEARCH_CACHE_MAX_SIZE: 50,
-    X_SEARCH_CONFIG: { enableImageUnderstanding: true, enableVideoUnderstanding: true },
+    X_SEARCH_CONFIG: {
+        enableImageUnderstanding: true,
+        enableVideoUnderstanding: true,
+    },
     X_SEARCH_SYSTEM_PROMPT: 'mock prompt',
 }))
 
@@ -328,10 +359,16 @@ mock.module('@/core/ai/runtime/create', () => ({
 mock.module('@/core/ai/runtime', () => ({
     createAIRuntime: mockCreateAIRuntime,
     PluginError: class PluginError extends Error {
-        constructor(message: string) { super(message); this.name = 'PluginError' }
+        constructor(message: string) {
+            super(message)
+            this.name = 'PluginError'
+        }
     },
     ToolConflictError: class ToolConflictError extends Error {
-        constructor(message: string) { super(message); this.name = 'ToolConflictError' }
+        constructor(message: string) {
+            super(message)
+            this.name = 'ToolConflictError'
+        }
     },
     DEFAULT_CHAT_PARAMS: { maxSteps: 20 },
 }))

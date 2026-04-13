@@ -49,16 +49,6 @@ model StockInfo {
   updatedAt     DateTime @updatedAt
 }
 
-// AIReport (AI 研报缓存)
-model AIReport {
-  id        String   @id @default(cuid())
-  symbol    String
-  content   String   @db.Text // Markdown 内容
-  createdAt DateTime @default(now())
-
-  @@index([symbol, createdAt(sort: Desc)])
-}
-
 // StockHistoryCoverage (历史数据覆盖范围追踪)
 model StockHistoryCoverage {
   id          String   @id @default(cuid())

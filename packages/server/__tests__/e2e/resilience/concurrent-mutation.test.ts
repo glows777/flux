@@ -110,20 +110,6 @@ describe('Concurrent Mutations (P2)', () => {
         expect(getJson.data.length).toBeGreaterThanOrEqual(0)
     })
 
-    // ─── Concurrent report generation ───
-
-    it('concurrent report requests: both return 200', async () => {
-        await seedWatchlist(prisma, 'AAPL', 'Apple Inc.')
-
-        const [res1, res2] = await Promise.all([
-            jsonPost(app, '/api/stocks/AAPL/report'),
-            jsonPost(app, '/api/stocks/AAPL/report'),
-        ])
-
-        expect(res1.status).toBe(200)
-        expect(res2.status).toBe(200)
-    })
-
     // ─── Sync upsert race ───
 
     it('concurrent stock info requests: no unique constraint errors', async () => {

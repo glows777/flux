@@ -7,8 +7,7 @@
  * - T02-03: getNews tool uses default limit=5
  * - T02-04: getHistory tool returns slim fields { date, close }
  * - T02-05: tool execute catches errors and returns { error }
- * - T02-06: getReport tool returns null when cache miss
- * - T02-07: calculateIndicators tool composes getHistory + calculateIndicators
+ * - T02-06: calculateIndicators tool composes getHistory + calculateIndicators
  * - T02-08: searchStock tool uses deps.searchStocks
  * - T02-09: every tool has a description field
  *
@@ -23,7 +22,7 @@
  */
 
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import { type ToolDeps, createTools } from '@/core/ai/tools'
+import { createTools, type ToolDeps } from '@/core/ai/tools'
 
 // ─── Mock deps factory ───
 
@@ -73,9 +72,6 @@ function createMockDeps(): ToolDeps {
                 },
             ]),
         ),
-        getReportFromCache: mock(() =>
-            Promise.resolve('## 核心观点\nApple 当前处于上升趋势...'),
-        ),
         searchStocks: mock(() =>
             Promise.resolve([{ symbol: 'NVDA', name: 'NVIDIA Corporation' }]),
         ),
@@ -91,7 +87,7 @@ describe('createTools', () => {
         mockDeps = createMockDeps()
     })
 
-    it('T02-01: returns object with 6 data tools + 3 display tools (9 total)', () => {
+    it('T02-01: returns object with 5 data tools + 3 display tools (8 total)', () => {
         const tools = createTools(mockDeps)
 
         const expectedKeys = [
@@ -99,7 +95,6 @@ describe('createTools', () => {
             'getCompanyInfo',
             'getHistory',
             'calculateIndicators',
-            'getReport',
             'searchStock',
             'display_rating_card',
             'display_comparison_table',
@@ -107,7 +102,7 @@ describe('createTools', () => {
         ]
 
         const toolKeys = Object.keys(tools)
-        expect(toolKeys).toHaveLength(9)
+        expect(toolKeys).toHaveLength(8)
         for (const key of expectedKeys) {
             expect(toolKeys).toContain(key)
         }
@@ -116,7 +111,14 @@ describe('createTools', () => {
     it('T02-02: getQuote tool calls deps.getQuote', async () => {
         const tools = createTools(mockDeps)
 
-        const result = await tools.getQuote.execute({ symbol: 'AAPL' }, { toolCallId: 'test', messages: [], abortSignal: undefined as unknown as AbortSignal })
+        const result = await tools.getQuote.execute(
+            { symbol: 'AAPL' },
+            {
+                toolCallId: 'test',
+                messages: [],
+                abortSignal: undefined as unknown as AbortSignal,
+            },
+        )
 
         expect(mockDeps.getQuote).toHaveBeenCalledWith('AAPL')
         expect(result).toHaveProperty('price', 150)
@@ -130,7 +132,11 @@ describe('createTools', () => {
 
         const result = await tools.getHistory.execute(
             { symbol: 'AAPL', days: 30 },
-            { toolCallId: 'test', messages: [], abortSignal: undefined as unknown as AbortSignal },
+            {
+                toolCallId: 'test',
+                messages: [],
+                abortSignal: undefined as unknown as AbortSignal,
+            },
         )
 
         expect(Array.isArray(result)).toBe(true)
@@ -144,32 +150,31 @@ describe('createTools', () => {
     })
 
     it('T02-05: tool execute catches errors and returns { error }', async () => {
-        mockDeps.getQuote = mock(() =>
-            Promise.reject(new Error('API failed')),
-        )
+        mockDeps.getQuote = mock(() => Promise.reject(new Error('API failed')))
         const tools = createTools(mockDeps)
 
-        const result = await tools.getQuote.execute({ symbol: 'AAPL' }, { toolCallId: 'test', messages: [], abortSignal: undefined as unknown as AbortSignal })
+        const result = await tools.getQuote.execute(
+            { symbol: 'AAPL' },
+            {
+                toolCallId: 'test',
+                messages: [],
+                abortSignal: undefined as unknown as AbortSignal,
+            },
+        )
 
         expect(result).toHaveProperty('error', 'API failed')
     })
 
-    it('T02-06: getReport tool returns null when cache miss', async () => {
-        mockDeps.getReportFromCache = mock(() => Promise.resolve(null))
-        const tools = createTools(mockDeps)
-
-        const result = await tools.getReport.execute({ symbol: 'AAPL' }, { toolCallId: 'test', messages: [], abortSignal: undefined as unknown as AbortSignal })
-
-        expect(mockDeps.getReportFromCache).toHaveBeenCalledWith('AAPL')
-        expect(result).toHaveProperty('content', null)
-    })
-
-    it('T02-07: calculateIndicators tool composes getHistory + calculateIndicators', async () => {
+    it('T02-06: calculateIndicators tool composes getHistory + calculateIndicators', async () => {
         const tools = createTools(mockDeps)
 
         const result = await tools.calculateIndicators.execute(
             { symbol: 'AAPL' },
-            { toolCallId: 'test', messages: [], abortSignal: undefined as unknown as AbortSignal },
+            {
+                toolCallId: 'test',
+                messages: [],
+                abortSignal: undefined as unknown as AbortSignal,
+            },
         )
 
         expect(mockDeps.getHistoryRaw).toHaveBeenCalledWith('AAPL', 200)
@@ -189,7 +194,11 @@ describe('createTools', () => {
 
         const result = await tools.searchStock.execute(
             { query: 'NVDA' },
-            { toolCallId: 'test', messages: [], abortSignal: undefined as unknown as AbortSignal },
+            {
+                toolCallId: 'test',
+                messages: [],
+                abortSignal: undefined as unknown as AbortSignal,
+            },
         )
 
         expect(mockDeps.searchStocks).toHaveBeenCalledWith('NVDA')
@@ -204,7 +213,10 @@ describe('createTools', () => {
         const tools = createTools(mockDeps)
 
         for (const [name, t] of Object.entries(tools)) {
-            expect(t.description, `Tool "${name}" missing description`).toBeDefined()
+            expect(
+                t.description,
+                `Tool "${name}" missing description`,
+            ).toBeDefined()
             expect(typeof t.description).toBe('string')
             expect(t.description!.length).toBeGreaterThan(0)
         }
@@ -220,7 +232,11 @@ describe('Display tools', () => {
         mockDeps = createMockDeps()
     })
 
-    const execOpts = { toolCallId: 'test', messages: [] as never[], abortSignal: undefined as unknown as AbortSignal }
+    const execOpts = {
+        toolCallId: 'test',
+        messages: [] as never[],
+        abortSignal: undefined as unknown as AbortSignal,
+    }
 
     it('P2-T01: createTools 包含 display_rating_card 工具', () => {
         const tools = createTools(mockDeps)
@@ -262,14 +278,25 @@ describe('Display tools', () => {
                 {
                     metric: '市盈率',
                     values: [
-                        { symbol: 'NVDA', value: '55.2x', highlight: 'neutral' as const },
-                        { symbol: 'AMD', value: '45.1x', highlight: 'positive' as const },
+                        {
+                            symbol: 'NVDA',
+                            value: '55.2x',
+                            highlight: 'neutral' as const,
+                        },
+                        {
+                            symbol: 'AMD',
+                            value: '45.1x',
+                            highlight: 'positive' as const,
+                        },
                     ],
                 },
             ],
         }
 
-        const result = await tools.display_comparison_table.execute(params, execOpts)
+        const result = await tools.display_comparison_table.execute(
+            params,
+            execOpts,
+        )
 
         expect(result).toEqual(params)
     })
@@ -279,24 +306,43 @@ describe('Display tools', () => {
         const params = {
             symbol: 'NVDA',
             signals: [
-                { name: 'RSI 超卖', type: 'bullish' as const, strength: 'strong' as const, detail: 'RSI=25' },
-                { name: 'MA20 金叉', type: 'bullish' as const, strength: 'moderate' as const },
+                {
+                    name: 'RSI 超卖',
+                    type: 'bullish' as const,
+                    strength: 'strong' as const,
+                    detail: 'RSI=25',
+                },
+                {
+                    name: 'MA20 金叉',
+                    type: 'bullish' as const,
+                    strength: 'moderate' as const,
+                },
             ],
             overallBias: 'bullish' as const,
         }
 
-        const result = await tools.display_signal_badges.execute(params, execOpts)
+        const result = await tools.display_signal_badges.execute(
+            params,
+            execOpts,
+        )
 
         expect(result).toEqual(params)
     })
 
     it('P2-T07: 每个展示工具都包含 description 字段', () => {
         const tools = createTools(mockDeps)
-        const displayTools = ['display_rating_card', 'display_comparison_table', 'display_signal_badges'] as const
+        const displayTools = [
+            'display_rating_card',
+            'display_comparison_table',
+            'display_signal_badges',
+        ] as const
 
         for (const name of displayTools) {
             const t = tools[name]
-            expect(t.description, `Tool "${name}" missing description`).toBeDefined()
+            expect(
+                t.description,
+                `Tool "${name}" missing description`,
+            ).toBeDefined()
             expect(typeof t.description).toBe('string')
             expect(t.description!.length).toBeGreaterThan(0)
         }
