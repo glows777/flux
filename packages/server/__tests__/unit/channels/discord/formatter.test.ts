@@ -14,7 +14,7 @@ describe('splitMessage', () => {
     })
 
     test('splits long messages at newlines', () => {
-        const long = 'a'.repeat(1800) + '\n' + 'b'.repeat(400)
+        const long = `${'a'.repeat(1800)}\n${'b'.repeat(400)}`
         const result = splitMessage(long)
         expect(result.length).toBe(2)
         expect(result[0]).toBe('a'.repeat(1800))
@@ -23,7 +23,7 @@ describe('splitMessage', () => {
 
     test('splits at spaces when no newline available', () => {
         const words = Array(300).fill('word').join(' ')
-        const extra = ' ' + 'x'.repeat(600)
+        const extra = ` ${'x'.repeat(600)}`
         const long = words + extra
         const result = splitMessage(long)
         expect(result.length).toBe(2)

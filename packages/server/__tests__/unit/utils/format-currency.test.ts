@@ -3,7 +3,11 @@
  */
 
 import { describe, expect, it } from 'bun:test'
-import { formatCurrency, formatSignedCurrency, formatPercent } from '@flux/shared'
+import {
+    formatCurrency,
+    formatPercent,
+    formatSignedCurrency,
+} from '@flux/shared'
 
 describe('formatCurrency', () => {
     it('T04-01: formats positive value', () => {

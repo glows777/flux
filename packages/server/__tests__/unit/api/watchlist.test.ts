@@ -12,8 +12,8 @@
  */
 
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import type { HistoryPoint, Quote } from '@/core/market-data'
 import { CHART_DAYS, getWatchlistItems } from '@/core/api/watchlist'
+import type { HistoryPoint, Quote } from '@/core/market-data'
 
 // --- Mock types ---
 
@@ -27,7 +27,9 @@ interface MockWatchlist {
 
 // --- Mock factories ---
 
-function createMockWatchlistRow(overrides: Partial<MockWatchlist> = {}): MockWatchlist {
+function createMockWatchlistRow(
+    overrides: Partial<MockWatchlist> = {},
+): MockWatchlist {
     return {
         id: 'cuid-wl-1',
         symbol: 'NVDA',
@@ -38,7 +40,10 @@ function createMockWatchlistRow(overrides: Partial<MockWatchlist> = {}): MockWat
     }
 }
 
-function createMockQuote(symbol: string = 'NVDA', overrides: Partial<Quote> = {}): Quote {
+function createMockQuote(
+    symbol: string = 'NVDA',
+    overrides: Partial<Quote> = {},
+): Quote {
     return {
         symbol,
         price: 780.42,
@@ -91,7 +96,10 @@ describe('P2-07: Watchlist API', () => {
         return {
             prisma: mockPrisma as never,
             getQuote: mockGetQuote as (symbol: string) => Promise<Quote>,
-            getHistoryRaw: mockGetHistoryRaw as (symbol: string, days: number) => Promise<HistoryPoint[]>,
+            getHistoryRaw: mockGetHistoryRaw as (
+                symbol: string,
+                days: number,
+            ) => Promise<HistoryPoint[]>,
         }
     }
 
@@ -143,11 +151,28 @@ describe('P2-07: Watchlist API', () => {
     describe('T07-03: Multiple stocks returned in creation order', () => {
         it('should return multiple items ordered by createdAt', async () => {
             const watchlist = [
-                createMockWatchlistRow({ id: '1', symbol: 'NVDA', name: 'NVIDIA', createdAt: new Date('2024-01-01') }),
-                createMockWatchlistRow({ id: '2', symbol: 'TSLA', name: 'Tesla', createdAt: new Date('2024-01-02') }),
-                createMockWatchlistRow({ id: '3', symbol: 'AMD', name: 'AMD', createdAt: new Date('2024-01-03') }),
+                createMockWatchlistRow({
+                    id: '1',
+                    symbol: 'NVDA',
+                    name: 'NVIDIA',
+                    createdAt: new Date('2024-01-01'),
+                }),
+                createMockWatchlistRow({
+                    id: '2',
+                    symbol: 'TSLA',
+                    name: 'Tesla',
+                    createdAt: new Date('2024-01-02'),
+                }),
+                createMockWatchlistRow({
+                    id: '3',
+                    symbol: 'AMD',
+                    name: 'AMD',
+                    createdAt: new Date('2024-01-03'),
+                }),
             ]
-            mockPrisma.watchlist.findMany = mock(() => Promise.resolve(watchlist))
+            mockPrisma.watchlist.findMany = mock(() =>
+                Promise.resolve(watchlist),
+            )
 
             const result = await getWatchlistItems(getDeps())
 
@@ -166,7 +191,9 @@ describe('P2-07: Watchlist API', () => {
                 Promise.resolve([createMockWatchlistRow()]),
             )
             mockGetQuote = mock(() =>
-                Promise.resolve(createMockQuote('NVDA', { price: 780.42, change: 2.4 })),
+                Promise.resolve(
+                    createMockQuote('NVDA', { price: 780.42, change: 2.4 }),
+                ),
             )
 
             const result = await getWatchlistItems(getDeps())
@@ -189,7 +216,7 @@ describe('P2-07: Watchlist API', () => {
             const result = await getWatchlistItems(getDeps())
 
             expect(result[0].data).toHaveLength(20)
-            expect(result[0].data).toEqual(history.map(h => h.close))
+            expect(result[0].data).toEqual(history.map((h) => h.close))
         })
 
         it('should request CHART_DAYS days of history', async () => {
@@ -208,11 +235,21 @@ describe('P2-07: Watchlist API', () => {
     describe('T07-06: Partial failure does not affect other items', () => {
         it('should return successful items when some quote fetches fail', async () => {
             const watchlist = [
-                createMockWatchlistRow({ id: '1', symbol: 'NVDA', name: 'NVIDIA' }),
-                createMockWatchlistRow({ id: '2', symbol: 'FAIL', name: 'FailCorp' }),
+                createMockWatchlistRow({
+                    id: '1',
+                    symbol: 'NVDA',
+                    name: 'NVIDIA',
+                }),
+                createMockWatchlistRow({
+                    id: '2',
+                    symbol: 'FAIL',
+                    name: 'FailCorp',
+                }),
                 createMockWatchlistRow({ id: '3', symbol: 'AMD', name: 'AMD' }),
             ]
-            mockPrisma.watchlist.findMany = mock(() => Promise.resolve(watchlist))
+            mockPrisma.watchlist.findMany = mock(() =>
+                Promise.resolve(watchlist),
+            )
 
             mockGetQuote = mock((symbol: string) => {
                 if (symbol === 'FAIL') {
@@ -224,17 +261,27 @@ describe('P2-07: Watchlist API', () => {
             const result = await getWatchlistItems(getDeps())
 
             expect(result).toHaveLength(2)
-            expect(result.find(i => i.id === 'FAIL')).toBeUndefined()
-            expect(result.find(i => i.id === 'NVDA')).toBeDefined()
-            expect(result.find(i => i.id === 'AMD')).toBeDefined()
+            expect(result.find((i) => i.id === 'FAIL')).toBeUndefined()
+            expect(result.find((i) => i.id === 'NVDA')).toBeDefined()
+            expect(result.find((i) => i.id === 'AMD')).toBeDefined()
         })
 
         it('should return successful items when some history fetches fail', async () => {
             const watchlist = [
-                createMockWatchlistRow({ id: '1', symbol: 'NVDA', name: 'NVIDIA' }),
-                createMockWatchlistRow({ id: '2', symbol: 'BAD', name: 'BadCorp' }),
+                createMockWatchlistRow({
+                    id: '1',
+                    symbol: 'NVDA',
+                    name: 'NVIDIA',
+                }),
+                createMockWatchlistRow({
+                    id: '2',
+                    symbol: 'BAD',
+                    name: 'BadCorp',
+                }),
             ]
-            mockPrisma.watchlist.findMany = mock(() => Promise.resolve(watchlist))
+            mockPrisma.watchlist.findMany = mock(() =>
+                Promise.resolve(watchlist),
+            )
 
             mockGetHistoryRaw = mock((symbol: string) => {
                 if (symbol === 'BAD') {
@@ -255,11 +302,21 @@ describe('P2-07: Watchlist API', () => {
     describe('T07-07: Multiple symbols fetched concurrently', () => {
         it('should call quote and history APIs for all symbols', async () => {
             const watchlist = [
-                createMockWatchlistRow({ id: '1', symbol: 'NVDA', name: 'NVIDIA' }),
-                createMockWatchlistRow({ id: '2', symbol: 'TSLA', name: 'Tesla' }),
+                createMockWatchlistRow({
+                    id: '1',
+                    symbol: 'NVDA',
+                    name: 'NVIDIA',
+                }),
+                createMockWatchlistRow({
+                    id: '2',
+                    symbol: 'TSLA',
+                    name: 'Tesla',
+                }),
                 createMockWatchlistRow({ id: '3', symbol: 'AMD', name: 'AMD' }),
             ]
-            mockPrisma.watchlist.findMany = mock(() => Promise.resolve(watchlist))
+            mockPrisma.watchlist.findMany = mock(() =>
+                Promise.resolve(watchlist),
+            )
 
             await getWatchlistItems(getDeps())
 

@@ -8,12 +8,12 @@
  */
 
 import type { MacroTicker } from '@flux/shared'
+import { CachedDataSource } from '../common/cached-source'
+import { FallbackChain } from '../common/fallback-chain'
+import type { FinnhubClient } from '../common/finnhub-client'
+import { MemoryStore } from '../common/store-memory'
 import type { Quote } from '../common/types'
 import type { YahooFinanceClient } from '../common/yahoo-client'
-import type { FinnhubClient } from '../common/finnhub-client'
-import { CachedDataSource } from '../common/cached-source'
-import { MemoryStore } from '../common/store-memory'
-import { FallbackChain } from '../common/fallback-chain'
 
 const MACRO_TTL_MS = 5 * 60 * 1000 // 5 minutes
 const MACRO_TIMEOUT_MS = 3_000
@@ -83,7 +83,9 @@ export function createMacroService(deps: {
                         sym: ind.name,
                         val: formatValue(ind.symbol, quote.price),
                         chg: formatChange(quote.change),
-                        trend: (quote.change >= 0 ? 'up' : 'down') as 'up' | 'down',
+                        trend: (quote.change >= 0 ? 'up' : 'down') as
+                            | 'up'
+                            | 'down',
                     }
                 }),
             )
@@ -91,11 +93,11 @@ export function createMacroService(deps: {
                 r.status === 'fulfilled'
                     ? r.value
                     : {
-                            sym: MACRO_INDICATORS[i].name,
-                            val: '--',
-                            chg: '--',
-                            trend: 'up' as const,
-                        },
+                          sym: MACRO_INDICATORS[i].name,
+                          val: '--',
+                          chg: '--',
+                          trend: 'up' as const,
+                      },
             )
         },
         ttl: MACRO_TTL_MS,

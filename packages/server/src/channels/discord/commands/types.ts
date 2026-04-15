@@ -11,5 +11,8 @@ export interface CommandContext {
 
 export interface SlashCommand {
     readonly definition: SlashCommandBuilder | SlashCommandOptionsOnlyBuilder
-    execute(interaction: ChatInputCommandInteraction, ctx: CommandContext): Promise<void>
+    execute(
+        interaction: ChatInputCommandInteraction,
+        ctx: CommandContext,
+    ): Promise<void>
 }

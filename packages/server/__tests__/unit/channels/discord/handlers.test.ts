@@ -1,7 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import { toGatewayInput } from '@/channels/discord/handlers'
 
-function createMockMessage(overrides: Record<string, any> = {}) {
+type MockMessage = {
+    author: { bot: boolean; id: string }
+    content: string
+    guild: { id: string } | null
+    channel: { id: string }
+    mentions: { has: (id: string) => boolean }
+}
+
+function createMockMessage(overrides: Partial<MockMessage> = {}) {
     return {
         author: { bot: false, id: 'user-1' },
         content: 'hello',
@@ -9,7 +17,7 @@ function createMockMessage(overrides: Record<string, any> = {}) {
         channel: { id: 'channel-1' },
         mentions: { has: () => false },
         ...overrides,
-    } as any
+    } as unknown as Parameters<typeof toGatewayInput>[0]
 }
 
 describe('toGatewayInput', () => {

@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
-import { HealthMonitor, type HealthMonitorConfig, type RegisteredSubsystem, type SubsystemCheckResult } from '@/gateway/health-monitor'
+import {
+    HealthMonitor,
+    type HealthMonitorConfig,
+    type RegisteredSubsystem,
+    type SubsystemCheckResult,
+} from '@/gateway/health-monitor'
 
 const REAL_DATE_NOW = Date.now
 
@@ -35,7 +40,10 @@ function healthyResult(): SubsystemCheckResult {
     }
 }
 
-function unhealthyResult(reason = 'engine_stopped', details = 'subsystem is unhealthy'): SubsystemCheckResult {
+function unhealthyResult(
+    reason = 'engine_stopped',
+    details = 'subsystem is unhealthy',
+): SubsystemCheckResult {
     return {
         status: 'unhealthy',
         reason,
@@ -44,15 +52,22 @@ function unhealthyResult(reason = 'engine_stopped', details = 'subsystem is unhe
     }
 }
 
-function createSubsystem(overrides: Partial<RegisteredSubsystem> = {}): RegisteredSubsystem {
+function createSubsystem(
+    overrides: Partial<RegisteredSubsystem> = {},
+): RegisteredSubsystem {
     return {
         check: overrides.check ?? mock(() => Promise.resolve(healthyResult())),
         recover: overrides.recover ?? mock(() => Promise.resolve()),
     }
 }
 
+type TestableHealthMonitor = HealthMonitor & {
+    runChecks(): Promise<void>
+    setMonitorError(error: Error): void
+}
+
 async function runChecks(monitor: HealthMonitor) {
-    await (monitor as any).runChecks()
+    await (monitor as unknown as TestableHealthMonitor).runChecks()
 }
 
 describe('HealthMonitor', () => {
@@ -84,15 +99,18 @@ describe('HealthMonitor', () => {
     })
 
     test('triggers recovery after 3 consecutive unhealthy checks', async () => {
-        let now = 1_000_000
+        const now = 1_000_000
         Date.now = () => now
 
         const recover = mock(() => Promise.resolve())
         const monitor = createMonitor()
-        monitor.register('discord', createSubsystem({
-            check: mock(() => Promise.resolve(unhealthyResult())),
-            recover,
-        }))
+        monitor.register(
+            'discord',
+            createSubsystem({
+                check: mock(() => Promise.resolve(unhealthyResult())),
+                recover,
+            }),
+        )
 
         await runChecks(monitor)
         await runChecks(monitor)
@@ -101,27 +119,37 @@ describe('HealthMonitor', () => {
         await runChecks(monitor)
 
         expect(recover).toHaveBeenCalledTimes(1)
-        expect(monitor.getHealthStatus().subsystems.discord.status).toBe('recovering')
+        expect(monitor.getHealthStatus().subsystems.discord.status).toBe(
+            'recovering',
+        )
     })
 
     test('timeout counts as a failure toward the threshold', async () => {
-        let now = 2_000_000
+        const now = 2_000_000
         Date.now = () => now
 
         const recover = mock(() => Promise.resolve())
-        const slowCheck = mock(() => new Promise<SubsystemCheckResult>((resolve) => {
-            setTimeout(() => resolve(healthyResult()), 10)
-        }))
+        const slowCheck = mock(
+            () =>
+                new Promise<SubsystemCheckResult>((resolve) => {
+                    setTimeout(() => resolve(healthyResult()), 10)
+                }),
+        )
 
         const monitor = createMonitor({ checkTimeoutMs: 1 })
-        monitor.register('scheduler', createSubsystem({ check: slowCheck, recover }))
+        monitor.register(
+            'scheduler',
+            createSubsystem({ check: slowCheck, recover }),
+        )
 
         await runChecks(monitor)
         await runChecks(monitor)
         await runChecks(monitor)
 
         expect(recover).toHaveBeenCalledTimes(1)
-        expect(monitor.getHealthStatus().subsystems.scheduler.status).toBe('recovering')
+        expect(monitor.getHealthStatus().subsystems.scheduler.status).toBe(
+            'recovering',
+        )
     })
 
     test('grace period suppresses recovery until it expires', async () => {
@@ -130,31 +158,43 @@ describe('HealthMonitor', () => {
 
         const recover = mock(() => Promise.resolve())
         const monitor = createMonitor({ gracePeriodMs: 1_000 })
-        monitor.register('discord', createSubsystem({
-            check: mock(() => Promise.resolve(unhealthyResult())),
-            recover,
-        }))
+        monitor.register(
+            'discord',
+            createSubsystem({
+                check: mock(() => Promise.resolve(unhealthyResult())),
+                recover,
+            }),
+        )
 
         await runChecks(monitor)
         await runChecks(monitor)
         await runChecks(monitor)
 
         expect(recover).not.toHaveBeenCalled()
-        expect(monitor.getHealthStatus().subsystems.discord.status).toBe('unhealthy')
+        expect(monitor.getHealthStatus().subsystems.discord.status).toBe(
+            'unhealthy',
+        )
 
         now += 1_500
         await runChecks(monitor)
 
         expect(recover).toHaveBeenCalledTimes(1)
-        expect(monitor.getHealthStatus().subsystems.discord.status).toBe('recovering')
+        expect(monitor.getHealthStatus().subsystems.discord.status).toBe(
+            'recovering',
+        )
     })
 
     test('failed checks are exposed as unhealthy before recovery threshold is reached', async () => {
         const monitor = createMonitor()
-        monitor.register('discord', createSubsystem({
-            check: mock(() => Promise.resolve(unhealthyResult('gateway_disconnected'))),
-            recover: mock(() => Promise.resolve()),
-        }))
+        monitor.register(
+            'discord',
+            createSubsystem({
+                check: mock(() =>
+                    Promise.resolve(unhealthyResult('gateway_disconnected')),
+                ),
+                recover: mock(() => Promise.resolve()),
+            }),
+        )
 
         await runChecks(monitor)
 
@@ -170,17 +210,22 @@ describe('HealthMonitor', () => {
         const deferred = createDeferred<void>()
         const recover = mock(() => deferred.promise)
         const monitor = createMonitor({ minRecoverIntervalMs: 0 })
-        monitor.register('discord', createSubsystem({
-            check: mock(() => Promise.resolve(unhealthyResult())),
-            recover,
-        }))
+        monitor.register(
+            'discord',
+            createSubsystem({
+                check: mock(() => Promise.resolve(unhealthyResult())),
+                recover,
+            }),
+        )
 
         await runChecks(monitor)
         await runChecks(monitor)
         await runChecks(monitor)
 
         expect(recover).toHaveBeenCalledTimes(1)
-        expect(monitor.getHealthStatus().subsystems.discord.status).toBe('recovering')
+        expect(monitor.getHealthStatus().subsystems.discord.status).toBe(
+            'recovering',
+        )
 
         now += 1
         await runChecks(monitor)
@@ -191,15 +236,18 @@ describe('HealthMonitor', () => {
     })
 
     test('rate limit stops recovery after 3 attempts in an hour', async () => {
-        let now = 5_000_000
+        const now = 5_000_000
         Date.now = () => now
 
         const recover = mock(() => Promise.resolve())
         const monitor = createMonitor({ minRecoverIntervalMs: 0 })
-        monitor.register('scheduler', createSubsystem({
-            check: mock(() => Promise.resolve(unhealthyResult())),
-            recover,
-        }))
+        monitor.register(
+            'scheduler',
+            createSubsystem({
+                check: mock(() => Promise.resolve(unhealthyResult())),
+                recover,
+            }),
+        )
 
         await runChecks(monitor)
         await runChecks(monitor)
@@ -209,7 +257,9 @@ describe('HealthMonitor', () => {
         await runChecks(monitor)
 
         expect(recover).toHaveBeenCalledTimes(3)
-        expect(monitor.getHealthStatus().subsystems.scheduler.status).toBe('unhealthy')
+        expect(monitor.getHealthStatus().subsystems.scheduler.status).toBe(
+            'unhealthy',
+        )
     })
 
     test('minimum recovery interval blocks back-to-back recovery attempts', async () => {
@@ -218,10 +268,13 @@ describe('HealthMonitor', () => {
 
         const recover = mock(() => Promise.resolve())
         const monitor = createMonitor({ minRecoverIntervalMs: 5 * 60 * 1000 })
-        monitor.register('scheduler', createSubsystem({
-            check: mock(() => Promise.resolve(unhealthyResult())),
-            recover,
-        }))
+        monitor.register(
+            'scheduler',
+            createSubsystem({
+                check: mock(() => Promise.resolve(unhealthyResult())),
+                recover,
+            }),
+        )
 
         await runChecks(monitor)
         await runChecks(monitor)
@@ -238,7 +291,9 @@ describe('HealthMonitor', () => {
         const monitor = createMonitor()
         monitor.register('discord', createSubsystem())
 
-        ;(monitor as any).setMonitorError(new Error('boom'))
+        ;(monitor as unknown as TestableHealthMonitor).setMonitorError(
+            new Error('boom'),
+        )
 
         const status = monitor.getHealthStatus()
 

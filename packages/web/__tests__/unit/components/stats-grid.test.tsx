@@ -3,7 +3,7 @@
  * 6 test cases
  */
 
-import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { cleanup, render, screen } from '@testing-library/react'
 
 const { StatsGrid } = await import('@/components/dashboard/StatsGrid')

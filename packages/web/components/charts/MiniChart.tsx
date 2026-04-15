@@ -17,7 +17,11 @@ export function MiniChart({ data, color, className }: MiniChartProps) {
 
     return (
         <div className={className ?? 'h-10 w-24'}>
-            <ResponsiveContainer width='100%' height='100%' initialDimension={{ width: 1, height: 1 }}>
+            <ResponsiveContainer
+                width='100%'
+                height='100%'
+                initialDimension={{ width: 1, height: 1 }}
+            >
                 <LineChart data={chartData}>
                     <Line
                         type='monotone'

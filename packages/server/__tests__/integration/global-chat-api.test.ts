@@ -1,18 +1,20 @@
-import { describe, test, expect, beforeEach, mock } from 'bun:test'
-import {
-    mockRuntimeChat,
-    mockRuntimeFinalize,
-} from './helpers/mock-boundaries'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { Gateway } from '@/gateway/gateway'
 import { createHonoApp } from '@/routes/index'
+import { mockRuntimeChat, mockRuntimeFinalize } from './helpers/mock-boundaries'
 
 // Create a mock gateway that delegates to mockRuntimeChat
 const mockGatewayChat = mock(() => mockRuntimeChat())
 const mockGateway = { chat: mockGatewayChat }
 
-const app = createHonoApp({ gateway: mockGateway as any })
+const app = createHonoApp({ gateway: mockGateway as unknown as Gateway })
 
 const validMessages = [
-    { id: 'msg_1', role: 'user', parts: [{ type: 'text', text: '什么是PE？' }] },
+    {
+        id: 'msg_1',
+        role: 'user',
+        parts: [{ type: 'text', text: '什么是PE？' }],
+    },
 ]
 
 describe('POST /api/chat', () => {
@@ -33,16 +35,26 @@ describe('POST /api/chat', () => {
                 toUIMessageStream: (_opts?: unknown) => new ReadableStream(),
             },
             sessionId: 'ses_new',
-            consumeStream: () => Promise.resolve({
-                text: 'mock pipeline response',
-                responseMessage: { id: 'r1', role: 'assistant', parts: [{ type: 'text', text: 'mock pipeline response' }], createdAt: new Date() },
-                toolCalls: [],
-                usage: { inputTokens: 100, outputTokens: 50 },
-            }),
+            consumeStream: () =>
+                Promise.resolve({
+                    text: 'mock pipeline response',
+                    responseMessage: {
+                        id: 'r1',
+                        role: 'assistant',
+                        parts: [
+                            { type: 'text', text: 'mock pipeline response' },
+                        ],
+                        createdAt: new Date(),
+                    },
+                    toolCalls: [],
+                    usage: { inputTokens: 100, outputTokens: 50 },
+                }),
             finalize: mockRuntimeFinalize,
         })
 
-        mockGatewayChat.mockImplementation((input: any) => mockRuntimeChat())
+        mockGatewayChat.mockImplementation((_input: unknown) =>
+            mockRuntimeChat(),
+        )
     })
 
     test('returns 200 with streaming response', async () => {

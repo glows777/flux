@@ -7,8 +7,12 @@
  */
 
 import { describe, expect, it, mock } from 'bun:test'
+import type { PrismaClient } from '@prisma/client'
+import {
+    getMarketStatus,
+    loadOrCreateBaseline,
+} from '@/core/trading-agent/loop'
 import { BASELINE_KEY } from '@/core/trading-agent/types'
-import { loadOrCreateBaseline, getMarketStatus } from '@/core/trading-agent/loop'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -16,12 +20,16 @@ function makeDb(baselineValue: string | null = '100000') {
     return {
         tradingAgentConfig: {
             findUnique: mock(async () =>
-                baselineValue !== null ? { key: BASELINE_KEY, value: baselineValue } : null,
+                baselineValue !== null
+                    ? { key: BASELINE_KEY, value: baselineValue }
+                    : null,
             ),
-            create: mock(async (args: { data: { key: string; value: string } }) => ({
-                key: args.data.key,
-                value: args.data.value,
-            })),
+            create: mock(
+                async (args: { data: { key: string; value: string } }) => ({
+                    key: args.data.key,
+                    value: args.data.value,
+                }),
+            ),
         },
     }
 }
@@ -32,7 +40,7 @@ describe('loadOrCreateBaseline', () => {
     it('returns existing baseline value from DB', async () => {
         const db = makeDb('98000')
         const result = await loadOrCreateBaseline(
-            db as any,
+            db as unknown as PrismaClient,
             105_000,
         )
         expect(result).toBe(98_000)
@@ -42,7 +50,7 @@ describe('loadOrCreateBaseline', () => {
     it('creates baseline with currentEquity when not found', async () => {
         const db = makeDb(null)
         const result = await loadOrCreateBaseline(
-            db as any,
+            db as unknown as PrismaClient,
             105_000,
         )
         expect(result).toBe(105_000)

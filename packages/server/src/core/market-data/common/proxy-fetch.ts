@@ -46,7 +46,9 @@ export async function proxyFetch(
         // making them structurally incompatible. Cast through `any` since both
         // shapes are semantically equivalent for our usage.
         return undiciFetch(url.toString(), {
-            ...(init as any),
+            ...(init as unknown as NonNullable<
+                Parameters<typeof undiciFetch>[1]
+            >),
             dispatcher: d,
         }) as unknown as Response
     }

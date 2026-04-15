@@ -1,12 +1,15 @@
-import { describe, expect, mock, test, beforeEach } from 'bun:test'
-import { createInfoService, type InfoService } from '@/core/market-data/info/index'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
 import type {
-    CompanyOverview,
-    CacheStore,
     CacheEntry,
+    CacheStore,
+    CompanyOverview,
 } from '@/core/market-data/common/types'
 import type { YahooFinanceClient } from '@/core/market-data/common/yahoo-client'
-import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
+import {
+    createInfoService,
+    type InfoService,
+} from '@/core/market-data/info/index'
 
 function makeOverview(symbol: string): CompanyOverview {
     return {

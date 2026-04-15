@@ -1,7 +1,7 @@
 'use client'
 
-import { SWRConfig } from 'swr'
 import type { ReactNode } from 'react'
+import { SWRConfig } from 'swr'
 
 interface SWRProviderProps {
     children: ReactNode
@@ -14,8 +14,6 @@ interface SWRProviderProps {
  */
 export function SWRProvider({ children }: SWRProviderProps) {
     return (
-        <SWRConfig value={{ revalidateOnFocus: false }}>
-            {children}
-        </SWRConfig>
+        <SWRConfig value={{ revalidateOnFocus: false }}>{children}</SWRConfig>
     )
 }

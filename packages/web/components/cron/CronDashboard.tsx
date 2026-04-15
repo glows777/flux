@@ -2,8 +2,8 @@
 
 import * as Tabs from '@radix-ui/react-tabs'
 import { Clock } from 'lucide-react'
-import { TasksTab } from './tasks/TasksTab'
 import { RunsTab } from './runs/RunsTab'
+import { TasksTab } from './tasks/TasksTab'
 
 export function CronDashboard() {
     return (
@@ -14,7 +14,10 @@ export function CronDashboard() {
                 <span className='text-sm font-medium text-white'>Cron</span>
             </div>
 
-            <Tabs.Root defaultValue='tasks' className='flex flex-col flex-1 overflow-hidden'>
+            <Tabs.Root
+                defaultValue='tasks'
+                className='flex flex-col flex-1 overflow-hidden'
+            >
                 <Tabs.List className='flex border-b border-white/10 px-4 shrink-0 gap-1'>
                     <Tabs.Trigger
                         value='tasks'
@@ -30,10 +33,16 @@ export function CronDashboard() {
                     </Tabs.Trigger>
                 </Tabs.List>
 
-                <Tabs.Content value='tasks' className='flex-1 overflow-hidden outline-none'>
+                <Tabs.Content
+                    value='tasks'
+                    className='flex-1 overflow-hidden outline-none'
+                >
                     <TasksTab />
                 </Tabs.Content>
-                <Tabs.Content value='runs' className='flex-1 overflow-hidden outline-none'>
+                <Tabs.Content
+                    value='runs'
+                    className='flex-1 overflow-hidden outline-none'
+                >
                     <RunsTab />
                 </Tabs.Content>
             </Tabs.Root>

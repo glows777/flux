@@ -17,7 +17,10 @@ export interface CoveredDataSource<T> {
  * The `{ days }` option is forwarded to the underlying store so that
  * the DB query can apply a date-range filter instead of returning all rows.
  */
-export function withCoverage<T, P extends Record<string, unknown> = Record<string, never>>(
+export function withCoverage<
+    T,
+    P extends Record<string, unknown> = Record<string, never>,
+>(
     source: CachedDataSource<T, P>,
     coverageStore: CoverageStore,
 ): CoveredDataSource<T> {
@@ -34,9 +37,8 @@ export function withCoverage<T, P extends Record<string, unknown> = Record<strin
                 const fresh = await source.forceFetch(key)
                 // hasUncoveredRange guarantees: coveredFrom === null OR requestedFrom < coveredFrom
                 // In both cases, requestedFrom is the correct new boundary.
-                const newFrom = coveredFrom === null
-                    ? requestedFrom
-                    : requestedFrom
+                const newFrom =
+                    coveredFrom === null ? requestedFrom : requestedFrom
                 await coverageStore.updateCoveredFrom(key, newFrom)
                 return fresh
             }

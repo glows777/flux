@@ -1,7 +1,7 @@
 'use client'
 
 import { PanelLeftClose, Plus } from 'lucide-react'
-import { ChatSessionItem, type ChatSession } from './ChatSessionItem'
+import { type ChatSession, ChatSessionItem } from './ChatSessionItem'
 
 interface ChatSessionSidebarProps {
     readonly sessions: readonly ChatSession[]
@@ -41,7 +41,9 @@ export function ChatSessionSidebar({
         >
             <div className='w-[260px] flex flex-col h-full'>
                 <div className='p-4 flex items-center justify-between border-b border-white/5'>
-                    <span className='text-sm font-medium text-slate-300'>会话列表</span>
+                    <span className='text-sm font-medium text-slate-300'>
+                        会话列表
+                    </span>
                     <button
                         type='button'
                         onClick={onToggleCollapse}
@@ -68,17 +70,28 @@ export function ChatSessionSidebar({
                         <div className='text-center py-8 space-y-2'>
                             <div className='text-xs text-red-400'>加载失败</div>
                             {onRetryList && (
-                                <button type='button' onClick={onRetryList} className='text-xs text-slate-400 hover:text-emerald-400 transition-colors'>
+                                <button
+                                    type='button'
+                                    onClick={onRetryList}
+                                    className='text-xs text-slate-400 hover:text-emerald-400 transition-colors'
+                                >
                                     重试
                                 </button>
                             )}
                         </div>
                     ) : isLoadingList ? (
                         <div className='space-y-2 py-2'>
-                            {[1, 2, 3].map(i => <div key={i} className='h-10 bg-white/5 rounded-lg animate-pulse' />)}
+                            {[1, 2, 3].map((i) => (
+                                <div
+                                    key={i}
+                                    className='h-10 bg-white/5 rounded-lg animate-pulse'
+                                />
+                            ))}
                         </div>
                     ) : sessions.length === 0 ? (
-                        <div className='text-xs text-slate-600 text-center py-8'>暂无会话</div>
+                        <div className='text-xs text-slate-600 text-center py-8'>
+                            暂无会话
+                        </div>
                     ) : (
                         sessions.map((session) => (
                             <ChatSessionItem

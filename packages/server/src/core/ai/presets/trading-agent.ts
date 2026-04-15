@@ -1,4 +1,4 @@
-import { resolve } from 'path'
+import { resolve } from 'node:path'
 import { getAlpacaClient } from '@/core/broker/alpaca-client'
 import { prisma } from '@/core/db'
 import {
@@ -24,7 +24,7 @@ import { createTradingTools, type TradingToolDeps } from '../trading-tools'
 export interface TradingAgentPresetDeps {
     toolDeps?: ToolDeps
     tradingToolDeps?: TradingToolDeps
-    createResearchToolsFactory?: () => Record<string, any>
+    createResearchToolsFactory?: () => Record<string, unknown>
 }
 
 export function tradingAgentPreset(deps?: TradingAgentPresetDeps): AIPlugin[] {

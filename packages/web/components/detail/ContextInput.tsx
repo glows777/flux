@@ -1,4 +1,4 @@
-import { Send, Loader2 } from 'lucide-react'
+import { Loader2, Send } from 'lucide-react'
 
 interface ContextInputProps {
     readonly value: string

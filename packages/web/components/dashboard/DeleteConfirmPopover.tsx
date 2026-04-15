@@ -5,14 +5,21 @@ interface DeleteConfirmPopoverProps {
     readonly label?: string
 }
 
-export function DeleteConfirmPopover({ symbol, onConfirm, onCancel, label = '持仓' }: DeleteConfirmPopoverProps) {
+export function DeleteConfirmPopover({
+    symbol,
+    onConfirm,
+    onCancel,
+    label = '持仓',
+}: DeleteConfirmPopoverProps) {
     return (
         <div
             data-testid={`delete-confirm-${symbol}`}
             className='flex items-center justify-between animate-fade-in'
         >
             <span className='text-xs text-slate-400'>
-                确定删除 <span className='font-medium text-white'>{symbol}</span> {label}？
+                确定删除{' '}
+                <span className='font-medium text-white'>{symbol}</span> {label}
+                ？
             </span>
             <div className='flex gap-2'>
                 <button

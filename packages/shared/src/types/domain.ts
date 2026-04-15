@@ -54,21 +54,21 @@ export interface HoldingItem {
     readonly shares: number
     readonly avgCost: number
     readonly currentPrice: number
-    readonly dailyChange: number       // 当日涨跌 %
-    readonly totalPnL: number          // 总盈亏 = shares × (currentPrice - avgCost)
-    readonly dailyPnL: number          // 当日盈亏
+    readonly dailyChange: number // 当日涨跌 %
+    readonly totalPnL: number // 总盈亏 = shares × (currentPrice - avgCost)
+    readonly dailyPnL: number // 当日盈亏
 }
 
 /**
  * 资产组合概览 (替换旧版 PortfolioSummary)
  */
 export interface PortfolioSummary {
-    readonly totalValue: number         // Σ(shares × currentPrice)
-    readonly totalCost: number          // Σ(shares × avgCost)
-    readonly totalPnL: number           // totalValue - totalCost
-    readonly totalPnLPercent: number    // (totalPnL / totalCost) × 100
-    readonly todayPnL: number           // Σ(每只的 dailyPnL)
-    readonly todayPnLPercent: number    // todayPnL / 昨日总资产 × 100
+    readonly totalValue: number // Σ(shares × currentPrice)
+    readonly totalCost: number // Σ(shares × avgCost)
+    readonly totalPnL: number // totalValue - totalCost
+    readonly totalPnLPercent: number // (totalPnL / totalCost) × 100
+    readonly todayPnL: number // Σ(每只的 dailyPnL)
+    readonly todayPnLPercent: number // todayPnL / 昨日总资产 × 100
     readonly topContributor: {
         readonly symbol: string
         readonly name: string | null

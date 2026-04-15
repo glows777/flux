@@ -1,8 +1,11 @@
-import { describe, expect, mock, test, beforeEach } from 'bun:test'
-import { createQuoteService, type QuoteService } from '@/core/market-data/quote/index'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
 import type { Quote } from '@/core/market-data/common/types'
 import type { YahooFinanceClient } from '@/core/market-data/common/yahoo-client'
-import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
+import {
+    createQuoteService,
+    type QuoteService,
+} from '@/core/market-data/quote/index'
 
 function makeQuote(symbol: string, price = 150): Quote {
     return { symbol, price, change: 1.5, volume: 1000, timestamp: new Date() }
@@ -130,7 +133,8 @@ describe('QuoteService', () => {
             ;(finnhub.getQuote as ReturnType<typeof mock>).mockImplementation(
                 async (s: string) => {
                     finnhubCount++
-                    if (finnhubCount === 1) throw new Error('Finnhub AAPL failed too')
+                    if (finnhubCount === 1)
+                        throw new Error('Finnhub AAPL failed too')
                     return makeQuote(s, 149)
                 },
             )

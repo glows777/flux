@@ -3,13 +3,17 @@
 import { useState } from 'react'
 import useSWR from 'swr'
 import { fetcher } from '@/lib/fetcher'
-import { TasksToolbar } from './TasksToolbar'
-import { TasksTable } from './TasksTable'
-import { JobModal } from './JobModal'
 import type { CronJobRow } from '../types'
+import { JobModal } from './JobModal'
+import { TasksTable } from './TasksTable'
+import { TasksToolbar } from './TasksToolbar'
 
 export function TasksTab() {
-    const { data, error, isLoading, mutate } = useSWR<CronJobRow[]>('/api/cron', fetcher, { refreshInterval: 5000 })
+    const { data, error, isLoading, mutate } = useSWR<CronJobRow[]>(
+        '/api/cron',
+        fetcher,
+        { refreshInterval: 5000 },
+    )
     const jobs = data ?? []
 
     const [search, setSearch] = useState('')

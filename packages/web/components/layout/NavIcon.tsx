@@ -25,8 +25,10 @@ export function NavIcon({
     }
 
     return (
-        <div
+        <button
+            type='button'
             onClick={handleClick}
+            aria-disabled={disabled}
             className={`w-10 h-10 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-300 group
         ${active ? 'bg-white/10 text-white shadow-[0_0_15px_rgba(255,255,255,0.1)]' : 'text-slate-500 hover:bg-white/5 hover:text-white'}`}
         >
@@ -34,6 +36,6 @@ export function NavIcon({
                 size={18}
                 className='group-hover:scale-110 transition-transform'
             />
-        </div>
+        </button>
     )
 }

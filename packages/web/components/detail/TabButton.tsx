@@ -1,4 +1,4 @@
-import { LucideIcon } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 interface TabButtonProps {
     icon: LucideIcon
@@ -15,6 +15,7 @@ export function TabButton({
 }: TabButtonProps) {
     return (
         <button
+            type='button'
             onClick={onClick}
             className={`flex-1 py-4 flex items-center justify-center gap-2 text-xs font-medium transition-all relative
         ${active ? 'text-emerald-400 bg-white/[0.02]' : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.01]'}`}

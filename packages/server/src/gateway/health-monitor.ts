@@ -26,12 +26,15 @@ export interface HealthMonitorConfig {
 export interface HealthStatus {
     readonly monitorStatus: MonitorStatus
     readonly healthy: boolean
-    readonly subsystems: Record<string, {
-        readonly status: SubsystemStatus
-        readonly reason?: string
-        readonly details?: string
-        readonly checkedAt?: string
-    }>
+    readonly subsystems: Record<
+        string,
+        {
+            readonly status: SubsystemStatus
+            readonly reason?: string
+            readonly details?: string
+            readonly checkedAt?: string
+        }
+    >
 }
 
 export const DEFAULT_HEALTH_MONITOR_CONFIG = {
@@ -66,12 +69,17 @@ function formatErrorDetails(error: unknown): string {
 }
 
 export class HealthMonitor {
-    private readonly subsystems = new Map<SubsystemName, InternalSubsystemState>()
+    private readonly subsystems = new Map<
+        SubsystemName,
+        InternalSubsystemState
+    >()
     private startedAt = Date.now()
     private monitorStatus: MonitorStatus = 'healthy'
     private checkInterval: ReturnType<typeof setInterval> | null = null
 
-    constructor(private readonly config: HealthMonitorConfig = DEFAULT_HEALTH_MONITOR_CONFIG) {}
+    constructor(
+        private readonly config: HealthMonitorConfig = DEFAULT_HEALTH_MONITOR_CONFIG,
+    ) {}
 
     register(name: SubsystemName, subsystem: RegisteredSubsystem): void {
         const existing = this.subsystems.get(name)
@@ -127,8 +135,11 @@ export class HealthMonitor {
             subsystems[name] = snapshot
         }
 
-        const healthy = this.monitorStatus === 'healthy'
-            && Object.values(subsystems).every((subsystem) => subsystem.status === 'healthy')
+        const healthy =
+            this.monitorStatus === 'healthy' &&
+            Object.values(subsystems).every(
+                (subsystem) => subsystem.status === 'healthy',
+            )
 
         return {
             monitorStatus: this.monitorStatus,
@@ -141,14 +152,20 @@ export class HealthMonitor {
         try {
             const now = Date.now()
             await Promise.all(
-                [...this.subsystems.entries()].map(([name, state]) => this.runCheck(name, state, now)),
+                [...this.subsystems.entries()].map(([name, state]) =>
+                    this.runCheck(name, state, now),
+                ),
             )
         } catch (error) {
             this.setMonitorError(error)
         }
     }
 
-    private async runCheck(name: SubsystemName, state: InternalSubsystemState, now: number): Promise<void> {
+    private async runCheck(
+        name: SubsystemName,
+        state: InternalSubsystemState,
+        now: number,
+    ): Promise<void> {
         const result = await this.runCheckWithTimeout(state.subsystem.check)
         state.lastResult = result
 
@@ -223,20 +240,29 @@ export class HealthMonitor {
     private canRecover(now: number, state: InternalSubsystemState): boolean {
         if (this.config.maxRecoveriesPerHour <= 0) return false
 
-        const recentHistory = state.recoveryHistory.filter((timestamp) => now - timestamp < 60 * 60 * 1000)
+        const recentHistory = state.recoveryHistory.filter(
+            (timestamp) => now - timestamp < 60 * 60 * 1000,
+        )
         state.recoveryHistory = recentHistory
 
-        if (recentHistory.length >= this.config.maxRecoveriesPerHour) return false
+        if (recentHistory.length >= this.config.maxRecoveriesPerHour)
+            return false
 
         const lastRecoveryAt = recentHistory.at(-1)
-        if (lastRecoveryAt !== undefined && now - lastRecoveryAt < this.config.minRecoverIntervalMs) {
+        if (
+            lastRecoveryAt !== undefined &&
+            now - lastRecoveryAt < this.config.minRecoverIntervalMs
+        ) {
             return false
         }
 
         return true
     }
 
-    private async maybeRecover(name: SubsystemName, state: InternalSubsystemState): Promise<void> {
+    private async maybeRecover(
+        name: SubsystemName,
+        state: InternalSubsystemState,
+    ): Promise<void> {
         const now = Date.now()
 
         try {
@@ -251,7 +277,10 @@ export class HealthMonitor {
         }
     }
 
-    private recordRecovery(state: InternalSubsystemState, timestamp: number): void {
+    private recordRecovery(
+        state: InternalSubsystemState,
+        timestamp: number,
+    ): void {
         state.recoveryHistory = [...state.recoveryHistory, timestamp]
     }
 

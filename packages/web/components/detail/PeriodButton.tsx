@@ -17,6 +17,7 @@ export function PeriodButton({
 }: PeriodButtonProps) {
     return (
         <button
+            type='button'
             onClick={onClick}
             className={`
         px-3 py-1 rounded-full text-xs transition-all

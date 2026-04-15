@@ -84,10 +84,10 @@ export class FinnhubClient implements FinnhubMarketDataClient {
         if (data.s !== 'ok' || !data.t) return []
         return data.t.map((ts, i) => ({
             date: new Date(ts * 1000),
-            open: data.o![i],
-            high: data.h![i],
-            low: data.l![i],
-            close: data.c![i],
+            open: data.o?.[i],
+            high: data.h?.[i],
+            low: data.l?.[i],
+            close: data.c?.[i],
             volume: data.v?.[i] ?? undefined,
         }))
     }

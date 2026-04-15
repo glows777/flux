@@ -1,4 +1,4 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { buildGlobalSystemPrompt } from '@/core/ai/prompts'
 
 describe('buildGlobalSystemPrompt', () => {
@@ -30,5 +30,4 @@ describe('buildGlobalSystemPrompt', () => {
         expect(prompt).toContain('用户档案')
         expect(prompt).toContain('记忆工具')
     })
-
 })

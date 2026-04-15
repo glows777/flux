@@ -8,7 +8,7 @@
  * 4. placeOrder validates order type params
  */
 
-import { describe, it, expect, mock, beforeEach } from 'bun:test'
+import { describe, expect, it, mock } from 'bun:test'
 import { createTradingAgentTools } from '@/core/trading-agent/tools'
 import type { TradingAgentDeps } from '@/core/trading-agent/types'
 
@@ -91,9 +91,9 @@ function makeMemoryDeps() {
 function makeResearchDeps(): NonNullable<TradingAgentDeps['researchDeps']> {
     return {
         searchWeb: mock(async () => ({ results: [] })),
-        // @ts-ignore — minimal stub; LanguageModel not needed for unit tests
+        // @ts-expect-error — minimal stub; LanguageModel not needed for unit tests
         generateText: mock(async () => ({ text: '' })),
-        // @ts-ignore — minimal stub
+        // @ts-expect-error — minimal stub
         searchModel: {} as import('ai').LanguageModel,
         readPage: mock(async () => ({
             content: '',
@@ -153,18 +153,24 @@ describe('createTradingAgentTools', () => {
     it('placeOrder does NOT call guard checks (no getAccount for guards)', async () => {
         const alpacaClient = makeAlpacaClient()
         const db = makeDb()
-        const deps = makeDeps({ alpacaClient, db: db as unknown as TradingAgentDeps['db'] })
+        const deps = makeDeps({
+            alpacaClient,
+            db: db as unknown as TradingAgentDeps['db'],
+        })
 
         const { placeOrder } = createTradingAgentTools(deps)
 
         // Execute placeOrder
-        const result = await placeOrder.execute({
-            symbol: 'AAPL',
-            side: 'buy',
-            qty: 1,
-            type: 'market',
-            reasoning: 'test buy with no guard',
-        }, { messages: [], toolCallId: 'test' })
+        const result = await placeOrder.execute(
+            {
+                symbol: 'AAPL',
+                side: 'buy',
+                qty: 1,
+                type: 'market',
+                reasoning: 'test buy with no guard',
+            },
+            { messages: [], toolCallId: 'test' },
+        )
 
         // createOrder must have been called
         expect(alpacaClient.createOrder).toHaveBeenCalledTimes(1)
@@ -187,18 +193,23 @@ describe('createTradingAgentTools', () => {
     })
 
     it('placeOrder returns error when alpacaClient is not configured', async () => {
-        const alpacaClient = makeAlpacaClient({ isConfigured: mock(() => false) })
+        const alpacaClient = makeAlpacaClient({
+            isConfigured: mock(() => false),
+        })
         const deps = makeDeps({ alpacaClient })
 
         const { placeOrder } = createTradingAgentTools(deps)
 
-        const result = await placeOrder.execute({
-            symbol: 'AAPL',
-            side: 'buy',
-            qty: 1,
-            type: 'market',
-            reasoning: 'test',
-        }, { messages: [], toolCallId: 'test' })
+        const result = await placeOrder.execute(
+            {
+                symbol: 'AAPL',
+                side: 'buy',
+                qty: 1,
+                type: 'market',
+                reasoning: 'test',
+            },
+            { messages: [], toolCallId: 'test' },
+        )
 
         expect(result).toMatchObject({ error: 'Alpaca 未配置' })
         expect(alpacaClient.createOrder).not.toHaveBeenCalled()
@@ -212,7 +223,10 @@ describe('createTradingAgentTools', () => {
 
         const { getQuote } = createTradingAgentTools(deps)
 
-        const result = await getQuote.execute({ symbol: 'NVDA' }, { messages: [], toolCallId: 'test' })
+        const result = await getQuote.execute(
+            { symbol: 'NVDA' },
+            { messages: [], toolCallId: 'test' },
+        )
 
         expect(alpacaClient.getLastTrade).toHaveBeenCalledWith('NVDA')
         expect(result).toMatchObject({ symbol: 'NVDA', price: 195.5 })
@@ -224,8 +238,18 @@ describe('createTradingAgentTools', () => {
             const { placeOrder } = createTradingAgentTools(deps)
 
             const result = await placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 10, type: 'limit', reasoning: 'test' },
-                { toolCallId: 'test', messages: [], abortSignal: new AbortController().signal },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 10,
+                    type: 'limit',
+                    reasoning: 'test',
+                },
+                {
+                    toolCallId: 'test',
+                    messages: [],
+                    abortSignal: new AbortController().signal,
+                },
             )
 
             expect((result as { error: string }).error).toContain('limitPrice')
@@ -236,8 +260,18 @@ describe('createTradingAgentTools', () => {
             const { placeOrder } = createTradingAgentTools(deps)
 
             const result = await placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 10, type: 'stop', reasoning: 'test' },
-                { toolCallId: 'test', messages: [], abortSignal: new AbortController().signal },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 10,
+                    type: 'stop',
+                    reasoning: 'test',
+                },
+                {
+                    toolCallId: 'test',
+                    messages: [],
+                    abortSignal: new AbortController().signal,
+                },
             )
 
             expect((result as { error: string }).error).toContain('stopPrice')
@@ -248,8 +282,18 @@ describe('createTradingAgentTools', () => {
             const { placeOrder } = createTradingAgentTools(deps)
 
             const result = await placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 10, type: 'stop_limit', reasoning: 'test' },
-                { toolCallId: 'test', messages: [], abortSignal: new AbortController().signal },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 10,
+                    type: 'stop_limit',
+                    reasoning: 'test',
+                },
+                {
+                    toolCallId: 'test',
+                    messages: [],
+                    abortSignal: new AbortController().signal,
+                },
             )
 
             expect((result as { error: string }).error).toContain('limitPrice')
@@ -260,22 +304,48 @@ describe('createTradingAgentTools', () => {
             const { placeOrder } = createTradingAgentTools(deps)
 
             const result = await placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 10, type: 'trailing_stop', reasoning: 'test' },
-                { toolCallId: 'test', messages: [], abortSignal: new AbortController().signal },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 10,
+                    type: 'trailing_stop',
+                    reasoning: 'test',
+                },
+                {
+                    toolCallId: 'test',
+                    messages: [],
+                    abortSignal: new AbortController().signal,
+                },
             )
 
-            expect((result as { error: string }).error).toContain('trailPercent')
+            expect((result as { error: string }).error).toContain(
+                'trailPercent',
+            )
         })
 
         it('accepts limit order with limitPrice', async () => {
             const alpacaClient = makeAlpacaClient()
             const db = makeDb()
-            const deps = makeDeps({ alpacaClient, db: db as unknown as TradingAgentDeps['db'] })
+            const deps = makeDeps({
+                alpacaClient,
+                db: db as unknown as TradingAgentDeps['db'],
+            })
             const { placeOrder } = createTradingAgentTools(deps)
 
             const result = await placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 10, type: 'limit', limitPrice: 150, reasoning: 'test' },
-                { toolCallId: 'test', messages: [], abortSignal: new AbortController().signal },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 10,
+                    type: 'limit',
+                    limitPrice: 150,
+                    reasoning: 'test',
+                },
+                {
+                    toolCallId: 'test',
+                    messages: [],
+                    abortSignal: new AbortController().signal,
+                },
             )
 
             expect(result).toMatchObject({ success: true })
@@ -304,7 +374,12 @@ describe('createTradingAgentTools', () => {
         }))
 
         const db = makeDb()
-        db.order.findMany = mock(async () => mockOrders as unknown as Awaited<ReturnType<typeof db.order.findMany>>)
+        db.order.findMany = mock(
+            async () =>
+                mockOrders as unknown as Awaited<
+                    ReturnType<typeof db.order.findMany>
+                >,
+        )
 
         const deps = makeDeps({ db: db as unknown as TradingAgentDeps['db'] })
         const { getTradeHistory } = createTradingAgentTools(deps)
@@ -316,11 +391,16 @@ describe('createTradingAgentTools', () => {
 
         // DB should be called without `take` limit (all orders fetched)
         expect(db.order.findMany).toHaveBeenCalledTimes(1)
-        const callArgs = db.order.findMany.mock.calls[0][0] as Record<string, unknown>
+        const callArgs = db.order.findMany.mock.calls[0][0] as Record<
+            string,
+            unknown
+        >
         expect(callArgs).not.toHaveProperty('take')
 
         // Output limited to 3 but total reflects full count
-        expect((result as { orders: unknown[]; total: number }).orders.length).toBe(3)
+        expect(
+            (result as { orders: unknown[]; total: number }).orders.length,
+        ).toBe(3)
         expect((result as { orders: unknown[]; total: number }).total).toBe(5)
     })
 })

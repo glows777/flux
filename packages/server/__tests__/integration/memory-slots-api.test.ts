@@ -1,8 +1,29 @@
-import { describe, it, expect, beforeEach } from 'bun:test'
-import { mockGetSlotContent, mockWriteSlot, mockGetSlotHistory } from './helpers/mock-boundaries'
+import { beforeEach, describe, expect, it } from 'bun:test'
 import { createHonoApp } from '@/routes/index'
+import {
+    mockGetSlotContent,
+    mockGetSlotHistory,
+    mockWriteSlot,
+} from './helpers/mock-boundaries'
 
 const app = createHonoApp()
+
+type SlotListEntry = {
+    slot: string
+}
+
+type SlotHistoryEntry = {
+    author: string
+    reason: string | null
+    createdAt: string
+}
+
+type SlotFullEntry = {
+    slot: string
+    content: string | null
+    limit: number
+    history: SlotHistoryEntry[]
+}
 
 describe('GET /api/memory/slots', () => {
     beforeEach(() => {
@@ -17,7 +38,7 @@ describe('GET /api/memory/slots', () => {
         expect(json.success).toBe(true)
         expect(Array.isArray(json.data)).toBe(true)
         expect(json.data).toHaveLength(6)
-        const slotNames = json.data.map((d: any) => d.slot)
+        const slotNames = (json.data as SlotListEntry[]).map((d) => d.slot)
         expect(slotNames).toContain('user_profile')
         expect(slotNames).toContain('agent_strategy')
     })
@@ -37,7 +58,9 @@ describe('GET /api/memory/slots/:slot', () => {
     })
 
     it('returns slot content for valid slot', async () => {
-        mockGetSlotContent.mockImplementationOnce(() => Promise.resolve('偏好成长股'))
+        mockGetSlotContent.mockImplementationOnce(() =>
+            Promise.resolve('偏好成长股'),
+        )
         const res = await app.request('/api/memory/slots/user_profile')
         expect(res.status).toBe(200)
         const json = await res.json()
@@ -67,9 +90,18 @@ describe('GET /api/memory/slots/:slot/history', () => {
     })
 
     it('returns version history array', async () => {
-        mockGetSlotHistory.mockImplementationOnce(() => Promise.resolve([
-            { id: 'v1', slot: 'market_views', content: '看多', author: 'agent', reason: null, createdAt: new Date('2026-04-01') },
-        ]))
+        mockGetSlotHistory.mockImplementationOnce(() =>
+            Promise.resolve([
+                {
+                    id: 'v1',
+                    slot: 'market_views',
+                    content: '看多',
+                    author: 'agent',
+                    reason: null,
+                    createdAt: new Date('2026-04-01'),
+                },
+            ]),
+        )
         const res = await app.request('/api/memory/slots/market_views/history')
         expect(res.status).toBe(200)
         const json = await res.json()
@@ -80,7 +112,9 @@ describe('GET /api/memory/slots/:slot/history', () => {
     })
 
     it('returns 400 when limit is invalid', async () => {
-        const res = await app.request('/api/memory/slots/lessons/history?limit=0')
+        const res = await app.request(
+            '/api/memory/slots/lessons/history?limit=0',
+        )
         expect(res.status).toBe(400)
     })
 })
@@ -110,10 +144,14 @@ describe('GET /api/memory/slots/full', () => {
     it('includes slot limit from SLOT_LIMITS', async () => {
         const res = await app.request('/api/memory/slots/full')
         const json = await res.json()
-        const portfolioEntry = json.data.find((d: any) => d.slot === 'portfolio_thesis')
-        expect(portfolioEntry.limit).toBe(2000)
-        const userEntry = json.data.find((d: any) => d.slot === 'user_profile')
-        expect(userEntry.limit).toBe(500)
+        const entries = json.data as SlotFullEntry[]
+        const portfolioEntry = entries.find(
+            (d) => d.slot === 'portfolio_thesis',
+        )
+        const userEntry = entries.find((d) => d.slot === 'user_profile')
+
+        expect(portfolioEntry?.limit).toBe(2000)
+        expect(userEntry?.limit).toBe(500)
     })
 
     it('returns content and history when data exists', async () => {
@@ -122,15 +160,28 @@ describe('GET /api/memory/slots/full', () => {
             return Promise.resolve(null)
         })
         mockGetSlotHistory.mockImplementation((slot: string) => {
-            if (slot === 'market_views') return Promise.resolve([
-                { id: 'v1', slot: 'market_views', content: '看多科技', author: 'agent', reason: '市场信号', createdAt: new Date('2026-04-01') },
-            ])
+            if (slot === 'market_views')
+                return Promise.resolve([
+                    {
+                        id: 'v1',
+                        slot: 'market_views',
+                        content: '看多科技',
+                        author: 'agent',
+                        reason: '市场信号',
+                        createdAt: new Date('2026-04-01'),
+                    },
+                ])
             return Promise.resolve([])
         })
 
         const res = await app.request('/api/memory/slots/full')
         const json = await res.json()
-        const entry = json.data.find((d: any) => d.slot === 'market_views')
+        const entry = (json.data as SlotFullEntry[]).find(
+            (d) => d.slot === 'market_views',
+        )
+        expect(entry).toBeDefined()
+        if (!entry) throw new Error('Expected market_views entry')
+
         expect(entry.content).toBe('看多科技')
         expect(entry.history).toHaveLength(1)
         expect(entry.history[0].author).toBe('agent')
@@ -163,13 +214,20 @@ describe('PUT /api/memory/slots/:slot', () => {
         expect(res.status).toBe(200)
         const json = await res.json()
         expect(json.success).toBe(true)
-        expect(mockWriteSlot).toHaveBeenCalledWith('user_profile', '新的投资偏好', 'user', '更新')
+        expect(mockWriteSlot).toHaveBeenCalledWith(
+            'user_profile',
+            '新的投资偏好',
+            'user',
+            '更新',
+        )
     })
 
     it('returns 422 when content too long', async () => {
         const { SlotContentTooLongError } = await import('@/core/ai/memory')
         mockWriteSlot.mockImplementationOnce(() =>
-            Promise.reject(new SlotContentTooLongError('user_profile', 501, 500)),
+            Promise.reject(
+                new SlotContentTooLongError('user_profile', 501, 500),
+            ),
         )
         const res = await app.request('/api/memory/slots/user_profile', {
             method: 'PUT',

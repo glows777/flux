@@ -1,12 +1,12 @@
 'use client'
 
+import { Brain } from 'lucide-react'
 import { useState } from 'react'
 import useSWR from 'swr'
-import { Brain } from 'lucide-react'
 import { fetcher } from '@/lib/fetcher'
-import { SlotTabs } from './SlotTabs'
 import { SlotPanel } from './SlotPanel'
 import type { SlotEntry } from './SlotTabs'
+import { SlotTabs } from './SlotTabs'
 
 export function MemoryInspector() {
     const { data, isLoading } = useSWR<SlotEntry[]>(
@@ -15,7 +15,10 @@ export function MemoryInspector() {
     )
 
     const slots = data ?? []
-    const defaultSlot = slots.find((s) => s.content !== null)?.slot ?? slots[0]?.slot ?? 'user_profile'
+    const defaultSlot =
+        slots.find((s) => s.content !== null)?.slot ??
+        slots[0]?.slot ??
+        'user_profile'
     const [activeSlot, setActiveSlot] = useState<string>(defaultSlot)
 
     const activeEntry = slots.find((s) => s.slot === activeSlot)

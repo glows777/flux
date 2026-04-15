@@ -11,7 +11,7 @@ describe('ConcurrencyLimiter', () => {
             limiter.run(async () => {
                 running++
                 maxRunning = Math.max(maxRunning, running)
-                await new Promise(r => setTimeout(r, 50))
+                await new Promise((r) => setTimeout(r, 50))
                 running--
                 return 'done'
             })

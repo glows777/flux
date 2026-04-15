@@ -1,7 +1,7 @@
+import type { CronJob, PrismaClient } from '@prisma/client'
 import { Cron } from 'croner'
-import type { CronJob } from '@prisma/client'
 import type { Gateway } from '@/gateway/gateway'
-import { TaskExecutor, type ExecutionResult } from './executor'
+import { type ExecutionResult, TaskExecutor } from './executor'
 
 const MAX_RETRIES = 5
 const MIN_INTERVAL_S = 60
@@ -19,10 +19,17 @@ export function parseSchedule(schedule: string): string | null {
         if (num <= 0) return null
 
         switch (unit) {
-            case 's': expr = num <= 59 ? `*/${num} * * * * *` : ''; break
-            case 'm': expr = num <= 59 ? `0 */${num} * * * *` : ''; break
-            case 'h': expr = num <= 23 ? `0 0 */${num} * * *` : ''; break
-            default: return null
+            case 's':
+                expr = num <= 59 ? `*/${num} * * * * *` : ''
+                break
+            case 'm':
+                expr = num <= 59 ? `0 */${num} * * * *` : ''
+                break
+            case 'h':
+                expr = num <= 23 ? `0 0 */${num} * * *` : ''
+                break
+            default:
+                return null
         }
         if (!expr) return null
     } else {
@@ -34,7 +41,11 @@ export function parseSchedule(schedule: string): string | null {
         const runs = test.nextRuns(10)
         test.stop()
         for (let i = 1; i < runs.length; i++) {
-            if (runs[i].getTime() - runs[i - 1].getTime() < MIN_INTERVAL_S * 1000) return null
+            if (
+                runs[i].getTime() - runs[i - 1].getTime() <
+                MIN_INTERVAL_S * 1000
+            )
+                return null
         }
         return expr
     } catch {
@@ -44,17 +55,7 @@ export function parseSchedule(schedule: string): string | null {
 
 interface CronSchedulerDeps {
     readonly gateway: Gateway
-    readonly prisma: {
-        cronJob: {
-            findMany: (args: any) => Promise<any[]>
-            update: (args: any) => Promise<any>
-            findFirst: (args: any) => Promise<any>
-            count: (args: any) => Promise<number>
-        }
-        cronJobRun: {
-            create: (args: any) => Promise<any>
-        }
-    }
+    readonly prisma: Pick<PrismaClient, 'cronJob' | 'cronJobRun'>
 }
 
 export interface SchedulerHealthResult {
@@ -81,7 +82,9 @@ export class CronScheduler {
     }
 
     async start(): Promise<void> {
-        const jobs = await this.deps.prisma.cronJob.findMany({ where: { enabled: true, deletedAt: null } })
+        const jobs = await this.deps.prisma.cronJob.findMany({
+            where: { enabled: true, deletedAt: null },
+        })
         for (const job of jobs) {
             this.scheduleJob(job)
         }
@@ -127,10 +130,13 @@ export class CronScheduler {
     }
 
     async runNow(jobId: string): Promise<void> {
-        const job = await this.deps.prisma.cronJob.findFirst({ where: { id: jobId, deletedAt: null } })
+        const job = await this.deps.prisma.cronJob.findFirst({
+            where: { id: jobId, deletedAt: null },
+        })
         if (!job) throw new Error(`Job ${jobId} not found`)
 
-        if (this.running.has(jobId)) throw new Error(`Job ${jobId} is already running`)
+        if (this.running.has(jobId))
+            throw new Error(`Job ${jobId} is already running`)
 
         const gen = this.generation
         const startMs = Date.now()
@@ -139,7 +145,12 @@ export class CronScheduler {
         try {
             const result = await this.executor.execute(job)
             if (gen !== this.generation) return
-            await this.handleResult(jobId, result, 'manual', Date.now() - startMs)
+            await this.handleResult(
+                jobId,
+                result,
+                'manual',
+                Date.now() - startMs,
+            )
         } catch (error) {
             console.error(`Job ${jobId} manual run error:`, error)
             throw error
@@ -161,9 +172,15 @@ export class CronScheduler {
         }
 
         if (this.jobs.size === 0) {
-            const enabledCount = await this.deps.prisma.cronJob.count({ where: { enabled: true, deletedAt: null } })
+            const enabledCount = await this.deps.prisma.cronJob.count({
+                where: { enabled: true, deletedAt: null },
+            })
             if (enabledCount === 0) {
-                return { status: 'healthy', details: 'no enabled jobs configured', checkedAt }
+                return {
+                    status: 'healthy',
+                    details: 'no enabled jobs configured',
+                    checkedAt,
+                }
             }
             return {
                 status: 'unhealthy',
@@ -217,26 +234,35 @@ export class CronScheduler {
         if (existing) existing.stop()
 
         const gen = this.generation
-        const cron = new Cron(schedule, { timezone: 'Asia/Shanghai', interval: MIN_INTERVAL_S }, async () => {
-            const startMs = Date.now()
-            this.markEngineActivity(startMs)
+        const cron = new Cron(
+            schedule,
+            { timezone: 'Asia/Shanghai', interval: MIN_INTERVAL_S },
+            async () => {
+                const startMs = Date.now()
+                this.markEngineActivity(startMs)
 
-            if (this.running.has(job.id)) {
-                console.log(`Job ${job.id} still running, skipping`)
-                return
-            }
+                if (this.running.has(job.id)) {
+                    console.log(`Job ${job.id} still running, skipping`)
+                    return
+                }
 
-            this.beginJobExecution(job.id, startMs)
-            try {
-                const result = await this.executor.execute(job)
-                if (gen !== this.generation) return // stale execution after restart
-                await this.handleResult(job.id, result, 'scheduler', Date.now() - startMs)
-            } catch (error) {
-                console.error(`Job ${job.id} scheduler error:`, error)
-            } finally {
-                if (gen === this.generation) this.finishJobExecution(job.id)
-            }
-        })
+                this.beginJobExecution(job.id, startMs)
+                try {
+                    const result = await this.executor.execute(job)
+                    if (gen !== this.generation) return // stale execution after restart
+                    await this.handleResult(
+                        job.id,
+                        result,
+                        'scheduler',
+                        Date.now() - startMs,
+                    )
+                } catch (error) {
+                    console.error(`Job ${job.id} scheduler error:`, error)
+                } finally {
+                    if (gen === this.generation) this.finishJobExecution(job.id)
+                }
+            },
+        )
 
         this.jobs.set(job.id, cron)
     }
@@ -272,7 +298,9 @@ export class CronScheduler {
                 console.error(`Failed to write run record for job ${jobId}:`, e)
             }
         } else {
-            const job = await this.deps.prisma.cronJob.findFirst({ where: { id: jobId, deletedAt: null } })
+            const job = await this.deps.prisma.cronJob.findFirst({
+                where: { id: jobId, deletedAt: null },
+            })
             if (!job) return
 
             const newRetryCount = job.retryCount + 1
@@ -285,7 +313,9 @@ export class CronScheduler {
                     lastRunStatus: 'error',
                     lastRunError: result.error,
                     retryCount: newRetryCount,
-                    ...(shouldDisable ? { enabled: false, deletedAt: new Date() } : {}),
+                    ...(shouldDisable
+                        ? { enabled: false, deletedAt: new Date() }
+                        : {}),
                 },
             })
             try {
@@ -305,7 +335,9 @@ export class CronScheduler {
 
             if (shouldDisable) {
                 await this.removeJob(jobId)
-                console.error(`Job ${jobId} disabled after ${MAX_RETRIES} consecutive failures`)
+                console.error(
+                    `Job ${jobId} disabled after ${MAX_RETRIES} consecutive failures`,
+                )
             }
         }
     }
@@ -336,7 +368,11 @@ export class CronScheduler {
         this.oldestRunningJobStartedAt = oldest
     }
 
-    private getStuckJob(now: number): { readonly jobId: string; readonly startedAt: number; readonly ageMs: number } | null {
+    private getStuckJob(now: number): {
+        readonly jobId: string
+        readonly startedAt: number
+        readonly ageMs: number
+    } | null {
         let stuckJobId: string | null = null
         let stuckStartedAt: number | null = null
 
@@ -362,16 +398,22 @@ export class CronScheduler {
 
         details.push(`runningJobs=${this.running.size}`)
         if (this.oldestRunningJobStartedAt !== null) {
-            details.push(`oldestRunningJobStartedAt=${new Date(this.oldestRunningJobStartedAt).toISOString()}`)
+            details.push(
+                `oldestRunningJobStartedAt=${new Date(this.oldestRunningJobStartedAt).toISOString()}`,
+            )
         }
         if (this.startedAt !== null) {
             details.push(`startedAt=${new Date(this.startedAt).toISOString()}`)
         }
         if (this.lastEngineActivityAt !== null) {
-            details.push(`lastEngineActivityAt=${new Date(this.lastEngineActivityAt).toISOString()}`)
+            details.push(
+                `lastEngineActivityAt=${new Date(this.lastEngineActivityAt).toISOString()}`,
+            )
         }
         if (this.lastSuccessfulRunAt !== null) {
-            details.push(`lastSuccessfulRunAt=${new Date(this.lastSuccessfulRunAt).toISOString()}`)
+            details.push(
+                `lastSuccessfulRunAt=${new Date(this.lastSuccessfulRunAt).toISOString()}`,
+            )
         }
 
         return details.join(', ')

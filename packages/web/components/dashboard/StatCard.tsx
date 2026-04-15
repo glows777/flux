@@ -12,7 +12,16 @@ interface StatCardProps {
     }
 }
 
-export function StatCard({ label, value, sub, subColor = 'emerald', sub2, sub2Color = 'slate', active = false, action }: StatCardProps) {
+export function StatCard({
+    label,
+    value,
+    sub,
+    subColor = 'emerald',
+    sub2,
+    sub2Color = 'slate',
+    active = false,
+    action,
+}: StatCardProps) {
     const subColorClasses = {
         emerald: 'text-emerald-400/80',
         rose: 'text-rose-400/80',
@@ -50,12 +59,16 @@ export function StatCard({ label, value, sub, subColor = 'emerald', sub2, sub2Co
                 {active && (
                     <div className='w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse' />
                 )}
-                <div className={`text-xs font-medium ${subColorClasses[subColor]}`}>
+                <div
+                    className={`text-xs font-medium ${subColorClasses[subColor]}`}
+                >
                     {sub}
                 </div>
             </div>
             {sub2 && (
-                <div className={`text-xs font-medium ${subColorClasses[sub2Color]}`}>
+                <div
+                    className={`text-xs font-medium ${subColorClasses[sub2Color]}`}
+                >
                     {sub2}
                 </div>
             )}

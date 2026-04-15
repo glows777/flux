@@ -70,7 +70,9 @@ async function main() {
     const tools = createTradingAgentTools(deps)
     console.log('Tools:', Object.keys(tools).join(', '))
     console.log('Tool count:', Object.keys(tools).length)
-    const firstTool = Object.values(tools)[0] as any
+    const firstTool = Object.values(tools)[0] as
+        | { execute?: unknown }
+        | undefined
     console.log(
         'First tool type:',
         typeof firstTool,
@@ -78,12 +80,18 @@ async function main() {
         typeof firstTool?.execute,
     )
 
+    const toolCtx = {
+        toolCallId: 'test',
+        messages: [] as never[],
+        abortSignal: undefined as AbortSignal | undefined,
+    }
+
     // Debug: test individual tools
     console.log('\n--- Testing tools directly ---')
     try {
         const memResult = await tools.memory_read.execute(
             { path: 'trading-agent/strategy.md' },
-            { toolCallId: 'test', messages: [], abortSignal: undefined as any },
+            toolCtx,
         )
         console.log('memory_read:', JSON.stringify(memResult).slice(0, 200))
     } catch (e) {
@@ -91,10 +99,7 @@ async function main() {
     }
 
     try {
-        const pfResult = await tools.getPortfolio.execute(
-            {},
-            { toolCallId: 'test', messages: [], abortSignal: undefined as any },
-        )
+        const pfResult = await tools.getPortfolio.execute({}, toolCtx)
         console.log('getPortfolio:', JSON.stringify(pfResult).slice(0, 200))
     } catch (e) {
         console.error('getPortfolio ERROR:', e)

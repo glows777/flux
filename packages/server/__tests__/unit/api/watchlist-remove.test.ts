@@ -11,9 +11,9 @@
 
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import {
+    type RemoveWatchlistDeps,
     RemoveWatchlistError,
     removeFromWatchlist,
-    type RemoveWatchlistDeps,
 } from '@/core/api/watchlist'
 
 // --- Mock types ---
@@ -28,7 +28,9 @@ interface MockWatchlist {
 
 // --- Mock factories ---
 
-function createMockWatchlistRow(overrides: Partial<MockWatchlist> = {}): MockWatchlist {
+function createMockWatchlistRow(
+    overrides: Partial<MockWatchlist> = {},
+): MockWatchlist {
     return {
         id: 'cuid-wl-1',
         symbol: 'AAPL',
@@ -133,7 +135,9 @@ describe('P2-09: Remove from Watchlist', () => {
                 expect.unreachable('Should have thrown')
             } catch (error) {
                 expect(error).toBeInstanceOf(RemoveWatchlistError)
-                expect((error as RemoveWatchlistError).code).toBe('INVALID_INPUT')
+                expect((error as RemoveWatchlistError).code).toBe(
+                    'INVALID_INPUT',
+                )
             }
         })
 
@@ -143,7 +147,9 @@ describe('P2-09: Remove from Watchlist', () => {
                 expect.unreachable('Should have thrown')
             } catch (error) {
                 expect(error).toBeInstanceOf(RemoveWatchlistError)
-                expect((error as RemoveWatchlistError).code).toBe('INVALID_INPUT')
+                expect((error as RemoveWatchlistError).code).toBe(
+                    'INVALID_INPUT',
+                )
             }
         })
 
@@ -153,7 +159,9 @@ describe('P2-09: Remove from Watchlist', () => {
                 expect.unreachable('Should have thrown')
             } catch (error) {
                 expect(error).toBeInstanceOf(RemoveWatchlistError)
-                expect((error as RemoveWatchlistError).code).toBe('INVALID_INPUT')
+                expect((error as RemoveWatchlistError).code).toBe(
+                    'INVALID_INPUT',
+                )
             }
         })
 
@@ -214,10 +222,15 @@ describe('P2-09: Remove from Watchlist', () => {
 
     describe('TOCTOU: Race condition handling', () => {
         it('should throw NOT_FOUND when Prisma delete fails with P2025', async () => {
-            const prismaError = Object.assign(new Error('Record to delete does not exist'), {
-                code: 'P2025',
-            })
-            mockPrisma.watchlist.delete = mock(() => Promise.reject(prismaError))
+            const prismaError = Object.assign(
+                new Error('Record to delete does not exist'),
+                {
+                    code: 'P2025',
+                },
+            )
+            mockPrisma.watchlist.delete = mock(() =>
+                Promise.reject(prismaError),
+            )
 
             try {
                 await removeFromWatchlist('AAPL', getDeps())

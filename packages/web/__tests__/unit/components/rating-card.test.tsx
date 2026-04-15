@@ -11,9 +11,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { cleanup, render, screen } from '@testing-library/react'
 
-const { RatingCard } = await import(
-    '@/components/detail/tabs/chat/RatingCard'
-)
+const { RatingCard } = await import('@/components/detail/tabs/chat/RatingCard')
 
 afterEach(() => {
     cleanup()
@@ -48,9 +46,7 @@ describe('RatingCard', () => {
 
         for (let idx = 0; idx < ratings.length; idx++) {
             cleanup()
-            const { container } = render(
-                <RatingCard data={{ ...baseData, rating: ratings[idx] }} />,
-            )
+            render(<RatingCard data={{ ...baseData, rating: ratings[idx] }} />)
 
             const badge = screen.getByText(ratings[idx])
             expect(

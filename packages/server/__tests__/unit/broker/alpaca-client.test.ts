@@ -25,7 +25,10 @@ function saveEnv() {
     }
 }
 
-function restoreEnv(saved: { keyId: string | undefined; secretKey: string | undefined }) {
+function restoreEnv(saved: {
+    keyId: string | undefined
+    secretKey: string | undefined
+}) {
     if (saved.keyId === undefined) {
         delete process.env[ALPACA_KEY_ENV]
     } else {
@@ -57,21 +60,27 @@ describe('Alpaca Paper Trading Client', () => {
 
     describe('T01: isConfigured() when env vars missing', () => {
         it('returns false when both env vars are missing', async () => {
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = createAlpacaClient()
             expect(client.isConfigured()).toBe(false)
         })
 
         it('returns false when only keyId is set', async () => {
             process.env[ALPACA_KEY_ENV] = 'some-key'
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = createAlpacaClient()
             expect(client.isConfigured()).toBe(false)
         })
 
         it('returns false when only secretKey is set', async () => {
             process.env[ALPACA_SECRET_ENV] = 'some-secret'
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = createAlpacaClient()
             expect(client.isConfigured()).toBe(false)
         })
@@ -81,15 +90,22 @@ describe('Alpaca Paper Trading Client', () => {
 
     describe('T02: isConfigured() when config provided', () => {
         it('returns true when explicit config passed', async () => {
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
-            const client = createAlpacaClient({ keyId: 'test-key', secretKey: 'test-secret' })
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
+            const client = createAlpacaClient({
+                keyId: 'test-key',
+                secretKey: 'test-secret',
+            })
             expect(client.isConfigured()).toBe(true)
         })
 
         it('returns true when env vars are set and no explicit config', async () => {
             process.env[ALPACA_KEY_ENV] = 'env-key'
             process.env[ALPACA_SECRET_ENV] = 'env-secret'
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = createAlpacaClient()
             expect(client.isConfigured()).toBe(true)
         })
@@ -99,7 +115,9 @@ describe('Alpaca Paper Trading Client', () => {
 
     describe('T03: getAccount() when not configured', () => {
         it('returns null', async () => {
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = createAlpacaClient()
             const result = await client.getAccount()
             expect(result).toBeNull()
@@ -110,7 +128,9 @@ describe('Alpaca Paper Trading Client', () => {
 
     describe('T04: getPositions() when not configured', () => {
         it('returns empty array', async () => {
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = createAlpacaClient()
             const result = await client.getPositions()
             expect(result).toEqual([])
@@ -121,7 +141,9 @@ describe('Alpaca Paper Trading Client', () => {
 
     describe('T05: getPosition() when not configured', () => {
         it('returns null', async () => {
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = createAlpacaClient()
             const result = await client.getPosition('AAPL')
             expect(result).toBeNull()
@@ -132,14 +154,18 @@ describe('Alpaca Paper Trading Client', () => {
 
     describe('T06: getOrders() when not configured', () => {
         it('returns empty array', async () => {
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = createAlpacaClient()
             const result = await client.getOrders()
             expect(result).toEqual([])
         })
 
         it('returns empty array with params', async () => {
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = createAlpacaClient()
             const result = await client.getOrders({ status: 'open', limit: 10 })
             expect(result).toEqual([])
@@ -150,7 +176,9 @@ describe('Alpaca Paper Trading Client', () => {
 
     describe('T07: Module-level singleton and reset', () => {
         it('getAlpacaClient() returns an AlpacaClient', async () => {
-            const { getAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { getAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const client = getAlpacaClient()
             expect(client).toBeDefined()
             expect(typeof client.isConfigured).toBe('function')
@@ -161,7 +189,9 @@ describe('Alpaca Paper Trading Client', () => {
         })
 
         it('resetAlpacaClient() resets the singleton', async () => {
-            const { getAlpacaClient, resetAlpacaClient } = await import('@/core/broker/alpaca-client')
+            const { getAlpacaClient, resetAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
             const first = getAlpacaClient()
             resetAlpacaClient()
             const second = getAlpacaClient()
@@ -299,7 +329,7 @@ describe('Alpaca Paper Trading Client', () => {
                     stop_price: null,
                     trail_percent: null,
                     time_in_force: 'day',
-                })
+                }),
             )
 
             mock.module('@alpacahq/alpaca-trade-api', () => ({
@@ -308,8 +338,13 @@ describe('Alpaca Paper Trading Client', () => {
                 },
             }))
 
-            const { createAlpacaClient } = await import('@/core/broker/alpaca-client')
-            const client = createAlpacaClient({ keyId: 'test-key', secretKey: 'test-secret' })
+            const { createAlpacaClient } = await import(
+                '@/core/broker/alpaca-client'
+            )
+            const client = createAlpacaClient({
+                keyId: 'test-key',
+                secretKey: 'test-secret',
+            })
 
             const result = await client.createOrder({
                 symbol: 'AAPL',

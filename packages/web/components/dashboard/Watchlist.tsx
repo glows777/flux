@@ -1,11 +1,11 @@
 'use client'
 
+import type { WatchlistItem as WatchlistItemType } from '@flux/shared'
 import { Plus, Settings } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { showToast } from '@/components/ui/Toast'
 import { client } from '@/lib/api'
-import type { WatchlistItem as WatchlistItemType } from '@flux/shared'
 import { AddWatchlistInput } from './AddWatchlistInput'
 import { WatchlistItem } from './WatchlistItem'
 
@@ -23,7 +23,12 @@ const ERROR_MESSAGES: Record<number, string> = {
     500: '添加失败，请稍后重试',
 }
 
-export function Watchlist({ items, onMutate, onDelete, positionSymbols }: WatchlistProps) {
+export function Watchlist({
+    items,
+    onMutate,
+    onDelete,
+    positionSymbols,
+}: WatchlistProps) {
     const router = useRouter()
     const [isAdding, setIsAdding] = useState(false)
     const [inputValue, setInputValue] = useState('')
@@ -133,7 +138,9 @@ export function Watchlist({ items, onMutate, onDelete, positionSymbols }: Watchl
                               onDeleteRequest={() => setDeletingSymbol(item.id)}
                               onDeleteCancel={() => setDeletingSymbol(null)}
                               isDeleting={deletingSymbol === item.id}
-                              isPosition={positionSymbols?.includes(item.id) ?? false}
+                              isPosition={
+                                  positionSymbols?.includes(item.id) ?? false
+                              }
                           />
                       ))
                     : !isAdding && (

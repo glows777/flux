@@ -15,7 +15,8 @@ export function mapAlpacaPositionToHoldingItem(
     position: AlpacaPosition,
     name: string | null,
 ): HoldingItem {
-    const dailyPnL = position.qty * (position.currentPrice - position.lastdayPrice)
+    const dailyPnL =
+        position.qty * (position.currentPrice - position.lastdayPrice)
 
     return {
         symbol: position.symbol,

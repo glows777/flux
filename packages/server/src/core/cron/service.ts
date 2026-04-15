@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/core/db'
 
 type PrismaLike = Pick<typeof prisma, 'cronJob' | 'cronJobRun'>
@@ -17,8 +18,10 @@ export async function createCronJob(
     return deps.cronJob.create({
         data: {
             ...data,
-            taskPayload: data.taskPayload as any,
-            channelTarget: data.channelTarget as any,
+            taskPayload: data.taskPayload as Prisma.InputJsonValue,
+            channelTarget: data.channelTarget as
+                | Prisma.InputJsonValue
+                | undefined,
         },
     })
 }
@@ -37,16 +40,30 @@ export async function listCronJobs(
 
 export async function updateCronJob(
     id: string,
-    data: Partial<{ name: string; schedule: string; enabled: boolean; taskPayload: unknown; channelTarget: unknown }>,
+    data: Partial<{
+        name: string
+        schedule: string
+        enabled: boolean
+        taskPayload: unknown
+        channelTarget: unknown
+    }>,
     deps: PrismaLike = prisma,
 ) {
-    const existing = await deps.cronJob.findFirst({ where: { id, deletedAt: null } })
+    const existing = await deps.cronJob.findFirst({
+        where: { id, deletedAt: null },
+    })
     if (!existing) throw new Error(`Job ${id} not found`)
-    return deps.cronJob.update({ where: { id }, data: data as any })
+    return deps.cronJob.update({
+        where: { id },
+        data: data as Prisma.CronJobUpdateInput,
+    })
 }
 
 export async function deleteCronJob(id: string, deps: PrismaLike = prisma) {
-    return deps.cronJob.update({ where: { id }, data: { deletedAt: new Date() } })
+    return deps.cronJob.update({
+        where: { id },
+        data: { deletedAt: new Date() },
+    })
 }
 
 export async function getCronJob(id: string, deps: PrismaLike = prisma) {
@@ -86,7 +103,7 @@ export async function listCronJobRuns(
         }),
         deps.cronJobRun.count({ where: { jobId } }),
     ])
-    const data = runs.map((r: any) => ({ ...r, jobName: r.job?.name ?? '' }))
+    const data = runs.map((run) => ({ ...run, jobName: run.job?.name ?? '' }))
     return { runs: data, total }
 }
 
@@ -115,11 +132,16 @@ export async function listAllRuns(
     ])
 
     // Prisma loses the relation type when `where` is Record<string, unknown>; cast is safe here
-    const data = runs.map((r: any) => ({ ...r, jobName: r.job?.name ?? '' }))
+    const data = runs.map((run) => ({
+        ...run,
+        jobName: run.job?.name ?? '',
+    }))
     return { runs: data, total }
 }
 
-export async function seedTradingHeartbeat(deps?: { db?: typeof prisma }): Promise<void> {
+export async function seedTradingHeartbeat(deps?: {
+    db?: typeof prisma
+}): Promise<void> {
     const db = deps?.db ?? prisma
 
     const existing = await db.cronJob.findFirst({

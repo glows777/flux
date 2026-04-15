@@ -50,6 +50,7 @@ export function AddWatchlistInput({
                 className='flex-1 bg-transparent text-white text-sm placeholder:text-slate-600 outline-none disabled:opacity-50'
             />
             <button
+                type='button'
                 onClick={onSubmit}
                 disabled={isSubmitting || !value.trim()}
                 className='p-1.5 rounded-lg text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed'
@@ -61,6 +62,7 @@ export function AddWatchlistInput({
                 )}
             </button>
             <button
+                type='button'
                 onClick={onCancel}
                 disabled={isSubmitting}
                 className='p-1.5 rounded-lg text-slate-500 hover:bg-white/5 hover:text-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed'

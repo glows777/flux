@@ -23,29 +23,29 @@ export const TRADING_AGENT_PROMPT = `你是一名二级市场交易员。
 `
 
 function formatCurrency(n: number): string {
-  return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
+    return n.toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
 function formatET(date: Date): string {
-  return (
-    date.toLocaleString('en-US', {
-      timeZone: 'America/New_York',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }) + ' ET'
-  )
+    return `${date.toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    })} ET`
 }
 
 export function buildContext(ctx: HeartbeatContext): string {
-  const progressPct =
-    ctx.progress >= 0 ? `+${ctx.progress.toFixed(2)}%` : `${ctx.progress.toFixed(2)}%`
-  const targetProgress = `${Math.round((ctx.progress / 50) * 100)}%`
+    const progressPct =
+        ctx.progress >= 0
+            ? `+${ctx.progress.toFixed(2)}%`
+            : `${ctx.progress.toFixed(2)}%`
+    const targetProgress = `${Math.round((ctx.progress / 50) * 100)}%`
 
-  return `
+    return `
 当前时间: ${formatET(ctx.timestamp)}
 市场状态: ${ctx.marketStatus}
 账户净值: $${formatCurrency(ctx.equity)}

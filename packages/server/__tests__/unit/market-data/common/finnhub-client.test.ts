@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import { FinnhubClient } from '@/core/market-data/common/finnhub-client'
 
+type FinnhubFetch = NonNullable<ConstructorParameters<typeof FinnhubClient>[1]>
+
 // ---------------------------------------------------------------------------
 // Mock fetch helper
 // ---------------------------------------------------------------------------
@@ -179,7 +181,7 @@ describe('FinnhubClient.getCompanyOverview', () => {
                 json: () => Promise.resolve(body),
             } as Response)
         })
-        client = new FinnhubClient('test-key', mockFetch as any)
+        client = new FinnhubClient('test-key', mockFetch as FinnhubFetch)
     })
 
     test('returns CompanyOverview with profile and metric data', async () => {
@@ -213,7 +215,10 @@ describe('FinnhubClient.getCompanyOverview', () => {
                 json: () => Promise.resolve({}),
             } as Response),
         )
-        const emptyClient = new FinnhubClient('test-key', emptyFetch as any)
+        const emptyClient = new FinnhubClient(
+            'test-key',
+            emptyFetch as FinnhubFetch,
+        )
 
         const overview = await emptyClient.getCompanyOverview('TSLA')
 
@@ -238,7 +243,10 @@ describe('FinnhubClient.getCompanyOverview', () => {
                     }),
             } as Response),
         )
-        const nullClient = new FinnhubClient('test-key', nullMetricFetch as any)
+        const nullClient = new FinnhubClient(
+            'test-key',
+            nullMetricFetch as FinnhubFetch,
+        )
 
         const overview = await nullClient.getCompanyOverview('TEST')
 
@@ -272,7 +280,11 @@ describe('FinnhubClient.getCompanyNews', () => {
         const mockFetch = createMockFetch(mockNews)
         const client = new FinnhubClient('test-key', mockFetch)
 
-        const news = await client.getCompanyNews('AAPL', '2024-01-01', '2024-01-31')
+        const news = await client.getCompanyNews(
+            'AAPL',
+            '2024-01-01',
+            '2024-01-31',
+        )
 
         expect(news).toHaveLength(1)
         expect(news[0].headline).toBe('Apple releases new product')
@@ -306,7 +318,11 @@ describe('FinnhubClient.getCompanyNews', () => {
         const mockFetch = createMockFetch([])
         const client = new FinnhubClient('test-key', mockFetch)
 
-        const news = await client.getCompanyNews('UNKNOWN', '2024-01-01', '2024-01-31')
+        const news = await client.getCompanyNews(
+            'UNKNOWN',
+            '2024-01-01',
+            '2024-01-31',
+        )
 
         expect(news).toEqual([])
     })

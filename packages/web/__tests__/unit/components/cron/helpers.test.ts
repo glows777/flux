@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 
-const { formatDurationMs, formatRelativeTime, statusBadgeClass } = await import('@/components/cron/types')
+const { formatDurationMs, formatRelativeTime, statusBadgeClass } = await import(
+    '@/components/cron/types'
+)
 
 describe('formatDurationMs', () => {
     it('formats sub-second as ms', () => {

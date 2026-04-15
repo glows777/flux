@@ -26,15 +26,31 @@ const baseData = {
         {
             metric: '市盈率',
             values: [
-                { symbol: 'NVDA', value: '55.2x', highlight: 'neutral' as const },
-                { symbol: 'AMD', value: '45.1x', highlight: 'positive' as const },
+                {
+                    symbol: 'NVDA',
+                    value: '55.2x',
+                    highlight: 'neutral' as const,
+                },
+                {
+                    symbol: 'AMD',
+                    value: '45.1x',
+                    highlight: 'positive' as const,
+                },
             ],
         },
         {
             metric: '总市值',
             values: [
-                { symbol: 'NVDA', value: '$3.2T', highlight: 'positive' as const },
-                { symbol: 'AMD', value: '$280B', highlight: 'negative' as const },
+                {
+                    symbol: 'NVDA',
+                    value: '$3.2T',
+                    highlight: 'positive' as const,
+                },
+                {
+                    symbol: 'AMD',
+                    value: '$280B',
+                    highlight: 'negative' as const,
+                },
             ],
         },
         {
@@ -59,7 +75,7 @@ describe('ComparisonTable', () => {
 
         // Table headers should contain both symbols
         const headers = screen.getAllByRole('columnheader')
-        const headerTexts = headers.map(h => h.textContent)
+        const headerTexts = headers.map((h) => h.textContent)
         expect(headerTexts).toContain('NVDA')
         expect(headerTexts).toContain('AMD')
     })
@@ -88,17 +104,13 @@ describe('ComparisonTable', () => {
     })
 
     it('P2-T18: 空 rows 不渲染', () => {
-        const { container } = render(
-            <ComparisonTable data={{ rows: [] }} />,
-        )
+        const { container } = render(<ComparisonTable data={{ rows: [] }} />)
 
         expect(container.innerHTML).toBe('')
     })
 
     it('无标题时不渲染标题区域', () => {
-        render(
-            <ComparisonTable data={{ rows: baseData.rows }} />,
-        )
+        render(<ComparisonTable data={{ rows: baseData.rows }} />)
 
         expect(screen.queryByText('NVDA vs AMD 核心指标对比')).toBeNull()
         // But table should still render

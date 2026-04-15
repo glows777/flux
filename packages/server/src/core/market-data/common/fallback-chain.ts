@@ -19,7 +19,7 @@ export interface DataSourceProvider<T> {
 export interface FallbackChainOptions {
     readonly circuitBreaker?: {
         readonly failureThreshold: number // consecutive failures to trip (default 3)
-        readonly cooldownMs: number       // how long to skip tripped provider (default 30_000)
+        readonly cooldownMs: number // how long to skip tripped provider (default 30_000)
     }
 }
 
@@ -27,7 +27,7 @@ export interface FallbackChainOptions {
 // CircuitBreaker (internal)
 // ---------------------------------------------------------------------------
 
-const enum BreakerState {
+enum BreakerState {
     Closed = 'CLOSED',
     Open = 'OPEN',
     HalfOpen = 'HALF_OPEN',
@@ -112,15 +112,15 @@ export class FallbackChain<T> {
                 breaker?.recordSuccess()
                 return result
             } catch (error) {
-                lastError = error instanceof Error ? error : new Error(String(error))
+                lastError =
+                    error instanceof Error ? error : new Error(String(error))
                 breaker?.recordFailure()
             }
         }
 
-        throw new Error(
-            `All providers failed for key "${key}"`,
-            { cause: lastError },
-        )
+        throw new Error(`All providers failed for key "${key}"`, {
+            cause: lastError,
+        })
     }
 
     private raceTimeout(
@@ -134,7 +134,11 @@ export class FallbackChain<T> {
             const timer = setTimeout(() => {
                 if (!settled) {
                     settled = true
-                    reject(new Error(`Provider "${provider.name}" timed out after ${provider.timeout}ms`))
+                    reject(
+                        new Error(
+                            `Provider "${provider.name}" timed out after ${provider.timeout}ms`,
+                        ),
+                    )
                 }
             }, provider.timeout)
 

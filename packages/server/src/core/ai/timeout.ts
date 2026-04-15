@@ -14,10 +14,7 @@ export function withTimeout<T>(
         promise,
         new Promise<never>((_, reject) =>
             setTimeout(
-                () =>
-                    reject(
-                        new Error(`${label} timed out after ${ms}ms`),
-                    ),
+                () => reject(new Error(`${label} timed out after ${ms}ms`)),
                 ms,
             ),
         ),

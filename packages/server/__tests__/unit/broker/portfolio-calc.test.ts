@@ -38,7 +38,9 @@ const makePosition = (
     ...overrides,
 })
 
-const makeHoldingItem = (overrides: Partial<HoldingItem> = {}): HoldingItem => ({
+const makeHoldingItem = (
+    overrides: Partial<HoldingItem> = {},
+): HoldingItem => ({
     symbol: 'AAPL',
     name: 'Apple Inc.',
     shares: 10,
@@ -110,9 +112,9 @@ describe('calculateSummary', () => {
         const item = makeHoldingItem()
         const summary = calculateSummary([item], 18.5)
 
-        expect(summary.totalValue).toBeCloseTo(1600, 5)   // 10 × 160
-        expect(summary.totalCost).toBeCloseTo(1500, 5)    // 10 × 150
-        expect(summary.totalPnL).toBeCloseTo(100, 5)      // from item.totalPnL
+        expect(summary.totalValue).toBeCloseTo(1600, 5) // 10 × 160
+        expect(summary.totalCost).toBeCloseTo(1500, 5) // 10 × 150
+        expect(summary.totalPnL).toBeCloseTo(100, 5) // from item.totalPnL
         expect(summary.totalPnLPercent).toBeCloseTo((100 / 1500) * 100, 5)
         expect(summary.todayPnL).toBeCloseTo(31.4, 5)
         // yesterdayTotalValue = 1600 - 31.4 = 1568.6
@@ -140,7 +142,7 @@ describe('calculateSummary', () => {
             shares: 5,
             avgCost: 300,
             currentPrice: 290,
-            dailyPnL: -60,     // larger absolute value
+            dailyPnL: -60, // larger absolute value
             totalPnL: -50,
         })
 
@@ -176,7 +178,7 @@ describe('calculateSummary', () => {
         const item = makeHoldingItem({
             shares: 10,
             currentPrice: 100,
-            dailyPnL: 1000,  // equal to totalValue
+            dailyPnL: 1000, // equal to totalValue
             totalPnL: 0,
             avgCost: 100,
         })

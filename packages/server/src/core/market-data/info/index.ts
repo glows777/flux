@@ -6,11 +6,11 @@
  * Primary: Yahoo Finance, Fallback: Finnhub.
  */
 
-import type { CompanyOverview, CacheStore } from '../common/types'
-import type { YahooFinanceClient } from '../common/yahoo-client'
-import type { FinnhubClient } from '../common/finnhub-client'
 import { CachedDataSource } from '../common/cached-source'
 import { FallbackChain } from '../common/fallback-chain'
+import type { FinnhubClient } from '../common/finnhub-client'
+import type { CacheStore, CompanyOverview } from '../common/types'
+import type { YahooFinanceClient } from '../common/yahoo-client'
 
 const INFO_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 const INFO_TIMEOUT_MS = 5_000

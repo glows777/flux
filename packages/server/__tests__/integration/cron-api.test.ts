@@ -1,18 +1,19 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import './setup'
-import {
-    mockCreateCronJob,
-    mockListCronJobs,
-    mockUpdateCronJob,
-    mockDeleteCronJob,
-    mockGetCronJob,
-    mockCreateCronJobRun,
-    mockListCronJobRuns,
-    mockListAllRuns,
-} from './helpers/mock-boundaries'
 
 import { Hono } from 'hono'
 import { createCronRoutes } from '@/routes/cron'
+import type { CronScheduler } from '@/scheduler/engine'
+import {
+    mockCreateCronJob,
+    mockCreateCronJobRun,
+    mockDeleteCronJob,
+    mockGetCronJob,
+    mockListAllRuns,
+    mockListCronJobRuns,
+    mockListCronJobs,
+    mockUpdateCronJob,
+} from './helpers/mock-boundaries'
 
 // ─── App without scheduler (default) ───
 
@@ -23,11 +24,15 @@ const app = new Hono().basePath('/api').route('/cron', createCronRoutes())
 const mockScheduler = {
     addJob: mock(() => Promise.resolve()),
     removeJob: mock(() => Promise.resolve()),
+    getNextRunAt: mock(() => null),
     runNow: mock(() => Promise.resolve()),
 }
-const appWithScheduler = new Hono()
-    .basePath('/api')
-    .route('/cron', createCronRoutes({ scheduler: mockScheduler as any }))
+const appWithScheduler = new Hono().basePath('/api').route(
+    '/cron',
+    createCronRoutes({
+        scheduler: mockScheduler as unknown as CronScheduler,
+    }),
+)
 
 // ─── Helpers ───
 
@@ -38,6 +43,7 @@ function resetMocks() {
     mockDeleteCronJob.mockReset()
     mockGetCronJob.mockReset()
     mockScheduler.addJob.mockReset()
+    mockScheduler.getNextRunAt.mockReset()
     mockScheduler.removeJob.mockReset()
     mockScheduler.runNow.mockReset()
     mockCreateCronJobRun.mockReset()
@@ -51,11 +57,19 @@ function resetMocks() {
     mockUpdateCronJob.mockImplementation(() =>
         Promise.resolve({ id: 'cron-1', enabled: true }),
     )
-    mockDeleteCronJob.mockImplementation(() => Promise.resolve({ id: 'cron-1' }))
+    mockDeleteCronJob.mockImplementation(() =>
+        Promise.resolve({ id: 'cron-1' }),
+    )
     mockGetCronJob.mockImplementation(() => Promise.resolve(null))
-    mockCreateCronJobRun.mockImplementation(() => Promise.resolve({ id: 'run-1', jobId: 'cron-1', status: 'success' }))
-    mockListCronJobRuns.mockImplementation(() => Promise.resolve({ runs: [], total: 0 }))
-    mockListAllRuns.mockImplementation(() => Promise.resolve({ runs: [], total: 0 }))
+    mockCreateCronJobRun.mockImplementation(() =>
+        Promise.resolve({ id: 'run-1', jobId: 'cron-1', status: 'success' }),
+    )
+    mockListCronJobRuns.mockImplementation(() =>
+        Promise.resolve({ runs: [], total: 0 }),
+    )
+    mockListAllRuns.mockImplementation(() =>
+        Promise.resolve({ runs: [], total: 0 }),
+    )
 }
 
 const validBody = {
@@ -85,8 +99,18 @@ describe('Cron API', () => {
         it('returns 200 with jobs', async () => {
             mockListCronJobs.mockImplementation(() =>
                 Promise.resolve([
-                    { id: 'cron-1', name: 'Job A', schedule: 'every:5m', enabled: true },
-                    { id: 'cron-2', name: 'Job B', schedule: 'every:1h', enabled: false },
+                    {
+                        id: 'cron-1',
+                        name: 'Job A',
+                        schedule: 'every:5m',
+                        enabled: true,
+                    },
+                    {
+                        id: 'cron-2',
+                        name: 'Job B',
+                        schedule: 'every:1h',
+                        enabled: false,
+                    },
                 ]),
             )
 
@@ -184,7 +208,9 @@ describe('Cron API', () => {
 
             expect(res.status).toBe(200)
             expect(json.success).toBe(true)
-            expect(mockUpdateCronJob).toHaveBeenCalledWith('cron-1', { enabled: false })
+            expect(mockUpdateCronJob).toHaveBeenCalledWith('cron-1', {
+                enabled: false,
+            })
         })
 
         it('re-schedules job via scheduler when enabled', async () => {
@@ -345,7 +371,15 @@ describe('Cron API', () => {
             mockListAllRuns.mockImplementation(() =>
                 Promise.resolve({
                     runs: [
-                        { id: 'run-1', jobId: 'cron-1', jobName: 'Job A', status: 'success', triggeredBy: 'scheduler', durationMs: 1200, createdAt: new Date().toISOString() },
+                        {
+                            id: 'run-1',
+                            jobId: 'cron-1',
+                            jobName: 'Job A',
+                            status: 'success',
+                            triggeredBy: 'scheduler',
+                            durationMs: 1200,
+                            createdAt: new Date().toISOString(),
+                        },
                     ],
                     total: 1,
                 }),
@@ -365,7 +399,9 @@ describe('Cron API', () => {
         })
 
         it('returns 500 on service error', async () => {
-            mockListAllRuns.mockImplementation(() => Promise.reject(new Error('DB down')))
+            mockListAllRuns.mockImplementation(() =>
+                Promise.reject(new Error('DB down')),
+            )
 
             const res = await app.request('/api/cron/runs')
             expect(res.status).toBe(500)
@@ -388,7 +424,14 @@ describe('Cron API', () => {
             mockListCronJobRuns.mockImplementation(() =>
                 Promise.resolve({
                     runs: [
-                        { id: 'run-1', jobId: 'cron-1', status: 'success', triggeredBy: 'manual', durationMs: 800, createdAt: new Date().toISOString() },
+                        {
+                            id: 'run-1',
+                            jobId: 'cron-1',
+                            status: 'success',
+                            triggeredBy: 'manual',
+                            durationMs: 800,
+                            createdAt: new Date().toISOString(),
+                        },
                     ],
                     total: 1,
                 }),
@@ -402,7 +445,9 @@ describe('Cron API', () => {
         })
 
         it('returns 500 on service error', async () => {
-            mockListCronJobRuns.mockImplementation(() => Promise.reject(new Error('DB down')))
+            mockListCronJobRuns.mockImplementation(() =>
+                Promise.reject(new Error('DB down')),
+            )
 
             const res = await app.request('/api/cron/cron-1/runs')
             expect(res.status).toBe(500)

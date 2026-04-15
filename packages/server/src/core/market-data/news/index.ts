@@ -6,9 +6,9 @@
  */
 
 import type { NewsItem } from '@flux/shared'
-import type { CacheStore, FinnhubNewsItem } from '../common/types'
-import type { FinnhubClient } from '../common/finnhub-client'
 import { CachedDataSource } from '../common/cached-source'
+import type { FinnhubClient } from '../common/finnhub-client'
+import type { CacheStore, FinnhubNewsItem } from '../common/types'
 
 const NEWS_TTL_MS = 4 * 60 * 60 * 1000 // 4 hours
 const DEFAULT_RANGE_DAYS = 30
@@ -43,14 +43,16 @@ export function createNewsService(deps: {
         async getNews(symbol, limit = DEFAULT_LIMIT) {
             const clamped = Math.min(Math.max(limit, 1), MAX_LIMIT)
             const items = await source.get(symbol)
-            return items.slice(0, clamped).map((item): NewsItem => ({
-                id: String(item.id),
-                source: item.source,
-                time: new Date(item.datetime * 1000).toISOString(),
-                title: item.headline,
-                sentiment: 'neutral' as const,
-                url: item.url,
-            }))
+            return items.slice(0, clamped).map(
+                (item): NewsItem => ({
+                    id: String(item.id),
+                    source: item.source,
+                    time: new Date(item.datetime * 1000).toISOString(),
+                    title: item.headline,
+                    sentiment: 'neutral' as const,
+                    url: item.url,
+                }),
+            )
         },
     }
 }

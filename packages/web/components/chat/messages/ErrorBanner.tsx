@@ -1,6 +1,12 @@
 import { AlertCircle, RotateCcw } from 'lucide-react'
 
-export function ErrorBanner({ error, onReload }: { readonly error: Error; readonly onReload: () => void }) {
+export function ErrorBanner({
+    error,
+    onReload,
+}: {
+    readonly error: Error
+    readonly onReload: () => void
+}) {
     return (
         <div className='flex gap-3'>
             <div className='w-8 h-8 rounded-full bg-red-500/20 flex items-center justify-center shrink-0'>

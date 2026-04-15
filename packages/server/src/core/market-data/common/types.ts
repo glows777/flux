@@ -116,7 +116,10 @@ export interface CacheEntry<T> {
  * through to the underlying storage layer. Services that don't need params
  * use the default (`Record<string, never>`), keeping existing call sites unchanged.
  */
-export interface CacheStore<T, P extends Record<string, unknown> = Record<string, never>> {
+export interface CacheStore<
+    T,
+    P extends Record<string, unknown> = Record<string, never>,
+> {
     get(key: string, params?: P): Promise<CacheEntry<T> | null>
     set(key: string, data: T, params?: P): Promise<void>
 }

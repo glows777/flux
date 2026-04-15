@@ -12,13 +12,13 @@
  */
 
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
-import type { CompanyOverview, HistoryPoint, Quote } from '@/core/market-data'
 import {
+    type AddWatchlistDeps,
     AddWatchlistError,
     addToWatchlist,
     CHART_DAYS,
-    type AddWatchlistDeps,
 } from '@/core/api/watchlist'
+import type { CompanyOverview, HistoryPoint, Quote } from '@/core/market-data'
 
 // --- Mock types ---
 
@@ -32,7 +32,10 @@ interface MockWatchlist {
 
 // --- Mock factories ---
 
-function createMockQuote(symbol: string = 'AAPL', overrides: Partial<Quote> = {}): Quote {
+function createMockQuote(
+    symbol: string = 'AAPL',
+    overrides: Partial<Quote> = {},
+): Quote {
     return {
         symbol,
         price: 150.0,
@@ -70,7 +73,9 @@ function createMockCompanyOverview(
     }
 }
 
-function createMockWatchlistRow(overrides: Partial<MockWatchlist> = {}): MockWatchlist {
+function createMockWatchlistRow(
+    overrides: Partial<MockWatchlist> = {},
+): MockWatchlist {
     return {
         id: 'cuid-wl-new',
         symbol: 'AAPL',
@@ -117,8 +122,13 @@ describe('P2-08: Add to Watchlist', () => {
         return {
             prisma: mockPrisma as never,
             getQuote: mockGetQuote as (symbol: string) => Promise<Quote>,
-            getHistoryRaw: mockGetHistoryRaw as (symbol: string, days: number) => Promise<HistoryPoint[]>,
-            getInfo: mockGetInfo as (symbol: string) => Promise<CompanyOverview>,
+            getHistoryRaw: mockGetHistoryRaw as (
+                symbol: string,
+                days: number,
+            ) => Promise<HistoryPoint[]>,
+            getInfo: mockGetInfo as (
+                symbol: string,
+            ) => Promise<CompanyOverview>,
         }
     }
 
@@ -135,7 +145,7 @@ describe('P2-08: Add to Watchlist', () => {
                 chg: 1.5,
                 signal: '',
                 score: 0,
-                data: createMockHistory(20).map(h => h.close),
+                data: createMockHistory(20).map((h) => h.close),
             })
         })
 
@@ -253,7 +263,9 @@ describe('P2-08: Add to Watchlist', () => {
                 expect.unreachable('Should have thrown')
             } catch (error) {
                 expect(error).toBeInstanceOf(AddWatchlistError)
-                expect((error as AddWatchlistError).code).toBe('SYMBOL_NOT_FOUND')
+                expect((error as AddWatchlistError).code).toBe(
+                    'SYMBOL_NOT_FOUND',
+                )
             }
         })
 
@@ -310,7 +322,9 @@ describe('P2-08: Add to Watchlist', () => {
 
         it('should use fetched name in created record', async () => {
             mockGetInfo = mock(() =>
-                Promise.resolve(createMockCompanyOverview('AAPL', { name: 'Apple Inc.' })),
+                Promise.resolve(
+                    createMockCompanyOverview('AAPL', { name: 'Apple Inc.' }),
+                ),
             )
 
             await addToWatchlist({ symbol: 'AAPL' }, getDeps())
@@ -337,7 +351,10 @@ describe('P2-08: Add to Watchlist', () => {
 
     describe('T08-07: Use provided name', () => {
         it('should use the provided name instead of fetching', async () => {
-            await addToWatchlist({ symbol: 'AAPL', name: 'Custom Name' }, getDeps())
+            await addToWatchlist(
+                { symbol: 'AAPL', name: 'Custom Name' },
+                getDeps(),
+            )
 
             expect(mockPrisma.watchlist.create).toHaveBeenCalledWith({
                 data: { symbol: 'AAPL', name: 'Custom Name' },
@@ -345,7 +362,10 @@ describe('P2-08: Add to Watchlist', () => {
         })
 
         it('should not call getInfoWithCache when name is provided', async () => {
-            await addToWatchlist({ symbol: 'AAPL', name: 'Custom Name' }, getDeps())
+            await addToWatchlist(
+                { symbol: 'AAPL', name: 'Custom Name' },
+                getDeps(),
+            )
 
             expect(mockGetInfo).not.toHaveBeenCalled()
         })
@@ -355,10 +375,15 @@ describe('P2-08: Add to Watchlist', () => {
 
     describe('TOCTOU: Race condition handling', () => {
         it('should throw DUPLICATE when Prisma create fails with P2002', async () => {
-            const prismaError = Object.assign(new Error('Unique constraint failed'), {
-                code: 'P2002',
-            })
-            mockPrisma.watchlist.create = mock(() => Promise.reject(prismaError))
+            const prismaError = Object.assign(
+                new Error('Unique constraint failed'),
+                {
+                    code: 'P2002',
+                },
+            )
+            mockPrisma.watchlist.create = mock(() =>
+                Promise.reject(prismaError),
+            )
 
             try {
                 await addToWatchlist({ symbol: 'AAPL' }, getDeps())

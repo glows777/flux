@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
 import { Pencil, Trash2 } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 export interface ChatSession {
     readonly id: string
@@ -133,10 +133,16 @@ export function ChatSessionItem({
                                       : 'border-emerald-500/30 text-emerald-300'
                             }${shakeError ? ' animate-[shake_0.3s_ease-in-out]' : ''}`}
                         />
-                        <div className={`text-[10px] text-right mt-0.5 ${
-                            editValue.trim().length > 20 ? 'text-red-400' : 'text-slate-600'
-                        }`}>
-                            {editValue.trim().length > 20 && <span className='mr-0.5'>✕</span>}
+                        <div
+                            className={`text-[10px] text-right mt-0.5 ${
+                                editValue.trim().length > 20
+                                    ? 'text-red-400'
+                                    : 'text-slate-600'
+                            }`}
+                        >
+                            {editValue.trim().length > 20 && (
+                                <span className='mr-0.5'>✕</span>
+                            )}
                             {editValue.trim().length}/20
                         </div>
                     </div>

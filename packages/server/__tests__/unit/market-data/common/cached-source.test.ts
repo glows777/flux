@@ -1,6 +1,11 @@
-import { describe, expect, mock, test, beforeEach } from 'bun:test'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import { CachedDataSource } from '@/core/market-data/common/cached-source'
 import { MemoryStore } from '@/core/market-data/common/store-memory'
+import type { CacheEntry } from '@/core/market-data/common/types'
+
+type InspectableMemoryStore<T> = MemoryStore<T> & {
+    store: Map<string, CacheEntry<T>>
+}
 
 describe('CachedDataSource — simple strategy', () => {
     let store: MemoryStore<string>
@@ -29,22 +34,31 @@ describe('CachedDataSource — simple strategy', () => {
     test('refetches after TTL expires', async () => {
         const source = new CachedDataSource({ store, fetchFn, ttl: 10 })
         await source.get('AAPL')
-        await new Promise(r => setTimeout(r, 20))
+        await new Promise((r) => setTimeout(r, 20))
         await source.get('AAPL')
         expect(fetchFn).toHaveBeenCalledTimes(2)
     })
 
     test('singleflight: concurrent requests share one fetch', async () => {
         let resolveFirst: (v: string) => void = () => {}
-        const slowFetch = mock(() => new Promise<string>(r => { resolveFirst = r }))
-        const source = new CachedDataSource({ store, fetchFn: slowFetch, ttl: 60_000 })
+        const slowFetch = mock(
+            () =>
+                new Promise<string>((r) => {
+                    resolveFirst = r
+                }),
+        )
+        const source = new CachedDataSource({
+            store,
+            fetchFn: slowFetch,
+            ttl: 60_000,
+        })
 
         const p1 = source.get('AAPL')
         const p2 = source.get('AAPL')
         const p3 = source.get('AAPL')
 
         // Allow microtasks to settle so slowFetch is invoked
-        await new Promise(r => setTimeout(r, 0))
+        await new Promise((r) => setTimeout(r, 0))
         resolveFirst('shared-value')
         const [r1, r2, r3] = await Promise.all([p1, p2, p3])
 
@@ -56,19 +70,30 @@ describe('CachedDataSource — simple strategy', () => {
 
     test('staleFallback returns expired cache on fetch failure', async () => {
         const source = new CachedDataSource({
-            store, fetchFn, ttl: 10, staleFallback: true,
+            store,
+            fetchFn,
+            ttl: 10,
+            staleFallback: true,
         })
         await source.get('AAPL')
-        await new Promise(r => setTimeout(r, 20))
+        await new Promise((r) => setTimeout(r, 20))
 
-        fetchFn.mockImplementation(() => { throw new Error('API down') })
+        fetchFn.mockImplementation(() => {
+            throw new Error('API down')
+        })
         const result = await source.get('AAPL')
         expect(result).toBe('value-AAPL')
     })
 
     test('throws when fetch fails and no stale cache (staleFallback=false)', async () => {
-        const failFetch = mock(() => { throw new Error('API down') })
-        const source = new CachedDataSource({ store, fetchFn: failFetch, ttl: 60_000 })
+        const failFetch = mock(() => {
+            throw new Error('API down')
+        })
+        const source = new CachedDataSource({
+            store,
+            fetchFn: failFetch,
+            ttl: 60_000,
+        })
         expect(source.get('AAPL')).rejects.toThrow('API down')
     })
 })
@@ -78,10 +103,13 @@ describe('CachedDataSource — tiered strategy', () => {
         const store = new MemoryStore<string>()
         // Pre-populate with "old" data (30 days ago)
         const oldFetchedAt = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-        ;(store as any).store.set('AAPL', {
-            data: 'old-value',
-            fetchedAt: oldFetchedAt,
-        })
+        ;(store as unknown as InspectableMemoryStore<string>).store.set(
+            'AAPL',
+            {
+                data: 'old-value',
+                fetchedAt: oldFetchedAt,
+            },
+        )
 
         const fetchFn = mock(async () => 'fresh')
         const source = new CachedDataSource({
@@ -104,10 +132,13 @@ describe('CachedDataSource — tiered strategy', () => {
         const store = new MemoryStore<string>()
         // Recent data but past its TTL (fetched 2 days ago, recentTtl is 1 day)
         const recentExpired = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
-        ;(store as any).store.set('AAPL', {
-            data: 'stale-recent',
-            fetchedAt: recentExpired,
-        })
+        ;(store as unknown as InspectableMemoryStore<string>).store.set(
+            'AAPL',
+            {
+                data: 'stale-recent',
+                fetchedAt: recentExpired,
+            },
+        )
 
         const fetchFn = mock(async () => 'fresh')
         const source = new CachedDataSource({

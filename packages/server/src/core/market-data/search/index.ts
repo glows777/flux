@@ -36,6 +36,16 @@ interface YfSearchQuote {
     readonly shortname?: string
 }
 
+function isYahooEquityQuote(
+    quote: YfSearchQuote,
+): quote is YfSearchQuote & { readonly symbol: string } {
+    return (
+        quote.quoteType === 'EQUITY' &&
+        quote.isYahooFinance === true &&
+        quote.symbol != null
+    )
+}
+
 // --- L1: Local DB search ---
 
 async function searchLocal(
@@ -108,15 +118,10 @@ async function searchYahoo(
     query: string,
 ): Promise<StockSearchResult[]> {
     const result = await yahoo.search(query)
-    return result.quotes
-        .filter(
-            (q: YfSearchQuote) =>
-                q.quoteType === 'EQUITY' && q.isYahooFinance === true,
-        )
-        .map((q: YfSearchQuote) => ({
-            symbol: q.symbol!,
-            name: q.longname ?? q.shortname ?? q.symbol!,
-        }))
+    return result.quotes.filter(isYahooEquityQuote).map((q: YfSearchQuote) => ({
+        symbol: q.symbol,
+        name: q.longname ?? q.shortname ?? q.symbol,
+    }))
 }
 
 // --- Factory ---

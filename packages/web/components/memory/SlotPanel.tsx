@@ -1,9 +1,9 @@
 'use client'
 
-import { formatSlotName } from './SlotTabs'
 import { DocPreview } from './DocPreview'
-import { VersionTimeline } from './VersionTimeline'
 import type { SlotEntry } from './SlotTabs'
+import { formatSlotName } from './SlotTabs'
+import { VersionTimeline } from './VersionTimeline'
 
 interface SlotPanelProps {
     readonly slot: SlotEntry

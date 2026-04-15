@@ -1,11 +1,13 @@
-import { describe, expect, mock, test, beforeEach } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
+import type { YahooFinanceClient } from '@/core/market-data/common/yahoo-client'
 import {
     createSearchService,
-    MAX_RESULTS,
     L1_SUFFICIENT_COUNT,
-    type SearchService,
+    MAX_RESULTS,
 } from '@/core/market-data/search/index'
-import type { YahooFinanceClient } from '@/core/market-data/common/yahoo-client'
+
+type SearchServiceDeps = Parameters<typeof createSearchService>[0]
+type PrismaSearchDeps = SearchServiceDeps['prisma']
 
 function createMockPrisma(
     infoRows: Array<{ symbol: string; name: string | null }> = [],
@@ -55,7 +57,10 @@ describe('SearchService', () => {
     test('returns empty array for empty query', async () => {
         const prisma = createMockPrisma()
         const yahoo = createMockYahoo()
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('')
         expect(results).toEqual([])
     })
@@ -63,7 +68,10 @@ describe('SearchService', () => {
     test('returns empty array for whitespace query', async () => {
         const prisma = createMockPrisma()
         const yahoo = createMockYahoo()
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('   ')
         expect(results).toEqual([])
     })
@@ -75,7 +83,10 @@ describe('SearchService', () => {
             [],
         )
         const yahoo = createMockYahoo()
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('AAPL')
         expect(results.length).toBe(1)
         expect(results[0].symbol).toBe('AAPL')
@@ -89,7 +100,10 @@ describe('SearchService', () => {
             [],
         )
         const yahoo = createMockYahoo()
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('AAPL')
         expect(results[0].name).toBe('Apple Inc (Watchlist)')
     })
@@ -101,7 +115,10 @@ describe('SearchService', () => {
             [{ symbol: 'AAPL', cnName: 'Apple (Search)' }],
         )
         const yahoo = createMockYahoo()
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('AAPL')
         expect(results[0].name).toBe('Apple (Search)')
     })
@@ -120,20 +137,29 @@ describe('SearchService', () => {
                 longname: 'Microsoft Corp',
             },
         ])
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('A')
         expect(results.length).toBe(2)
         expect(results.find((r) => r.symbol === 'MSFT')).toBeTruthy()
     })
 
     test('skips Yahoo L2 when L1 has enough results', async () => {
-        const manyResults = Array.from({ length: L1_SUFFICIENT_COUNT }, (_, i) => ({
-            symbol: `SYM${i}`,
-            name: `Company ${i}`,
-        }))
+        const manyResults = Array.from(
+            { length: L1_SUFFICIENT_COUNT },
+            (_, i) => ({
+                symbol: `SYM${i}`,
+                name: `Company ${i}`,
+            }),
+        )
         const prisma = createMockPrisma(manyResults, [], [])
         const yahoo = createMockYahoo()
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('SYM')
         expect(yahoo.search).not.toHaveBeenCalled()
         expect(results.length).toBe(L1_SUFFICIENT_COUNT)
@@ -155,7 +181,10 @@ describe('SearchService', () => {
                 longname: 'Bitcoin',
             },
         ])
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('A')
         expect(results.length).toBe(1)
         expect(results[0].symbol).toBe('AAPL')
@@ -175,7 +204,10 @@ describe('SearchService', () => {
                 longname: 'Apple Inc (Yahoo)',
             },
         ])
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('A')
         const apple = results.find((r) => r.symbol === 'AAPL')
         expect(apple?.name).toBe('Apple (Local)')
@@ -188,7 +220,10 @@ describe('SearchService', () => {
         }))
         const prisma = createMockPrisma(manyResults, [], [])
         const yahoo = createMockYahoo()
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('SYM')
         expect(results.length).toBeLessThanOrEqual(MAX_RESULTS)
     })
@@ -219,7 +254,10 @@ describe('SearchService', () => {
                 longname: 'Apple Inc',
             },
         ])
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('A')
         expect(results.length).toBe(1)
         expect(results[0].symbol).toBe('AAPL')
@@ -237,7 +275,10 @@ describe('SearchService', () => {
                 throw new Error('Yahoo search down')
             },
         )
-        const service = createSearchService({ yahoo, prisma: prisma as any })
+        const service = createSearchService({
+            yahoo,
+            prisma: prisma as unknown as PrismaSearchDeps,
+        })
         const results = await service.search('A')
         expect(results.length).toBe(1)
         expect(results[0].symbol).toBe('AAPL')

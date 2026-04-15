@@ -1,17 +1,23 @@
-import { describe, expect, test, mock } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
+import type { CronJob } from '@prisma/client'
+import type { Gateway } from '@/gateway/gateway'
 import { TaskExecutor } from '@/scheduler/executor'
 
 describe('TaskExecutor', () => {
     test('executes job by sending prompt through gateway.chat', async () => {
         const mockGateway = {
-            chat: mock(() => Promise.resolve({
-                text: 'NVDA is at $120',
-                sessionId: 'sess-1',
-                success: true,
-            })),
+            chat: mock(() =>
+                Promise.resolve({
+                    text: 'NVDA is at $120',
+                    sessionId: 'sess-1',
+                    success: true,
+                }),
+            ),
         }
 
-        const executor = new TaskExecutor({ gateway: mockGateway as any })
+        const executor = new TaskExecutor({
+            gateway: mockGateway as unknown as Gateway,
+        })
         const job = {
             id: 'job-1',
             channel: 'discord',
@@ -19,7 +25,7 @@ describe('TaskExecutor', () => {
             taskType: 'trading-agent',
             taskPayload: { prompt: 'Check NVDA price' },
             channelTarget: null,
-        } as any
+        } as unknown as CronJob
 
         const result = await executor.execute(job)
         expect(result.success).toBe(true)
@@ -35,8 +41,8 @@ describe('TaskExecutor', () => {
     })
 
     test('returns error when payload has no prompt', async () => {
-        const executor = new TaskExecutor({ gateway: {} as any })
-        const job = { id: 'job-1', taskPayload: {} } as any
+        const executor = new TaskExecutor({ gateway: {} as unknown as Gateway })
+        const job = { id: 'job-1', taskPayload: {} } as unknown as CronJob
 
         const result = await executor.execute(job)
         expect(result.success).toBe(false)
@@ -48,7 +54,9 @@ describe('TaskExecutor', () => {
             chat: mock(() => Promise.reject(new Error('AI timeout'))),
         }
 
-        const executor = new TaskExecutor({ gateway: mockGateway as any })
+        const executor = new TaskExecutor({
+            gateway: mockGateway as unknown as Gateway,
+        })
         const job = {
             id: 'job-1',
             channel: 'discord',
@@ -56,7 +64,7 @@ describe('TaskExecutor', () => {
             taskType: 'trading-agent',
             taskPayload: { prompt: 'Check NVDA' },
             channelTarget: null,
-        } as any
+        } as unknown as CronJob
 
         const result = await executor.execute(job)
         expect(result.success).toBe(false)

@@ -15,10 +15,9 @@
 import { beforeEach, describe, expect, it } from 'bun:test'
 import './setup'
 import type { NewsItem } from '@flux/shared'
-import { mockGetStockNews } from './helpers/mock-boundaries'
-
 // Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
+import { mockGetStockNews } from './helpers/mock-boundaries'
 
 // ==================== Mock data helpers ====================
 
@@ -44,9 +43,9 @@ const app = createHonoApp()
 describe('GET /api/stocks/:symbol/news', () => {
     beforeEach(() => {
         mockGetStockNews.mockReset()
-        mockGetStockNews.mockImplementation(async (_symbol: string, _limit?: number) => [
-            createMockNewsItem(),
-        ])
+        mockGetStockNews.mockImplementation(
+            async (_symbol: string, _limit?: number) => [createMockNewsItem()],
+        )
     })
 
     // ─── T12-16: Normal request ───

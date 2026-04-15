@@ -1,11 +1,14 @@
-import { describe, expect, mock, test, beforeEach } from 'bun:test'
-import { createNewsService, type NewsService } from '@/core/market-data/news/index'
-import type {
-    FinnhubNewsItem,
-    CacheStore,
-    CacheEntry,
-} from '@/core/market-data/common/types'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
+import type {
+    CacheEntry,
+    CacheStore,
+    FinnhubNewsItem,
+} from '@/core/market-data/common/types'
+import {
+    createNewsService,
+    type NewsService,
+} from '@/core/market-data/news/index'
 
 function makeFinnhubNews(count: number): FinnhubNewsItem[] {
     return Array.from({ length: count }, (_, i) => ({

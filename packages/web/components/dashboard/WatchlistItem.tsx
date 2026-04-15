@@ -1,8 +1,8 @@
 'use client'
 
+import { formatPercent } from '@flux/shared'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { ChevronRight, Ellipsis, Trash2 } from 'lucide-react'
-import { formatPercent } from '@flux/shared'
 import { MiniChart } from '../charts/MiniChart'
 import { DeleteConfirmPopover } from './DeleteConfirmPopover'
 
@@ -57,15 +57,18 @@ export function WatchlistItem({
     }
 
     return (
-        <div
-            onClick={onClick}
-            className='group relative h-[72px] w-full rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all cursor-pointer flex items-center px-6 overflow-hidden'
-        >
+        <div className='group relative h-[72px] w-full rounded-xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.05] hover:border-white/10 transition-all cursor-pointer flex items-center px-6 overflow-hidden'>
+            <button
+                type='button'
+                onClick={onClick}
+                aria-label={`Open ${id}`}
+                className='absolute inset-y-0 left-0 right-12'
+            />
             {/* 左侧光条 - hover 时显示 */}
             <div className='absolute left-0 top-0 bottom-0 w-1 bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity' />
 
             {/* 股票代码和名称 (22%) */}
-            <div className='w-[22%] min-w-0'>
+            <div className='relative z-10 w-[22%] min-w-0 pointer-events-none'>
                 <div className='flex items-center gap-1.5'>
                     <span className='font-medium text-white'>{id}</span>
                     {isPosition && (
@@ -82,7 +85,7 @@ export function WatchlistItem({
             </div>
 
             {/* 迷你图表 (30%) */}
-            <div className='w-[30%]'>
+            <div className='relative z-10 w-[30%] pointer-events-none'>
                 <MiniChart
                     data={data}
                     color={chartColor}
@@ -91,8 +94,8 @@ export function WatchlistItem({
             </div>
 
             {/* 价格 + 涨跌幅 (flex-1) */}
-            <div className='flex-1 flex items-center justify-end gap-3 min-w-0'>
-                <div className='text-right'>
+            <div className='relative z-10 flex-1 flex items-center justify-end gap-3 min-w-0'>
+                <div className='text-right pointer-events-none'>
                     <div className='text-sm font-medium text-white'>
                         ${price.toFixed(2)}
                     </div>
@@ -137,7 +140,7 @@ export function WatchlistItem({
             </div>
 
             {/* Chevron */}
-            <div className='w-6 flex justify-end ml-2'>
+            <div className='relative z-10 w-6 flex justify-end ml-2 pointer-events-none'>
                 <ChevronRight
                     size={14}
                     className='text-slate-700 group-hover:text-white transition-colors'

@@ -1,8 +1,8 @@
 'use client'
 
 import * as Tooltip from '@radix-ui/react-tooltip'
-import { Play, Pencil, Trash2, CheckCircle, XCircle } from 'lucide-react'
-import { formatRelativeTime, statusBadgeClass, type CronJobRow } from '../types'
+import { CheckCircle, Pencil, Play, Trash2, XCircle } from 'lucide-react'
+import { type CronJobRow, formatRelativeTime, statusBadgeClass } from '../types'
 
 interface TasksTableProps {
     jobs: CronJobRow[]
@@ -11,7 +11,12 @@ interface TasksTableProps {
     onRunNow: (job: CronJobRow) => void
 }
 
-export function TasksTable({ jobs, onEdit, onDelete, onRunNow }: TasksTableProps) {
+export function TasksTable({
+    jobs,
+    onEdit,
+    onDelete,
+    onRunNow,
+}: TasksTableProps) {
     if (jobs.length === 0) {
         return (
             <div className='flex items-center justify-center h-32 text-xs text-slate-600'>
@@ -26,25 +31,44 @@ export function TasksTable({ jobs, onEdit, onDelete, onRunNow }: TasksTableProps
                 <table className='w-full text-xs'>
                     <thead>
                         <tr className='border-b border-white/5 text-slate-500'>
-                            <th className='text-left px-4 py-2 font-normal'>Name</th>
-                            <th className='text-left px-4 py-2 font-normal'>Schedule</th>
-                            <th className='text-left px-4 py-2 font-normal'>Status</th>
-                            <th className='text-left px-4 py-2 font-normal'>Last Run</th>
-                            <th className='text-left px-4 py-2 font-normal'>Next Run</th>
-                            <th className='text-left px-4 py-2 font-normal'>Retry</th>
+                            <th className='text-left px-4 py-2 font-normal'>
+                                Name
+                            </th>
+                            <th className='text-left px-4 py-2 font-normal'>
+                                Schedule
+                            </th>
+                            <th className='text-left px-4 py-2 font-normal'>
+                                Status
+                            </th>
+                            <th className='text-left px-4 py-2 font-normal'>
+                                Last Run
+                            </th>
+                            <th className='text-left px-4 py-2 font-normal'>
+                                Next Run
+                            </th>
+                            <th className='text-left px-4 py-2 font-normal'>
+                                Retry
+                            </th>
                             <th className='px-4 py-2' />
                         </tr>
                     </thead>
                     <tbody>
                         {jobs.map((job) => (
-                            <tr key={job.id} className='border-b border-white/5 hover:bg-white/[0.02] group'>
+                            <tr
+                                key={job.id}
+                                className='border-b border-white/5 hover:bg-white/[0.02] group'
+                            >
                                 {/* Name + prompt preview */}
                                 <td className='px-4 py-3 max-w-[200px]'>
                                     <Tooltip.Root>
                                         <Tooltip.Trigger asChild>
                                             <div className='cursor-default'>
-                                                <div className='text-white truncate'>{job.name}</div>
-                                                <div className='text-slate-600 truncate mt-0.5'>{job.taskPayload.prompt}</div>
+                                                <div className='text-white truncate'>
+                                                    {job.name}
+                                                </div>
+                                                <div className='text-slate-600 truncate mt-0.5'>
+                                                    {job.taskPayload.prompt}
+                                                </div>
                                             </div>
                                         </Tooltip.Trigger>
                                         <Tooltip.Portal>
@@ -60,11 +84,15 @@ export function TasksTable({ jobs, onEdit, onDelete, onRunNow }: TasksTableProps
                                 </td>
 
                                 {/* Schedule */}
-                                <td className='px-4 py-3 font-mono text-slate-400'>{job.schedule}</td>
+                                <td className='px-4 py-3 font-mono text-slate-400'>
+                                    {job.schedule}
+                                </td>
 
                                 {/* Status badge */}
                                 <td className='px-4 py-3'>
-                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${statusBadgeClass(job.enabled ? 'enabled' : 'disabled')}`}>
+                                    <span
+                                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${statusBadgeClass(job.enabled ? 'enabled' : 'disabled')}`}
+                                    >
                                         {job.enabled ? 'enabled' : 'disabled'}
                                     </span>
                                 </td>
@@ -72,21 +100,31 @@ export function TasksTable({ jobs, onEdit, onDelete, onRunNow }: TasksTableProps
                                 {/* Last run */}
                                 <td className='px-4 py-3'>
                                     <div className='flex items-center gap-1.5 text-slate-400'>
-                                        {job.lastRunStatus === 'success' && <CheckCircle className='w-3 h-3 text-emerald-400 shrink-0' />}
-                                        {job.lastRunStatus === 'error' && <XCircle className='w-3 h-3 text-red-400 shrink-0' />}
-                                        <span>{formatRelativeTime(job.lastRunAt)}</span>
+                                        {job.lastRunStatus === 'success' && (
+                                            <CheckCircle className='w-3 h-3 text-emerald-400 shrink-0' />
+                                        )}
+                                        {job.lastRunStatus === 'error' && (
+                                            <XCircle className='w-3 h-3 text-red-400 shrink-0' />
+                                        )}
+                                        <span>
+                                            {formatRelativeTime(job.lastRunAt)}
+                                        </span>
                                     </div>
                                 </td>
 
                                 {/* Next run */}
                                 <td className='px-4 py-3 text-slate-400'>
-                                    {job.enabled ? formatRelativeTime(job.nextRunAt) : '—'}
+                                    {job.enabled
+                                        ? formatRelativeTime(job.nextRunAt)
+                                        : '—'}
                                 </td>
 
                                 {/* Retry count */}
                                 <td className='px-4 py-3'>
                                     {job.retryCount > 0 && (
-                                        <span className='text-amber-400'>{job.retryCount}</span>
+                                        <span className='text-amber-400'>
+                                            {job.retryCount}
+                                        </span>
                                     )}
                                 </td>
 

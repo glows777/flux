@@ -1,7 +1,7 @@
 import type { CronJob } from '@prisma/client'
+import type { AgentType } from '@/core/ai/runtime/types'
 import type { Gateway } from '@/gateway/gateway'
 import type { TriggerResult } from '@/gateway/router'
-import type { AgentType } from '@/core/ai/runtime/types'
 
 export interface ExecutionResult {
     readonly success: boolean
@@ -29,7 +29,10 @@ export class TaskExecutor {
             const result = await Promise.race([
                 this.run(job, payload.prompt),
                 new Promise<never>((_, reject) => {
-                    timer = setTimeout(() => reject(new Error('Execution timed out')), EXECUTION_TIMEOUT_MS)
+                    timer = setTimeout(
+                        () => reject(new Error('Execution timed out')),
+                        EXECUTION_TIMEOUT_MS,
+                    )
                 }),
             ])
             clearTimeout(timer)
@@ -37,13 +40,21 @@ export class TaskExecutor {
         } catch (error) {
             clearTimeout(timer)
 
-            const message = error instanceof Error ? error.message : 'Unknown error'
-            return { success: false, output: `Cron job failed: ${message}`, error: message }
+            const message =
+                error instanceof Error ? error.message : 'Unknown error'
+            return {
+                success: false,
+                output: `Cron job failed: ${message}`,
+                error: message,
+            }
         }
     }
 
     private async run(job: CronJob, prompt: string): Promise<ExecutionResult> {
-        const channelTarget = job.channelTarget as { type: string; channelId: string } | null
+        const channelTarget = job.channelTarget as {
+            type: string
+            channelId: string
+        } | null
 
         const triggerResult: TriggerResult = await this.deps.gateway.chat({
             channel: 'cron',

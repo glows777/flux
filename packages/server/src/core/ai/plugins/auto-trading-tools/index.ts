@@ -1,26 +1,32 @@
-import type { AIPlugin, ToolMap } from '../../runtime/types'
-import type { TradingAgentDeps } from '@/core/trading-agent/types'
 import { createTradingAgentTools } from '@/core/trading-agent/tools'
+import type { TradingAgentDeps } from '@/core/trading-agent/types'
+import type { AIPlugin, ToolMap } from '../../runtime/types'
 
 export interface AutoTradingToolsPluginDeps {
-  tradingAgentDeps: TradingAgentDeps
+    tradingAgentDeps: TradingAgentDeps
 }
 
-export function autoTradingToolsPlugin(deps: AutoTradingToolsPluginDeps): AIPlugin {
-  const allTools = createTradingAgentTools(deps.tradingAgentDeps)
+export function autoTradingToolsPlugin(
+    deps: AutoTradingToolsPluginDeps,
+): AIPlugin {
+    const allTools = createTradingAgentTools(deps.tradingAgentDeps)
 
-  // Exclude memory tools (provided by shared memoryPlugin) to avoid ToolConflictError
-  const MEMORY_TOOL_NAMES = new Set(['memory_read', 'memory_write', 'memory_list'])
+    // Exclude memory tools (provided by shared memoryPlugin) to avoid ToolConflictError
+    const MEMORY_TOOL_NAMES = new Set([
+        'memory_read',
+        'memory_write',
+        'memory_list',
+    ])
 
-  const tools: ToolMap = {}
-  for (const [name, tool] of Object.entries(allTools)) {
-    if (!MEMORY_TOOL_NAMES.has(name)) {
-      tools[name] = { tool }
+    const tools: ToolMap = {}
+    for (const [name, tool] of Object.entries(allTools)) {
+        if (!MEMORY_TOOL_NAMES.has(name)) {
+            tools[name] = { tool }
+        }
     }
-  }
 
-  return {
-    name: 'auto-trading-tools',
-    tools,
-  }
+    return {
+        name: 'auto-trading-tools',
+        tools,
+    }
 }

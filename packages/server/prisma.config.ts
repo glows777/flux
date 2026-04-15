@@ -1,6 +1,6 @@
-import { defineConfig, env } from 'prisma/config'
-import { config } from 'dotenv'
 import { resolve } from 'node:path'
+import { config } from 'dotenv'
+import { defineConfig, env } from 'prisma/config'
 
 config({ path: resolve(import.meta.dirname, '../../.env') })
 

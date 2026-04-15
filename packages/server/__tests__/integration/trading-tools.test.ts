@@ -1,22 +1,68 @@
-import { describe, it, expect } from 'bun:test'
-import { createTradingTools, type TradingToolDeps } from '@/core/ai/trading-tools'
-import type { AlpacaClient, AlpacaOrder, AlpacaAccount, AlpacaPosition } from '@/core/broker/alpaca-client'
+import { describe, expect, it } from 'bun:test'
+import {
+    createTradingTools,
+    type TradingToolDeps,
+} from '@/core/ai/trading-tools'
+import type {
+    AlpacaAccount,
+    AlpacaClient,
+    AlpacaOrder,
+    AlpacaPosition,
+} from '@/core/broker/alpaca-client'
 
-const toolCtx = { toolCallId: 'tc1', messages: [] as any[], abortSignal: undefined as any }
+const toolCtx = {
+    toolCallId: 'tc1',
+    messages: [] as never[],
+    abortSignal: undefined as AbortSignal | undefined,
+}
+
+type OrderResponse = {
+    order: {
+        symbol?: string
+        side?: string
+    }
+}
+
+type ErrorResponse = {
+    error: string
+}
+
+type PortfolioResponse = {
+    account: {
+        equity: number
+    }
+}
+
+type TradeHistoryResponse = {
+    orders: Array<{
+        reasoning?: string
+    }>
+}
 
 const mockAccount: AlpacaAccount = {
-    equity: 100_000, cash: 50_000, buyingPower: 50_000,
-    lastEquity: 100_000, longMarketValue: 50_000,
+    equity: 100_000,
+    cash: 50_000,
+    buyingPower: 50_000,
+    lastEquity: 100_000,
+    longMarketValue: 50_000,
 }
 
 const mockFilledOrder: AlpacaOrder = {
-    id: 'alpaca-order-1', symbol: 'AAPL', qty: 5, filledQty: 5,
-    side: 'buy', type: 'market', status: 'filled',
-    filledAvgPrice: 150, filledAt: new Date().toISOString(),
+    id: 'alpaca-order-1',
+    symbol: 'AAPL',
+    qty: 5,
+    filledQty: 5,
+    side: 'buy',
+    type: 'market',
+    status: 'filled',
+    filledAvgPrice: 150,
+    filledAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
 }
 
-function buildDeps(overrides?: Partial<{ alpacaClient: Partial<AlpacaClient> }>): TradingToolDeps {
+function buildDeps(
+    overrides?: Partial<{ alpacaClient: Partial<AlpacaClient> }>,
+): TradingToolDeps {
     const orders: Record<string, unknown>[] = []
 
     const defaultClient: AlpacaClient = {
@@ -35,7 +81,10 @@ function buildDeps(overrides?: Partial<{ alpacaClient: Partial<AlpacaClient> }>)
         db: {
             order: {
                 create: async (args: { data: Record<string, unknown> }) => {
-                    const order = { id: `order-${orders.length + 1}`, ...args.data }
+                    const order = {
+                        id: `order-${orders.length + 1}`,
+                        ...args.data,
+                    }
                     orders.push(order)
                     return order
                 },
@@ -64,33 +113,53 @@ describe('Trading Tools Integration', () => {
         it('succeeds: guard pass → alpaca → db', async () => {
             const tools = createTradingTools(buildDeps())
             const result = await tools.placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 5, type: 'market', reasoning: 'Test buy' },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 5,
+                    type: 'market',
+                    reasoning: 'Test buy',
+                },
                 toolCtx,
             )
             expect(result).toHaveProperty('success', true)
-            expect((result as any).order.symbol).toBe('AAPL')
+            expect((result as OrderResponse).order.symbol).toBe('AAPL')
         })
 
         it('rejects when guard fails (over limit)', async () => {
             const tools = createTradingTools(buildDeps())
             const result = await tools.placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 200, type: 'market', reasoning: 'Big buy' },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 200,
+                    type: 'market',
+                    reasoning: 'Big buy',
+                },
                 toolCtx,
             )
             expect(result).toHaveProperty('error')
-            expect((result as any).error).toContain('风控')
+            expect((result as ErrorResponse).error).toContain('风控')
         })
 
         it('returns error when Alpaca not configured', async () => {
-            const tools = createTradingTools(buildDeps({
-                alpacaClient: { isConfigured: () => false },
-            }))
+            const tools = createTradingTools(
+                buildDeps({
+                    alpacaClient: { isConfigured: () => false },
+                }),
+            )
             const result = await tools.placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 5, type: 'market', reasoning: 'Test' },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 5,
+                    type: 'market',
+                    reasoning: 'Test',
+                },
                 toolCtx,
             )
             expect(result).toHaveProperty('error')
-            expect((result as any).error).toContain('Alpaca')
+            expect((result as ErrorResponse).error).toContain('Alpaca')
         })
     })
 
@@ -101,7 +170,13 @@ describe('Trading Tools Integration', () => {
 
             // Place an order first
             await tools.placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 5, type: 'market', reasoning: 'Test' },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 5,
+                    type: 'market',
+                    reasoning: 'Test',
+                },
                 toolCtx,
             )
 
@@ -119,7 +194,7 @@ describe('Trading Tools Integration', () => {
                 toolCtx,
             )
             expect(result).toHaveProperty('error')
-            expect((result as any).error).toContain('不存在')
+            expect((result as ErrorResponse).error).toContain('不存在')
         })
     })
 
@@ -131,24 +206,33 @@ describe('Trading Tools Integration', () => {
                 toolCtx,
             )
             expect(result).toHaveProperty('error')
-            expect((result as any).error).toContain('持仓')
+            expect((result as ErrorResponse).error).toContain('持仓')
         })
 
         it('closes an existing position', async () => {
             const mockPosition: AlpacaPosition = {
-                symbol: 'AAPL', qty: 10, avgEntryPrice: 140, currentPrice: 155,
-                marketValue: 1550, costBasis: 1400, unrealizedPl: 150,
-                unrealizedPlPc: 0.107, changeToday: 0.02, lastdayPrice: 152,
+                symbol: 'AAPL',
+                qty: 10,
+                avgEntryPrice: 140,
+                currentPrice: 155,
+                marketValue: 1550,
+                costBasis: 1400,
+                unrealizedPl: 150,
+                unrealizedPlPc: 0.107,
+                changeToday: 0.02,
+                lastdayPrice: 152,
             }
-            const tools = createTradingTools(buildDeps({
-                alpacaClient: { getPosition: async () => mockPosition },
-            }))
+            const tools = createTradingTools(
+                buildDeps({
+                    alpacaClient: { getPosition: async () => mockPosition },
+                }),
+            )
             const result = await tools.closePosition.execute(
                 { symbol: 'AAPL', reasoning: 'Take profit' },
                 toolCtx,
             )
             expect(result).toHaveProperty('success', true)
-            expect((result as any).order.side).toBe('sell')
+            expect((result as OrderResponse).order.side).toBe('sell')
         })
     })
 
@@ -158,7 +242,7 @@ describe('Trading Tools Integration', () => {
             const result = await tools.getPortfolio.execute({}, toolCtx)
             expect(result).toHaveProperty('account')
             expect(result).toHaveProperty('positions')
-            expect((result as any).account.equity).toBe(100_000)
+            expect((result as PortfolioResponse).account.equity).toBe(100_000)
         })
     })
 
@@ -168,7 +252,13 @@ describe('Trading Tools Integration', () => {
             const tools = createTradingTools(deps)
 
             await tools.placeOrder.execute(
-                { symbol: 'AAPL', side: 'buy', qty: 5, type: 'market', reasoning: 'Bullish on earnings' },
+                {
+                    symbol: 'AAPL',
+                    side: 'buy',
+                    qty: 5,
+                    type: 'market',
+                    reasoning: 'Bullish on earnings',
+                },
                 toolCtx,
             )
 
@@ -176,14 +266,21 @@ describe('Trading Tools Integration', () => {
                 { symbol: 'AAPL', limit: 10 },
                 toolCtx,
             )
-            expect((result as any).orders.length).toBeGreaterThan(0)
-            expect((result as any).orders[0].reasoning).toBe('Bullish on earnings')
+            expect(
+                (result as TradeHistoryResponse).orders.length,
+            ).toBeGreaterThan(0)
+            expect((result as TradeHistoryResponse).orders[0].reasoning).toBe(
+                'Bullish on earnings',
+            )
         })
 
         it('returns empty when no orders', async () => {
             const tools = createTradingTools(buildDeps())
-            const result = await tools.getTradeHistory.execute({ limit: 10 }, toolCtx)
-            expect((result as any).orders.length).toBe(0)
+            const result = await tools.getTradeHistory.execute(
+                { limit: 10 },
+                toolCtx,
+            )
+            expect((result as TradeHistoryResponse).orders.length).toBe(0)
         })
     })
 })

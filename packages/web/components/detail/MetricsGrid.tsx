@@ -1,15 +1,22 @@
 'use client'
 
-import useSWR from 'swr'
-import { MetricCard } from './MetricCard'
-import { fetcher } from '@/lib/fetcher'
-import {
-    formatPE,
-    formatMarketCap,
-    formatEPS,
-    formatDividendYield,
-} from '@flux/shared'
 import type { StockMetrics } from '@flux/shared'
+import {
+    formatDividendYield,
+    formatEPS,
+    formatMarketCap,
+    formatPE,
+} from '@flux/shared'
+import useSWR from 'swr'
+import { fetcher } from '@/lib/fetcher'
+import { MetricCard } from './MetricCard'
+
+const METRIC_SKELETON_KEYS = [
+    'metric-skeleton-1',
+    'metric-skeleton-2',
+    'metric-skeleton-3',
+    'metric-skeleton-4',
+] as const
 
 interface MetricsGridProps {
     symbol: string
@@ -18,9 +25,9 @@ interface MetricsGridProps {
 function MetricsGridSkeleton() {
     return (
         <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
-            {Array.from({ length: 4 }, (_, i) => (
+            {METRIC_SKELETON_KEYS.map((key) => (
                 <div
-                    key={i}
+                    key={key}
                     className='animate-pulse rounded-2xl border border-white/5 bg-white/[0.02] p-4'
                 >
                     <div className='h-3 w-16 bg-white/5 rounded mb-3' />
@@ -37,10 +44,11 @@ function MetricsGridSkeleton() {
  */
 export function MetricsGrid({ symbol }: MetricsGridProps) {
     const encodedSymbol = encodeURIComponent(symbol)
-    const { data: info, isLoading, error } = useSWR<StockMetrics>(
-        `/api/stocks/${encodedSymbol}/info`,
-        fetcher,
-    )
+    const {
+        data: info,
+        isLoading,
+        error,
+    } = useSWR<StockMetrics>(`/api/stocks/${encodedSymbol}/info`, fetcher)
 
     if (isLoading) {
         return <MetricsGridSkeleton />
@@ -49,8 +57,8 @@ export function MetricsGrid({ symbol }: MetricsGridProps) {
     if (error) {
         return (
             <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
-                {Array.from({ length: 4 }, (_, i) => (
-                    <MetricCard key={i} label='--' value='--' />
+                {METRIC_SKELETON_KEYS.map((key) => (
+                    <MetricCard key={key} label='--' value='--' />
                 ))}
             </div>
         )

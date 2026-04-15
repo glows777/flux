@@ -6,11 +6,11 @@
  * and finalizeChatRound.
  */
 
-import { describe, test, expect, beforeEach } from 'bun:test'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import {
+    mockAppendMessage,
     mockChatGenerate,
     mockFinalizeChatRound,
-    mockAppendMessage,
     mockLoadMessages,
 } from './helpers/mock-boundaries'
 
@@ -44,7 +44,10 @@ describe('Discord processChat pipeline integration', () => {
         expect(text).toBe('Hello from AI')
         expect(responseMessage.role).toBe('assistant')
         expect(responseMessage.parts).toBeArrayOfSize(1)
-        expect(responseMessage.parts[0]).toEqual({ type: 'text', text: 'Hello from AI' })
+        expect(responseMessage.parts[0]).toEqual({
+            type: 'text',
+            text: 'Hello from AI',
+        })
     })
 
     test('finalizeChatRound completes without error', async () => {
@@ -80,7 +83,10 @@ describe('Discord processChat pipeline integration', () => {
         })
 
         expect(text).toBe('Custom response for TSLA')
-        expect(responseMessage.parts[0]).toEqual({ type: 'text', text: 'Custom response for TSLA' })
+        expect(responseMessage.parts[0]).toEqual({
+            type: 'text',
+            text: 'Custom response for TSLA',
+        })
     })
 
     test('chatGenerate error is catchable', async () => {

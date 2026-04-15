@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, expect, it } from 'bun:test'
 import { createAlpacaClient } from '@/core/broker/alpaca-client'
 
 describe('AlpacaClient trading methods', () => {
@@ -7,7 +7,10 @@ describe('AlpacaClient trading methods', () => {
 
         it('createOrder returns null', async () => {
             const result = await client.createOrder({
-                symbol: 'AAPL', side: 'buy', qty: 1, type: 'market',
+                symbol: 'AAPL',
+                side: 'buy',
+                qty: 1,
+                type: 'market',
             })
             expect(result).toBeNull()
         })

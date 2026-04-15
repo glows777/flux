@@ -13,8 +13,8 @@ import { prisma as defaultPrisma } from '@/core/db'
 
 /** Message with timestamp for transcript loading */
 interface TranscriptMessage {
-  readonly message: UIMessage
-  readonly createdAt: Date
+    readonly message: UIMessage
+    readonly createdAt: Date
 }
 
 // --- Constants ---
@@ -69,7 +69,11 @@ export async function listAllSessions(deps?: SessionDeps) {
     })
 }
 
-export async function createSession(symbol: string | null, firstMessage: string, deps?: SessionDeps) {
+export async function createSession(
+    symbol: string | null,
+    firstMessage: string,
+    deps?: SessionDeps,
+) {
     const { db } = deps ?? getDefaultDeps()
 
     const title = firstMessage.slice(0, TITLE_MAX_LENGTH)
@@ -92,14 +96,21 @@ export async function deleteSession(id: string, deps?: SessionDeps) {
     }
 }
 
-export async function renameSession(id: string, title: string, deps?: SessionDeps) {
+export async function renameSession(
+    id: string,
+    title: string,
+    deps?: SessionDeps,
+) {
     const { db } = deps ?? getDefaultDeps()
 
     if (!title || title.length === 0) {
         throw new SessionError('Title must not be empty', 'INVALID_INPUT')
     }
     if (title.length > TITLE_MAX_LENGTH) {
-        throw new SessionError(`Title must not exceed ${TITLE_MAX_LENGTH} characters`, 'INVALID_INPUT')
+        throw new SessionError(
+            `Title must not exceed ${TITLE_MAX_LENGTH} characters`,
+            'INVALID_INPUT',
+        )
     }
 
     try {
@@ -171,7 +182,10 @@ export async function clearChannelSession(
 
 // --- Message Persistence ---
 
-export async function loadMessages(sessionId: string, deps?: SessionDeps): Promise<UIMessage[]> {
+export async function loadMessages(
+    sessionId: string,
+    deps?: SessionDeps,
+): Promise<UIMessage[]> {
     const { db } = deps ?? getDefaultDeps()
 
     const rows = await db.chatMessage.findMany({
@@ -191,7 +205,11 @@ export async function loadMessages(sessionId: string, deps?: SessionDeps): Promi
     })
 }
 
-export async function appendMessage(sessionId: string, message: UIMessage, deps?: SessionDeps): Promise<void> {
+export async function appendMessage(
+    sessionId: string,
+    message: UIMessage,
+    deps?: SessionDeps,
+): Promise<void> {
     const { db } = deps ?? getDefaultDeps()
 
     await db.chatMessage.upsert({
@@ -228,9 +246,16 @@ export async function loadMessagesForTranscript(
 
     return rows.flatMap((row) => {
         try {
-            return [{ message: JSON.parse(row.content) as UIMessage, createdAt: row.createdAt }]
+            return [
+                {
+                    message: JSON.parse(row.content) as UIMessage,
+                    createdAt: row.createdAt,
+                },
+            ]
         } catch {
-            console.error(`[session] corrupted message ${row.id} in session ${sessionId}, skipping`)
+            console.error(
+                `[session] corrupted message ${row.id} in session ${sessionId}, skipping`,
+            )
             return []
         }
     })

@@ -1,6 +1,9 @@
 import { describe, expect, mock, test } from 'bun:test'
-import { withCoverage, type CoverageStore } from '@/core/market-data/common/coverage'
 import { CachedDataSource } from '@/core/market-data/common/cached-source'
+import {
+    type CoverageStore,
+    withCoverage,
+} from '@/core/market-data/common/coverage'
 import { MemoryStore } from '@/core/market-data/common/store-memory'
 
 describe('withCoverage', () => {
@@ -10,8 +13,8 @@ describe('withCoverage', () => {
         const coveredFrom = new Map<string, Date>()
         return {
             coveredFrom,
-            getCoveredFrom: mock(async (key: string) =>
-                coveredFrom.get(key) ?? null,
+            getCoveredFrom: mock(
+                async (key: string) => coveredFrom.get(key) ?? null,
             ),
             updateCoveredFrom: mock(async (key: string, from: Date) => {
                 coveredFrom.set(key, from)

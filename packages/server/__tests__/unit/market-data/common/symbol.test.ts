@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test'
-import { isValidSymbol, normalizeSymbol } from '@/core/market-data/common/symbol'
+import {
+    isValidSymbol,
+    normalizeSymbol,
+} from '@/core/market-data/common/symbol'
 
 describe('isValidSymbol', () => {
     test('accepts valid stock symbols', () => {

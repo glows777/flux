@@ -11,8 +11,13 @@
  */
 
 import YahooFinance from 'yahoo-finance2'
-import type { CompanyOverview, HistoryPoint, MarketDataClient, Quote } from './types'
 import { proxyFetch } from './proxy-fetch'
+import type {
+    CompanyOverview,
+    HistoryPoint,
+    MarketDataClient,
+    Quote,
+} from './types'
 
 /**
  * Yahoo Finance client implementing the MarketDataClient interface.
@@ -22,7 +27,9 @@ import { proxyFetch } from './proxy-fetch'
  * HTTPS_PROXY/HTTP_PROXY environment variables.
  */
 export class YahooFinanceClient implements MarketDataClient {
-    private readonly yf = new YahooFinance({ fetch: proxyFetch as typeof fetch })
+    private readonly yf = new YahooFinance({
+        fetch: proxyFetch as typeof fetch,
+    })
 
     /**
      * Get real-time quote for a symbol.
@@ -76,7 +83,15 @@ export class YahooFinanceClient implements MarketDataClient {
      * Search for symbols using Yahoo Finance search.
      * Wraps the underlying yf.search() for use by the search service.
      */
-    async search(query: string): Promise<{ quotes: Array<{ symbol?: string; isYahooFinance?: boolean; quoteType?: string; longname?: string; shortname?: string }> }> {
+    async search(query: string): Promise<{
+        quotes: Array<{
+            symbol?: string
+            isYahooFinance?: boolean
+            quoteType?: string
+            longname?: string
+            shortname?: string
+        }>
+    }> {
         return this.yf.search(query, { quotesCount: 10, newsCount: 0 })
     }
 
@@ -100,15 +115,20 @@ export class YahooFinanceClient implements MarketDataClient {
 
         // Sort ascending, then limit to requested number of days
         return result.quotes
-            .filter((q) => q.close != null)
-            .map((q) => ({
-                date: new Date(q.date),
-                open: q.open ?? q.close!,
-                high: q.high ?? q.close!,
-                low: q.low ?? q.close!,
-                close: q.close!,
-                volume: q.volume ?? undefined,
-            }))
+            .flatMap((q) => {
+                if (q.close == null) return []
+
+                return [
+                    {
+                        date: new Date(q.date),
+                        open: q.open ?? q.close,
+                        high: q.high ?? q.close,
+                        low: q.low ?? q.close,
+                        close: q.close,
+                        volume: q.volume ?? undefined,
+                    },
+                ]
+            })
             .sort((a, b) => a.date.getTime() - b.date.getTime())
             .slice(-days)
     }

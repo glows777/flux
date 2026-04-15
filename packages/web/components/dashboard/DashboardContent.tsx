@@ -1,5 +1,7 @@
 'use client'
 
+import type { DashboardData } from '@flux/shared'
+import { getGreeting } from '@flux/shared'
 import { Sparkles } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useCallback } from 'react'
@@ -7,8 +9,20 @@ import useSWR from 'swr'
 import { StatsGrid } from '@/components/dashboard/StatsGrid'
 import { Watchlist } from '@/components/dashboard/Watchlist'
 import { fetcher } from '@/lib/fetcher'
-import type { DashboardData } from '@flux/shared'
-import { getGreeting } from '@flux/shared'
+
+const WATCHLIST_SKELETON_KEYS = [
+    'watchlist-skeleton-1',
+    'watchlist-skeleton-2',
+    'watchlist-skeleton-3',
+    'watchlist-skeleton-4',
+    'watchlist-skeleton-5',
+] as const
+
+const STATS_SKELETON_KEYS = [
+    'stats-skeleton-1',
+    'stats-skeleton-2',
+    'stats-skeleton-3',
+] as const
 
 // ─── Skeleton components ───
 
@@ -20,9 +34,9 @@ function WatchlistSkeleton() {
                 <div className='h-3 w-3 bg-white/5 rounded animate-pulse' />
             </div>
             <div className='flex flex-col gap-3'>
-                {Array.from({ length: 5 }, (_, i) => (
+                {WATCHLIST_SKELETON_KEYS.map((key) => (
                     <div
-                        key={i}
+                        key={key}
                         className='animate-pulse rounded-2xl border border-white/5 bg-white/[0.02] p-5 flex items-center gap-4'
                     >
                         <div className='h-5 w-14 bg-white/5 rounded' />
@@ -40,9 +54,9 @@ function WatchlistSkeleton() {
 function StatsGridSkeleton() {
     return (
         <div className='grid grid-cols-1 md:grid-cols-3 gap-6'>
-            {Array.from({ length: 3 }, (_, i) => (
+            {STATS_SKELETON_KEYS.map((key) => (
                 <div
-                    key={i}
+                    key={key}
                     className='animate-pulse p-6 rounded-2xl border border-white/5 bg-white/[0.02]'
                 >
                     <div className='h-3 w-20 bg-white/5 rounded mb-3' />
@@ -67,17 +81,25 @@ export function DashboardContent() {
         mutate: mutateDashboard,
     } = useSWR<DashboardData>('/api/dashboard', fetcher)
 
-    const handleWatchlistDelete = useCallback((symbol: string) => {
-        mutateDashboard(
-            (prev) => prev ? {
-                ...prev,
-                watchlist: prev.watchlist
-                    ? prev.watchlist.filter(item => item.id !== symbol)
-                    : prev.watchlist,
-            } : prev,
-            { revalidate: true },
-        )
-    }, [mutateDashboard])
+    const handleWatchlistDelete = useCallback(
+        (symbol: string) => {
+            mutateDashboard(
+                (prev) =>
+                    prev
+                        ? {
+                              ...prev,
+                              watchlist: prev.watchlist
+                                  ? prev.watchlist.filter(
+                                        (item) => item.id !== symbol,
+                                    )
+                                  : prev.watchlist,
+                          }
+                        : prev,
+                { revalidate: true },
+            )
+        },
+        [mutateDashboard],
+    )
 
     const portfolio = dashboard?.portfolio
     const watchlistItems = dashboard?.watchlist
@@ -100,7 +122,11 @@ export function DashboardContent() {
                             </p>
                         )}
                     </div>
-                    <button type='button' onClick={() => router.push('/chat')} className='flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-xs font-medium rounded-lg transition-all hover:shadow-[0_0_15px_rgba(16,185,129,0.2)]'>
+                    <button
+                        type='button'
+                        onClick={() => router.push('/chat')}
+                        className='flex items-center gap-2 px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-xs font-medium rounded-lg transition-all hover:shadow-[0_0_15px_rgba(16,185,129,0.2)]'
+                    >
                         <Sparkles size={14} />
                         <span>询问 Flux AI</span>
                     </button>
@@ -110,9 +136,7 @@ export function DashboardContent() {
                 {dashboardLoading ? (
                     <StatsGridSkeleton />
                 ) : (
-                    <StatsGrid
-                        data={portfolio?.summary ?? null}
-                    />
+                    <StatsGrid data={portfolio?.summary ?? null} />
                 )}
 
                 {/* 自选股列表 */}

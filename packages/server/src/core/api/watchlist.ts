@@ -5,26 +5,23 @@
  * Uses dependency injection for testability.
  */
 
+import type { WatchlistItemWithChart } from '@flux/shared'
 import type { PrismaClient } from '@prisma/client'
 import { z } from 'zod'
 import { prisma as defaultPrisma } from '@/core/db'
 import {
+    type CompanyOverview,
     getHistoryRaw as defaultGetHistoryRaw,
     getInfo as defaultGetInfo,
     getQuote as defaultGetQuote,
-    type CompanyOverview,
     type HistoryPoint,
     type Quote,
 } from '@/core/market-data'
-import type { WatchlistItemWithChart } from '@flux/shared'
 
 interface WatchlistDeps {
     prisma: PrismaClient
     getQuote: (symbol: string) => Promise<Quote>
-    getHistoryRaw: (
-        symbol: string,
-        days: number,
-    ) => Promise<HistoryPoint[]>
+    getHistoryRaw: (symbol: string, days: number) => Promise<HistoryPoint[]>
 }
 
 export interface AddWatchlistDeps extends WatchlistDeps {
@@ -74,8 +71,7 @@ export const CHART_DAYS = 20
 export async function getWatchlistItems(
     deps?: WatchlistDeps,
 ): Promise<WatchlistItemWithChart[]> {
-    const { prisma, getQuote, getHistoryRaw } =
-        deps ?? getDefaultDeps()
+    const { prisma, getQuote, getHistoryRaw } = deps ?? getDefaultDeps()
 
     const watchlist = await prisma.watchlist.findMany({
         orderBy: { createdAt: 'asc' },
@@ -92,8 +88,12 @@ export async function getWatchlistItems(
                 getHistoryRaw(stock.symbol, CHART_DAYS),
             ])
 
-            const quote = quoteResult.status === 'fulfilled' ? quoteResult.value : null
-            const history = historyResult.status === 'fulfilled' ? historyResult.value : null
+            const quote =
+                quoteResult.status === 'fulfilled' ? quoteResult.value : null
+            const history =
+                historyResult.status === 'fulfilled'
+                    ? historyResult.value
+                    : null
 
             if (!quote || !history) {
                 return null
@@ -111,7 +111,9 @@ export async function getWatchlistItems(
         }),
     )
 
-    return results.filter((item): item is WatchlistItemWithChart => item !== null)
+    return results.filter(
+        (item): item is WatchlistItemWithChart => item !== null,
+    )
 }
 
 // ─── P2-08: Add to Watchlist ───
@@ -188,8 +190,7 @@ export async function addToWatchlist(
     })
 
     // 4. Resolve company name
-    const stockName =
-        providedName ?? (await resolveStockName(symbol, getInfo))
+    const stockName = providedName ?? (await resolveStockName(symbol, getInfo))
 
     // 5. Create record (handle TOCTOU race on unique constraint)
     try {

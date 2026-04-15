@@ -1,6 +1,9 @@
 import type { CacheStore } from './types'
 
-export interface CachedDataSourceOptions<T, P extends Record<string, unknown> = Record<string, never>> {
+export interface CachedDataSourceOptions<
+    T,
+    P extends Record<string, unknown> = Record<string, never>,
+> {
     readonly store: CacheStore<T, P>
     readonly fetchFn: (key: string) => Promise<T>
     readonly ttl: number
@@ -12,12 +15,18 @@ export interface CachedDataSourceOptions<T, P extends Record<string, unknown> = 
     readonly staleFallback?: boolean
 }
 
-export class CachedDataSource<T, P extends Record<string, unknown> = Record<string, never>> {
+export class CachedDataSource<
+    T,
+    P extends Record<string, unknown> = Record<string, never>,
+> {
     private readonly store: CacheStore<T, P>
     private readonly fetchFn: (key: string) => Promise<T>
     private readonly ttl: number
     private readonly strategy: 'simple' | 'tiered'
-    private readonly tieredOptions?: { recentWindowDays: number; recentTtl: number }
+    private readonly tieredOptions?: {
+        recentWindowDays: number
+        recentTtl: number
+    }
     private readonly staleFallback: boolean
     private readonly inflight = new Map<string, Promise<T>>()
 

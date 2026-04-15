@@ -70,7 +70,10 @@ export interface AlpacaClient {
     getAccount(): Promise<AlpacaAccount | null>
     getPositions(): Promise<AlpacaPosition[]>
     getPosition(symbol: string): Promise<AlpacaPosition | null>
-    getOrders(params?: { status?: string; limit?: number }): Promise<AlpacaOrder[]>
+    getOrders(params?: {
+        status?: string
+        limit?: number
+    }): Promise<AlpacaOrder[]>
     isConfigured(): boolean
     createOrder(params: CreateOrderParams): Promise<AlpacaOrder | null>
     cancelOrder(orderId: string): Promise<boolean>
@@ -133,7 +136,8 @@ export function mapOrder(raw: Record<string, unknown>): AlpacaOrder {
         limitPrice: parseNumOrNull(raw.limit_price),
         stopPrice: parseNumOrNull(raw.stop_price),
         trailPercent: parseNumOrNull(raw.trail_percent),
-        timeInForce: raw.time_in_force != null ? String(raw.time_in_force) : null,
+        timeInForce:
+            raw.time_in_force != null ? String(raw.time_in_force) : null,
     }
 }
 
@@ -141,7 +145,8 @@ export function mapOrder(raw: Record<string, unknown>): AlpacaOrder {
 
 export function createAlpacaClient(config?: AlpacaClientConfig): AlpacaClient {
     const resolvedKeyId = config?.keyId ?? process.env.ALPACA_API_KEY_ID
-    const resolvedSecretKey = config?.secretKey ?? process.env.ALPACA_API_SECRET_KEY
+    const resolvedSecretKey =
+        config?.secretKey ?? process.env.ALPACA_API_SECRET_KEY
 
     const configured = Boolean(resolvedKeyId && resolvedSecretKey)
 
@@ -173,7 +178,10 @@ export function createAlpacaClient(config?: AlpacaClientConfig): AlpacaClient {
         async getPositions(): Promise<AlpacaPosition[]> {
             if (!sdk) return []
             try {
-                const raw = (await sdk.getPositions()) as Record<string, unknown>[]
+                const raw = (await sdk.getPositions()) as Record<
+                    string,
+                    unknown
+                >[]
                 return raw.map(mapPosition)
             } catch (error) {
                 console.warn('[alpaca] getPositions failed:', error)
@@ -200,7 +208,10 @@ export function createAlpacaClient(config?: AlpacaClientConfig): AlpacaClient {
             }
         },
 
-        async getOrders(params?: { status?: string; limit?: number }): Promise<AlpacaOrder[]> {
+        async getOrders(params?: {
+            status?: string
+            limit?: number
+        }): Promise<AlpacaOrder[]> {
             if (!sdk) return []
             try {
                 const raw = (await sdk.getOrders({
@@ -219,7 +230,9 @@ export function createAlpacaClient(config?: AlpacaClientConfig): AlpacaClient {
             }
         },
 
-        async createOrder(params: CreateOrderParams): Promise<AlpacaOrder | null> {
+        async createOrder(
+            params: CreateOrderParams,
+        ): Promise<AlpacaOrder | null> {
             if (!sdk) return null
             try {
                 const raw = await sdk.createOrder({
@@ -228,9 +241,15 @@ export function createAlpacaClient(config?: AlpacaClientConfig): AlpacaClient {
                     side: params.side,
                     type: params.type,
                     time_in_force: params.timeInForce ?? 'day',
-                    ...(params.limitPrice != null && { limit_price: params.limitPrice }),
-                    ...(params.stopPrice != null && { stop_price: params.stopPrice }),
-                    ...(params.trailPercent != null && { trail_percent: params.trailPercent }),
+                    ...(params.limitPrice != null && {
+                        limit_price: params.limitPrice,
+                    }),
+                    ...(params.stopPrice != null && {
+                        stop_price: params.stopPrice,
+                    }),
+                    ...(params.trailPercent != null && {
+                        trail_percent: params.trailPercent,
+                    }),
                 })
                 return mapOrder(raw as Record<string, unknown>)
             } catch (error) {

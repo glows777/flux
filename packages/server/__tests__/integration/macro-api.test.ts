@@ -8,10 +8,10 @@
 
 import { beforeEach, describe, expect, it } from 'bun:test'
 import './setup'
-import { mockGetMacroIndicators } from './helpers/mock-boundaries'
 
 // Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
+import { mockGetMacroIndicators } from './helpers/mock-boundaries'
 
 // ==================== Mock data ====================
 
@@ -31,7 +31,9 @@ const app = createHonoApp()
 describe('GET /api/macro', () => {
     beforeEach(() => {
         mockGetMacroIndicators.mockReset()
-        mockGetMacroIndicators.mockImplementation(() => Promise.resolve(mockMacroData))
+        mockGetMacroIndicators.mockImplementation(() =>
+            Promise.resolve(mockMacroData),
+        )
     })
 
     // ============= T06-11: GET /api/macro returns 200 + data =============
@@ -69,7 +71,12 @@ describe('GET /api/macro', () => {
             const json = await res.json()
             const names = json.data.map((t: { sym: string }) => t.sym)
 
-            expect(names).toEqual(['标普500', '纳斯达克100', '十年美债', '恐慌指数'])
+            expect(names).toEqual([
+                '标普500',
+                '纳斯达克100',
+                '十年美债',
+                '恐慌指数',
+            ])
         })
 
         it('returns 500 when getMacroIndicators throws unexpectedly', async () => {

@@ -9,11 +9,11 @@
 
 import { tool } from 'ai'
 import { z } from 'zod'
-import { createTools } from '@/core/ai/tools'
-import { createTradingTools } from '@/core/ai/trading-tools'
 import { createMemoryTools } from '@/core/ai/memory/tools'
 import { createResearchTools } from '@/core/ai/research'
 import { withTimeout } from '@/core/ai/timeout'
+import { createTools } from '@/core/ai/tools'
+import { createTradingTools } from '@/core/ai/trading-tools'
 import { calculateTradePnl } from './pnl'
 import type { TradingAgentDeps } from './types'
 
@@ -32,7 +32,8 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
 
     // ── Reused tool sets ──────────────────────────────────────────────────
 
-    const { memory_read, memory_write, memory_list } = createMemoryTools(memoryDeps)
+    const { memory_read, memory_write, memory_list } =
+        createMemoryTools(memoryDeps)
 
     const { getHistory, calculateIndicators } = createTools(toolDeps)
 
@@ -44,39 +45,92 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
             return { price: r?.price ?? 0 }
         },
     }
-    const { getPortfolio, closePosition, cancelOrder } = createTradingTools(tradingToolDeps)
+    const { getPortfolio, closePosition, cancelOrder } =
+        createTradingTools(tradingToolDeps)
 
     const { webSearch, webFetch } = createResearchTools(researchDeps)
 
     // ── New: placeOrder (guard-free, all 5 order types) ───────────────────
 
     const placeOrder = tool({
-        description: '下单买入或卖出股票（无风控检查）。支持 market/limit/stop/stop_limit/trailing_stop 五种订单类型。必须提供交易理由。',
+        description:
+            '下单买入或卖出股票（无风控检查）。支持 market/limit/stop/stop_limit/trailing_stop 五种订单类型。必须提供交易理由。',
         inputSchema: z.object({
             symbol: z.string().describe('股票代码'),
             side: z.enum(['buy', 'sell']).describe('买入或卖出'),
             qty: z.number().positive().describe('数量'),
-            type: z.enum(['market', 'limit', 'stop', 'stop_limit', 'trailing_stop']).describe('订单类型'),
-            reasoning: z.string().min(1).describe('交易理由（入场理由、目标价、止损位）'),
-            limitPrice: z.number().optional().describe('限价单价格（limit/stop_limit 必填）'),
-            stopPrice: z.number().optional().describe('止损价格（stop/stop_limit 必填）'),
-            trailPercent: z.number().optional().describe('追踪止损百分比（trailing_stop 必填）'),
-            timeInForce: z.enum(['day', 'gtc', 'ioc', 'fok']).optional().describe('订单有效期，默认 day'),
+            type: z
+                .enum([
+                    'market',
+                    'limit',
+                    'stop',
+                    'stop_limit',
+                    'trailing_stop',
+                ])
+                .describe('订单类型'),
+            reasoning: z
+                .string()
+                .min(1)
+                .describe('交易理由（入场理由、目标价、止损位）'),
+            limitPrice: z
+                .number()
+                .optional()
+                .describe('限价单价格（limit/stop_limit 必填）'),
+            stopPrice: z
+                .number()
+                .optional()
+                .describe('止损价格（stop/stop_limit 必填）'),
+            trailPercent: z
+                .number()
+                .optional()
+                .describe('追踪止损百分比（trailing_stop 必填）'),
+            timeInForce: z
+                .enum(['day', 'gtc', 'ioc', 'fok'])
+                .optional()
+                .describe('订单有效期，默认 day'),
         }),
-        execute: async ({ symbol, side, qty, type, reasoning, limitPrice, stopPrice, trailPercent, timeInForce }) => {
+        execute: async ({
+            symbol,
+            side,
+            qty,
+            type,
+            reasoning,
+            limitPrice,
+            stopPrice,
+            trailPercent,
+            timeInForce,
+        }) => {
             try {
                 if (!alpacaClient.isConfigured()) {
                     return { error: 'Alpaca 未配置' }
                 }
 
                 // Validate order type params
-                if (type === 'limit' && limitPrice == null) return { error: 'limit 订单必须提供 limitPrice' }
-                if (type === 'stop' && stopPrice == null) return { error: 'stop 订单必须提供 stopPrice' }
-                if (type === 'stop_limit' && (limitPrice == null || stopPrice == null)) return { error: 'stop_limit 订单必须提供 limitPrice 和 stopPrice' }
-                if (type === 'trailing_stop' && trailPercent == null) return { error: 'trailing_stop 订单必须提供 trailPercent' }
+                if (type === 'limit' && limitPrice == null)
+                    return { error: 'limit 订单必须提供 limitPrice' }
+                if (type === 'stop' && stopPrice == null)
+                    return { error: 'stop 订单必须提供 stopPrice' }
+                if (
+                    type === 'stop_limit' &&
+                    (limitPrice == null || stopPrice == null)
+                )
+                    return {
+                        error: 'stop_limit 订单必须提供 limitPrice 和 stopPrice',
+                    }
+                if (type === 'trailing_stop' && trailPercent == null)
+                    return { error: 'trailing_stop 订单必须提供 trailPercent' }
 
                 const alpacaOrder = await withTimeout(
-                    alpacaClient.createOrder({ symbol, side, qty, type, limitPrice, stopPrice, trailPercent, timeInForce }),
+                    alpacaClient.createOrder({
+                        symbol,
+                        side,
+                        qty,
+                        type,
+                        limitPrice,
+                        stopPrice,
+                        trailPercent,
+                        timeInForce,
+                    }),
                     TOOL_TIMEOUTS.placeOrder,
                     'createOrder',
                 )
@@ -96,7 +150,9 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
                         status: alpacaOrder.status,
                         filledQty: alpacaOrder.filledQty,
                         filledAvgPrice: alpacaOrder.filledAvgPrice,
-                        filledAt: alpacaOrder.filledAt ? new Date(alpacaOrder.filledAt) : null,
+                        filledAt: alpacaOrder.filledAt
+                            ? new Date(alpacaOrder.filledAt)
+                            : null,
                         reasoning,
                     },
                 })
@@ -113,7 +169,10 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
                     },
                 }
             } catch (error) {
-                return { error: error instanceof Error ? error.message : String(error) }
+                return {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                }
             }
         },
     })
@@ -134,7 +193,10 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
                 )
                 return { symbol, price: result?.price ?? 0 }
             } catch (error) {
-                return { error: error instanceof Error ? error.message : String(error) }
+                return {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                }
             }
         },
     })
@@ -173,10 +235,21 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
                     qty: Number(o.qty),
                     type: String(o.type),
                     status: String(o.status),
-                    filledAvgPrice: o.filledAvgPrice != null ? Number(o.filledAvgPrice) : null,
-                    filledAt: o.filledAt instanceof Date ? o.filledAt : o.filledAt != null ? new Date(String(o.filledAt)) : null,
+                    filledAvgPrice:
+                        o.filledAvgPrice != null
+                            ? Number(o.filledAvgPrice)
+                            : null,
+                    filledAt:
+                        o.filledAt instanceof Date
+                            ? o.filledAt
+                            : o.filledAt != null
+                              ? new Date(String(o.filledAt))
+                              : null,
                     reasoning: o.reasoning != null ? String(o.reasoning) : null,
-                    createdAt: o.createdAt instanceof Date ? o.createdAt : new Date(String(o.createdAt)),
+                    createdAt:
+                        o.createdAt instanceof Date
+                            ? o.createdAt
+                            : new Date(String(o.createdAt)),
                 }))
 
                 // Run FIFO P&L over full history, then slice for output
@@ -188,7 +261,10 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
                     total: allOrders.length,
                 }
             } catch (error) {
-                return { error: error instanceof Error ? error.message : String(error) }
+                return {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                }
             }
         },
     })
@@ -201,21 +277,41 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
         execute: async () => {
             try {
                 const pendingOrders = await db.order.findMany({
-                    where: { status: { in: ['new', 'partially_filled', 'accepted', 'pending_new'] } },
+                    where: {
+                        status: {
+                            in: [
+                                'new',
+                                'partially_filled',
+                                'accepted',
+                                'pending_new',
+                            ],
+                        },
+                    },
                     orderBy: { createdAt: 'desc' },
                 })
                 return {
-                    orders: pendingOrders.map(o => ({
-                        id: o.id, symbol: o.symbol, side: o.side, qty: o.qty,
-                        type: o.type, status: o.status,
-                        limitPrice: o.limitPrice, stopPrice: o.stopPrice,
-                        trailPercent: o.trailPercent, timeInForce: o.timeInForce,
-                        filledQty: o.filledQty, reasoning: o.reasoning, createdAt: o.createdAt,
+                    orders: pendingOrders.map((o) => ({
+                        id: o.id,
+                        symbol: o.symbol,
+                        side: o.side,
+                        qty: o.qty,
+                        type: o.type,
+                        status: o.status,
+                        limitPrice: o.limitPrice,
+                        stopPrice: o.stopPrice,
+                        trailPercent: o.trailPercent,
+                        timeInForce: o.timeInForce,
+                        filledQty: o.filledQty,
+                        reasoning: o.reasoning,
+                        createdAt: o.createdAt,
                     })),
                     total: pendingOrders.length,
                 }
             } catch (error) {
-                return { error: error instanceof Error ? error.message : String(error) }
+                return {
+                    error:
+                        error instanceof Error ? error.message : String(error),
+                }
             }
         },
     })

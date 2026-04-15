@@ -1,38 +1,35 @@
 // @flux/shared — types, schemas, constants, utilities
 
-// ─── Domain Types ───
-export type {
-    MacroTicker,
-    WatchlistItem,
-    WatchlistItemWithChart,
-    NewsItem,
-    HoldingItem,
-    PortfolioSummary,
-    PortfolioData,
-    StockMetrics,
-} from './types/domain'
-
-// ─── API Types ───
-export type { DashboardData } from './types/api'
-
+export type { Period } from './constants'
 // ─── Constants ───
 export { VALID_PERIODS } from './constants'
-export type { Period } from './constants'
-
 // ─── Schemas ───
-export { SYMBOL_PATTERN, symbolSchema, periodSchema } from './schemas/stock'
+export { periodSchema, SYMBOL_PATTERN, symbolSchema } from './schemas/stock'
+// ─── API Types ───
+export type { DashboardData } from './types/api'
+// ─── Domain Types ───
+export type {
+    HoldingItem,
+    MacroTicker,
+    NewsItem,
+    PortfolioData,
+    PortfolioSummary,
+    StockMetrics,
+    WatchlistItem,
+    WatchlistItemWithChart,
+} from './types/domain'
 
 // ─── Utilities ───
 export {
     formatCurrency,
-    formatSignedCurrency,
-    formatPercent,
+    formatDividendYield,
+    formatEPS,
+    formatLargeNumber,
     formatMarketCap,
     formatPE,
-    formatEPS,
-    formatDividendYield,
-    formatLargeNumber,
-    getVixLabel,
-    getGreeting,
+    formatPercent,
     formatRelativeTime,
+    formatSignedCurrency,
+    getGreeting,
+    getVixLabel,
 } from './utils/format'

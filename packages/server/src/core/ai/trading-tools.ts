@@ -1,8 +1,15 @@
 import { tool } from 'ai'
 import { z } from 'zod'
+import type {
+    AlpacaClient,
+    CreateOrderParams,
+} from '@/core/broker/alpaca-client'
+import {
+    checkGuards,
+    type GuardContext,
+    type OrderRecord,
+} from '@/core/broker/guard'
 import { withTimeout } from './timeout'
-import type { AlpacaClient, CreateOrderParams } from '@/core/broker/alpaca-client'
-import { checkGuards, type GuardContext, type OrderRecord } from '@/core/broker/guard'
 
 // ─── Types ───
 
@@ -10,10 +17,18 @@ export interface TradingToolDeps {
     readonly alpacaClient: AlpacaClient
     readonly db: {
         readonly order: {
-            create(args: { data: Record<string, unknown> }): Promise<Record<string, unknown>>
-            findMany(args: Record<string, unknown>): Promise<Record<string, unknown>[]>
-            findUnique(args: Record<string, unknown>): Promise<Record<string, unknown> | null>
-            update(args: Record<string, unknown>): Promise<Record<string, unknown>>
+            create(args: {
+                data: Record<string, unknown>
+            }): Promise<Record<string, unknown>>
+            findMany(
+                args: Record<string, unknown>,
+            ): Promise<Record<string, unknown>[]>
+            findUnique(
+                args: Record<string, unknown>,
+            ): Promise<Record<string, unknown> | null>
+            update(
+                args: Record<string, unknown>,
+            ): Promise<Record<string, unknown>>
         }
     }
     readonly getQuote: (symbol: string) => Promise<{ price: number }>
@@ -59,7 +74,9 @@ function getStartOfTradingDay(now: Date = new Date()): Date {
     return new Date(Date.UTC(year, month - 1, day, 5))
 }
 
-async function getTodayFilledOrders(db: TradingToolDeps['db']): Promise<OrderRecord[]> {
+async function getTodayFilledOrders(
+    db: TradingToolDeps['db'],
+): Promise<OrderRecord[]> {
     const today = getStartOfTradingDay()
 
     const orders = await db.order.findMany({
@@ -75,8 +92,12 @@ async function getTodayFilledOrders(db: TradingToolDeps['db']): Promise<OrderRec
         qty: Number(o.qty),
         status: String(o.status),
         filledQty: o.filledQty != null ? Number(o.filledQty) : null,
-        filledAvgPrice: o.filledAvgPrice != null ? Number(o.filledAvgPrice) : null,
-        createdAt: o.createdAt instanceof Date ? o.createdAt : new Date(String(o.createdAt)),
+        filledAvgPrice:
+            o.filledAvgPrice != null ? Number(o.filledAvgPrice) : null,
+        createdAt:
+            o.createdAt instanceof Date
+                ? o.createdAt
+                : new Date(String(o.createdAt)),
     }))
 }
 
@@ -92,8 +113,13 @@ export function createTradingTools(deps: TradingToolDeps) {
                 symbol: z.string().describe('股票代码'),
                 side: z.enum(['buy', 'sell']).describe('买入或卖出'),
                 qty: z.number().positive().describe('数量'),
-                type: z.enum(['market']).describe('订单类型（当前只支持市价单）'),
-                reasoning: z.string().min(1).describe('交易理由（入场理由、目标价、止损位）'),
+                type: z
+                    .enum(['market'])
+                    .describe('订单类型（当前只支持市价单）'),
+                reasoning: z
+                    .string()
+                    .min(1)
+                    .describe('交易理由（入场理由、目标价、止损位）'),
             }),
             execute: async ({ symbol, side, qty, type, reasoning }) => {
                 try {
@@ -115,8 +141,17 @@ export function createTradingTools(deps: TradingToolDeps) {
 
                     const todayOrders = await getTodayFilledOrders(db)
 
-                    const guardContext: GuardContext = { account, todayOrders, currentPrice }
-                    const params: CreateOrderParams = { symbol, side, qty, type }
+                    const guardContext: GuardContext = {
+                        account,
+                        todayOrders,
+                        currentPrice,
+                    }
+                    const params: CreateOrderParams = {
+                        symbol,
+                        side,
+                        qty,
+                        type,
+                    }
                     const guardResult = checkGuards(params, guardContext)
 
                     if (!guardResult.passed) {
@@ -143,7 +178,9 @@ export function createTradingTools(deps: TradingToolDeps) {
                             status: alpacaOrder.status,
                             filledQty: alpacaOrder.filledQty,
                             filledAvgPrice: alpacaOrder.filledAvgPrice,
-                            filledAt: alpacaOrder.filledAt ? new Date(alpacaOrder.filledAt) : null,
+                            filledAt: alpacaOrder.filledAt
+                                ? new Date(alpacaOrder.filledAt)
+                                : null,
                             reasoning,
                         },
                     })
@@ -160,7 +197,12 @@ export function createTradingTools(deps: TradingToolDeps) {
                         },
                     }
                 } catch (error) {
-                    return { error: error instanceof Error ? error.message : String(error) }
+                    return {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    }
                 }
             },
         }),
@@ -172,7 +214,9 @@ export function createTradingTools(deps: TradingToolDeps) {
             }),
             execute: async ({ orderId }) => {
                 try {
-                    const order = await db.order.findUnique({ where: { id: orderId } })
+                    const order = await db.order.findUnique({
+                        where: { id: orderId },
+                    })
                     if (!order) return { error: '订单不存在' }
 
                     const alpacaOrderId = String(order.alpacaOrderId)
@@ -191,13 +235,19 @@ export function createTradingTools(deps: TradingToolDeps) {
 
                     return { success: true, orderId }
                 } catch (error) {
-                    return { error: error instanceof Error ? error.message : String(error) }
+                    return {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    }
                 }
             },
         }),
 
         closePosition: tool({
-            description: '平仓某只股票的全部持仓。不经过风控检查（减少风险敞口永远允许）。',
+            description:
+                '平仓某只股票的全部持仓。不经过风控检查（减少风险敞口永远允许）。',
             inputSchema: z.object({
                 symbol: z.string().describe('股票代码'),
                 reasoning: z.string().min(1).describe('平仓理由'),
@@ -227,7 +277,9 @@ export function createTradingTools(deps: TradingToolDeps) {
                             status: alpacaOrder.status,
                             filledQty: alpacaOrder.filledQty,
                             filledAvgPrice: alpacaOrder.filledAvgPrice,
-                            filledAt: alpacaOrder.filledAt ? new Date(alpacaOrder.filledAt) : null,
+                            filledAt: alpacaOrder.filledAt
+                                ? new Date(alpacaOrder.filledAt)
+                                : null,
                             reasoning,
                         },
                     })
@@ -244,7 +296,12 @@ export function createTradingTools(deps: TradingToolDeps) {
                         },
                     }
                 } catch (error) {
-                    return { error: error instanceof Error ? error.message : String(error) }
+                    return {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    }
                 }
             },
         }),
@@ -255,12 +312,26 @@ export function createTradingTools(deps: TradingToolDeps) {
             execute: async () => {
                 try {
                     const [account, positions] = await Promise.all([
-                        withTimeout(alpacaClient.getAccount(), TOOL_TIMEOUTS.getPortfolio, 'getAccount'),
-                        withTimeout(alpacaClient.getPositions(), TOOL_TIMEOUTS.getPortfolio, 'getPositions'),
+                        withTimeout(
+                            alpacaClient.getAccount(),
+                            TOOL_TIMEOUTS.getPortfolio,
+                            'getAccount',
+                        ),
+                        withTimeout(
+                            alpacaClient.getPositions(),
+                            TOOL_TIMEOUTS.getPortfolio,
+                            'getPositions',
+                        ),
                     ])
 
                     return {
-                        account: account ?? { equity: 0, cash: 0, buyingPower: 0, lastEquity: 0, longMarketValue: 0 },
+                        account: account ?? {
+                            equity: 0,
+                            cash: 0,
+                            buyingPower: 0,
+                            lastEquity: 0,
+                            longMarketValue: 0,
+                        },
                         positions: positions.map((p) => ({
                             symbol: p.symbol,
                             qty: p.qty,
@@ -271,7 +342,12 @@ export function createTradingTools(deps: TradingToolDeps) {
                         })),
                     }
                 } catch (error) {
-                    return { error: error instanceof Error ? error.message : String(error) }
+                    return {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    }
                 }
             },
         }),
@@ -280,9 +356,19 @@ export function createTradingTools(deps: TradingToolDeps) {
             description: '查询本地交易历史记录（含交易理由）',
             inputSchema: z.object({
                 symbol: z.string().optional().describe('按股票代码过滤'),
-                startDate: z.string().optional().describe('开始日期 (ISO format)'),
-                endDate: z.string().optional().describe('结束日期 (ISO format)'),
-                limit: z.number().optional().default(20).describe('最多返回条数'),
+                startDate: z
+                    .string()
+                    .optional()
+                    .describe('开始日期 (ISO format)'),
+                endDate: z
+                    .string()
+                    .optional()
+                    .describe('结束日期 (ISO format)'),
+                limit: z
+                    .number()
+                    .optional()
+                    .default(20)
+                    .describe('最多返回条数'),
             }),
             execute: async ({ symbol, startDate, endDate, limit }) => {
                 try {
@@ -317,7 +403,12 @@ export function createTradingTools(deps: TradingToolDeps) {
                         total: orders.length,
                     }
                 } catch (error) {
-                    return { error: error instanceof Error ? error.message : String(error) }
+                    return {
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    }
                 }
             },
         }),

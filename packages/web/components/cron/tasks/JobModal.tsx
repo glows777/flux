@@ -1,15 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import * as Select from '@radix-ui/react-select'
 import * as Switch from '@radix-ui/react-switch'
-import { X, ChevronDown } from 'lucide-react'
+import { ChevronDown, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import type { CronJobRow } from '../types'
 
 interface JobModalProps {
     open: boolean
-    job: CronJobRow | null   // null = create mode
+    job: CronJobRow | null // null = create mode
     onClose: () => void
     onSaved: () => void
 }
@@ -43,7 +43,7 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
             setEnabled(true)
         }
         setError(null)
-    }, [job, open])
+    }, [job])
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -55,7 +55,9 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
             schedule,
             taskPayload: { prompt },
             ...(job ? { enabled } : { taskType }),
-            ...(channelId ? { channelTarget: { type: 'discord', channelId } } : {}),
+            ...(channelId
+                ? { channelTarget: { type: 'discord', channelId } }
+                : {}),
         }
 
         try {
@@ -85,15 +87,27 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
                         <Dialog.Title className='text-sm font-medium text-white'>
                             {job ? 'Edit Job' : 'New Cron Job'}
                         </Dialog.Title>
-                        <button type='button' onClick={onClose} className='text-slate-500 hover:text-white transition-colors'>
+                        <button
+                            type='button'
+                            onClick={onClose}
+                            className='text-slate-500 hover:text-white transition-colors'
+                        >
                             <X className='w-4 h-4' />
                         </button>
                     </div>
 
-                    <form onSubmit={handleSubmit} className='flex flex-col gap-4'>
+                    <form
+                        onSubmit={handleSubmit}
+                        className='flex flex-col gap-4'
+                    >
                         {/* Name */}
                         <div className='flex flex-col gap-1.5'>
-                            <label htmlFor='job-name' className='text-xs text-slate-400'>Name</label>
+                            <label
+                                htmlFor='job-name'
+                                className='text-xs text-slate-400'
+                            >
+                                Name
+                            </label>
                             <input
                                 id='job-name'
                                 required
@@ -106,7 +120,12 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
 
                         {/* Schedule */}
                         <div className='flex flex-col gap-1.5'>
-                            <label htmlFor='job-schedule' className='text-xs text-slate-400'>Schedule</label>
+                            <label
+                                htmlFor='job-schedule'
+                                className='text-xs text-slate-400'
+                            >
+                                Schedule
+                            </label>
                             <input
                                 id='job-schedule'
                                 required
@@ -115,14 +134,29 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
                                 className='px-3 py-2 text-xs bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/50 font-mono'
                                 placeholder='every:30m  or  0 9 * * 1-5'
                             />
-                            <span className='text-[10px] text-slate-600'>Use <code>every:5m</code>, <code>every:2h</code>, or a standard cron expression. Min interval: 60s.</span>
+                            <span className='text-[10px] text-slate-600'>
+                                Use <code>every:5m</code>, <code>every:2h</code>
+                                , or a standard cron expression. Min interval:
+                                60s.
+                            </span>
                         </div>
 
                         {/* Task Type */}
                         <div className='flex flex-col gap-1.5'>
-                            <label className='text-xs text-slate-400'>Task Type</label>
-                            <Select.Root value={taskType} onValueChange={setTaskType}>
-                                <Select.Trigger className='flex items-center justify-between px-3 py-2 text-xs bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-emerald-500/50'>
+                            <label
+                                htmlFor='job-task-type'
+                                className='text-xs text-slate-400'
+                            >
+                                Task Type
+                            </label>
+                            <Select.Root
+                                value={taskType}
+                                onValueChange={setTaskType}
+                            >
+                                <Select.Trigger
+                                    id='job-task-type'
+                                    className='flex items-center justify-between px-3 py-2 text-xs bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-emerald-500/50'
+                                >
                                     <Select.Value />
                                     <ChevronDown className='w-3 h-3 text-slate-400' />
                                 </Select.Trigger>
@@ -135,7 +169,9 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
                                                     value={t}
                                                     className='px-3 py-1.5 text-xs text-slate-400 cursor-pointer rounded outline-none data-[highlighted]:bg-white/5 data-[highlighted]:text-white'
                                                 >
-                                                    <Select.ItemText>{t}</Select.ItemText>
+                                                    <Select.ItemText>
+                                                        {t}
+                                                    </Select.ItemText>
                                                 </Select.Item>
                                             ))}
                                         </Select.Viewport>
@@ -146,7 +182,12 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
 
                         {/* Prompt */}
                         <div className='flex flex-col gap-1.5'>
-                            <label htmlFor='job-prompt' className='text-xs text-slate-400'>Prompt</label>
+                            <label
+                                htmlFor='job-prompt'
+                                className='text-xs text-slate-400'
+                            >
+                                Prompt
+                            </label>
                             <textarea
                                 id='job-prompt'
                                 required
@@ -160,7 +201,15 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
 
                         {/* Channel ID (optional) */}
                         <div className='flex flex-col gap-1.5'>
-                            <label htmlFor='job-channel-id' className='text-xs text-slate-400'>Discord Channel ID <span className='text-slate-600'>(optional)</span></label>
+                            <label
+                                htmlFor='job-channel-id'
+                                className='text-xs text-slate-400'
+                            >
+                                Discord Channel ID{' '}
+                                <span className='text-slate-600'>
+                                    (optional)
+                                </span>
+                            </label>
                             <input
                                 id='job-channel-id'
                                 value={channelId}
@@ -173,8 +222,14 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
                         {/* Enabled toggle (edit mode only) */}
                         {job && (
                             <div className='flex items-center justify-between'>
-                                <label className='text-xs text-slate-400'>Enabled</label>
+                                <label
+                                    htmlFor='job-enabled'
+                                    className='text-xs text-slate-400'
+                                >
+                                    Enabled
+                                </label>
                                 <Switch.Root
+                                    id='job-enabled'
                                     checked={enabled}
                                     onCheckedChange={setEnabled}
                                     className='w-9 h-5 bg-slate-700 rounded-full relative data-[state=checked]:bg-emerald-500 transition-colors focus:outline-none'
@@ -186,7 +241,9 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
 
                         {/* Error */}
                         {error && (
-                            <p className='text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-lg'>{error}</p>
+                            <p className='text-xs text-red-400 bg-red-500/10 px-3 py-2 rounded-lg'>
+                                {error}
+                            </p>
                         )}
 
                         {/* Actions */}
@@ -203,7 +260,11 @@ export function JobModal({ open, job, onClose, onSaved }: JobModalProps) {
                                 disabled={saving}
                                 className='px-4 py-1.5 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/30 transition-colors disabled:opacity-50'
                             >
-                                {saving ? 'Saving...' : job ? 'Save Changes' : 'Create Job'}
+                                {saving
+                                    ? 'Saving...'
+                                    : job
+                                      ? 'Save Changes'
+                                      : 'Create Job'}
                             </button>
                         </div>
                     </form>

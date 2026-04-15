@@ -1,14 +1,19 @@
-import { describe, expect, mock, test, beforeEach } from 'bun:test'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { CoverageStore } from '@/core/market-data/common/coverage'
+import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
+import type {
+    CacheEntry,
+    CacheStore,
+    HistoryPoint,
+    HistoryStoreParams,
+} from '@/core/market-data/common/types'
+import type { YahooFinanceClient } from '@/core/market-data/common/yahoo-client'
 import {
     createHistoryService,
     getDaysForPeriod,
-    VALID_PERIODS,
     type HistoryService,
+    VALID_PERIODS,
 } from '@/core/market-data/history/index'
-import type { HistoryPoint, CacheStore, CacheEntry, HistoryStoreParams } from '@/core/market-data/common/types'
-import type { YahooFinanceClient } from '@/core/market-data/common/yahoo-client'
-import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
-import type { CoverageStore } from '@/core/market-data/common/coverage'
 
 function makeHistoryPoints(count: number): HistoryPoint[] {
     const base = new Date('2024-01-01')
@@ -22,13 +27,25 @@ function makeHistoryPoints(count: number): HistoryPoint[] {
     }))
 }
 
-function createMockHistoryStore(): CacheStore<HistoryPoint[], HistoryStoreParams> {
+function createMockHistoryStore(): CacheStore<
+    HistoryPoint[],
+    HistoryStoreParams
+> {
     const data = new Map<string, CacheEntry<HistoryPoint[]>>()
     return {
-        get: mock(async (key: string, _params?: HistoryStoreParams) => data.get(key) ?? null),
-        set: mock(async (key: string, value: HistoryPoint[], _params?: HistoryStoreParams) => {
-            data.set(key, { data: value, fetchedAt: new Date() })
-        }),
+        get: mock(
+            async (key: string, _params?: HistoryStoreParams) =>
+                data.get(key) ?? null,
+        ),
+        set: mock(
+            async (
+                key: string,
+                value: HistoryPoint[],
+                _params?: HistoryStoreParams,
+            ) => {
+                data.set(key, { data: value, fetchedAt: new Date() })
+            },
+        ),
     }
 }
 

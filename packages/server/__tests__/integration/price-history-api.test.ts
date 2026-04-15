@@ -12,14 +12,18 @@
 
 import { beforeEach, describe, expect, it } from 'bun:test'
 import './setup'
-import { mockGetStockHistory } from './helpers/mock-boundaries'
 
 // Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
+import { mockGetStockHistory } from './helpers/mock-boundaries'
 
 // ==================== Mock data helpers ====================
 
-function createMockHistoryResult(symbol: string, period: string, count: number) {
+function createMockHistoryResult(
+    symbol: string,
+    period: string,
+    count: number,
+) {
     return {
         symbol,
         period,
@@ -42,13 +46,20 @@ const app = createHonoApp()
 describe('GET /api/stocks/:symbol/history', () => {
     beforeEach(() => {
         mockGetStockHistory.mockReset()
-        mockGetStockHistory.mockImplementation(async (symbol: string, period: string) => {
-            const periodDays: Record<string, number> = {
-                '1D': 1, '1W': 5, '1M': 22, '3M': 66, 'YTD': 180, '1Y': 252,
-            }
-            const count = periodDays[period] ?? 22
-            return createMockHistoryResult(symbol, period, count)
-        })
+        mockGetStockHistory.mockImplementation(
+            async (symbol: string, period: string) => {
+                const periodDays: Record<string, number> = {
+                    '1D': 1,
+                    '1W': 5,
+                    '1M': 22,
+                    '3M': 66,
+                    YTD: 180,
+                    '1Y': 252,
+                }
+                const count = periodDays[period] ?? 22
+                return createMockHistoryResult(symbol, period, count)
+            },
+        )
     })
 
     // ─── T10-11: Returns 200 + data ───
@@ -107,7 +118,9 @@ describe('GET /api/stocks/:symbol/history', () => {
 
     describe('T10-07: Invalid period returns 400', () => {
         it('returns 400 for invalid period value', async () => {
-            const res = await app.request('/api/stocks/AAPL/history?period=INVALID')
+            const res = await app.request(
+                '/api/stocks/AAPL/history?period=INVALID',
+            )
 
             expect(res.status).toBe(400)
         })

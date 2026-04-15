@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 interface DocEditorProps {
     readonly content: string
@@ -9,7 +9,12 @@ interface DocEditorProps {
     readonly onCancel: () => void
 }
 
-export function DocEditor({ content, saving, onSave, onCancel }: DocEditorProps) {
+export function DocEditor({
+    content,
+    saving,
+    onSave,
+    onCancel,
+}: DocEditorProps) {
     const [draft, setDraft] = useState(content)
 
     useEffect(() => {

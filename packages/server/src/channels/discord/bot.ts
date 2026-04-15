@@ -1,10 +1,14 @@
-import { Client, Partials } from 'discord.js'
 import { WebSocketShardEvents } from '@discordjs/ws'
-import type { ChannelAdapter, ChannelMessage, ChannelTarget } from '@/channels/types'
+import { Client, Partials } from 'discord.js'
+import type {
+    ChannelAdapter,
+    ChannelMessage,
+    ChannelTarget,
+} from '@/channels/types'
 import type { Gateway } from '@/gateway/gateway'
-import type { DiscordConfig } from './config'
-import { CommandRegistry } from './commands/index'
 import { clearCommand } from './commands/clear'
+import { CommandRegistry } from './commands/index'
+import type { DiscordConfig } from './config'
 import { splitMessage } from './formatter'
 import { toGatewayInput } from './handlers'
 
@@ -56,19 +60,30 @@ export class DiscordAdapter implements ChannelAdapter {
 
         client.on('messageCreate', async (msg) => {
             this.markGatewayActivity()
-            const gatewayInput = toGatewayInput(msg, client.user!.id)
+            const botUserId = client.user?.id
+            if (!botUserId) return
+
+            const gatewayInput = toGatewayInput(msg, botUserId)
             if (!gatewayInput) return
 
             await msg.channel.sendTyping()
 
             // Keep typing indicator alive (Discord expires after ~10s)
             const typingInterval = setInterval(async () => {
-                try { await msg.channel.sendTyping() } catch { /* ignore */ }
+                try {
+                    await msg.channel.sendTyping()
+                } catch {
+                    /* ignore */
+                }
             }, 8_000)
 
             // 120s soft notification for long-running responses
             const softTimer = setTimeout(async () => {
-                try { await msg.reply('⏳ 仍在处理中，请稍候...') } catch { /* ignore */ }
+                try {
+                    await msg.reply('⏳ 仍在处理中，请稍候...')
+                } catch {
+                    /* ignore */
+                }
             }, 120_000)
 
             try {
@@ -86,8 +101,12 @@ export class DiscordAdapter implements ChannelAdapter {
                 clearInterval(typingInterval)
                 console.error('Discord message handling error:', error)
                 try {
-                    await msg.reply('Sorry, something went wrong. Please try again.')
-                } catch { /* ignore reply failure */ }
+                    await msg.reply(
+                        'Sorry, something went wrong. Please try again.',
+                    )
+                } catch {
+                    /* ignore reply failure */
+                }
             }
         })
 
@@ -96,8 +115,10 @@ export class DiscordAdapter implements ChannelAdapter {
         })
 
         // Keep the health window fresh whenever the Discord gateway acks a heartbeat.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ;(client.ws as any).on(WebSocketShardEvents.HeartbeatComplete, () => {
+        const gatewayWs = client.ws as unknown as {
+            on?: (event: string, handler: () => void) => void
+        }
+        gatewayWs.on?.(WebSocketShardEvents.HeartbeatComplete, () => {
             this.markGatewayActivity()
         })
 
@@ -138,10 +159,15 @@ export class DiscordAdapter implements ChannelAdapter {
         }
 
         const lastGatewayActivityAtMs = this.lastGatewayActivityAtMs
-        const activityAgeMs = lastGatewayActivityAtMs > 0 ? Date.now() - lastGatewayActivityAtMs : Number.POSITIVE_INFINITY
-        const ping = typeof client.ws?.ping === 'number' && Number.isFinite(client.ws.ping)
-            ? `${Math.round(client.ws.ping)}ms`
-            : 'unknown'
+        const activityAgeMs =
+            lastGatewayActivityAtMs > 0
+                ? Date.now() - lastGatewayActivityAtMs
+                : Number.POSITIVE_INFINITY
+        const ping =
+            typeof client.ws?.ping === 'number' &&
+            Number.isFinite(client.ws.ping)
+                ? `${Math.round(client.ws.ping)}ms`
+                : 'unknown'
 
         if (activityAgeMs > DiscordAdapter.healthWindowMs) {
             return {

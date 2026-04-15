@@ -8,35 +8,48 @@
  * Callers should import everything from '@/core/market-data'.
  */
 
-import { prisma } from '@/core/db'
-import type { PrismaClient } from '@prisma/client'
 import type { StockMetrics } from '@flux/shared'
-
+import type { PrismaClient } from '@prisma/client'
+import { prisma } from '@/core/db'
+import type { CoverageStore } from './common/coverage'
+import { FinnhubClient } from './common/finnhub-client'
 // ── Common infrastructure ──
 import { createDbStore } from './common/store-db'
+import type {
+    CacheStore,
+    CompanyOverview,
+    FinnhubNewsItem,
+    HistoryPoint,
+    HistoryStoreParams,
+} from './common/types'
 import { YahooFinanceClient } from './common/yahoo-client'
-import { FinnhubClient } from './common/finnhub-client'
-import type { CacheStore, CompanyOverview, FinnhubNewsItem, HistoryPoint, HistoryStoreParams } from './common/types'
-import type { CoverageStore } from './common/coverage'
-
-// ── Service factories ──
-import { createQuoteService } from './quote'
 import { createHistoryService } from './history'
 import { createInfoService } from './info'
-import { createNewsService } from './news'
-import { createSearchService } from './search'
 import { createMacroService } from './macro'
+import { createNewsService } from './news'
+// ── Service factories ──
+import { createQuoteService } from './quote'
+import { createSearchService } from './search'
 
-// ── Re-exports: types ──
-export type { Quote, HistoryPoint, CompanyOverview, MarketDataClient } from './common/types'
-export type { ChartDataPoint, StockHistoryResult, Period, HistoryService } from './history'
-export type { NewsItem } from './news'
-
-// ── Re-exports: constants & helpers ──
-export { VALID_PERIODS, getDaysForPeriod } from './history'
-export { isValidSymbol, normalizeSymbol } from './common/symbol'
-export { VIX_DISPLAY_NAME, findVixFromMacro } from './macro'
 export { proxyFetch } from './common/proxy-fetch'
+export { isValidSymbol, normalizeSymbol } from './common/symbol'
+// ── Re-exports: types ──
+export type {
+    CompanyOverview,
+    HistoryPoint,
+    MarketDataClient,
+    Quote,
+} from './common/types'
+export type {
+    ChartDataPoint,
+    HistoryService,
+    Period,
+    StockHistoryResult,
+} from './history'
+// ── Re-exports: constants & helpers ──
+export { getDaysForPeriod, VALID_PERIODS } from './history'
+export { findVixFromMacro, VIX_DISPLAY_NAME } from './macro'
+export type { NewsItem } from './news'
 
 // ---------------------------------------------------------------------------
 // BigInt conversion helper (matches old sync.ts behavior)
@@ -66,18 +79,25 @@ const finnhub = createFinnhubClient()
 // DB store adapters
 // ---------------------------------------------------------------------------
 
-function buildHistoryStore(db: PrismaClient): CacheStore<HistoryPoint[], HistoryStoreParams> {
+function buildHistoryStore(
+    db: PrismaClient,
+): CacheStore<HistoryPoint[], HistoryStoreParams> {
     return createDbStore<HistoryPoint[], HistoryStoreParams>({
         async findByKey(symbol, params?) {
             // Build date filter when days is provided (matches old sync.ts behavior)
             const dateFilter = params?.days
                 ? (() => {
+                      const days = params.days
                       const now = new Date()
                       const endDate = new Date(
-                          Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+                          Date.UTC(
+                              now.getUTCFullYear(),
+                              now.getUTCMonth(),
+                              now.getUTCDate(),
+                          ),
                       )
                       const startDate = new Date(
-                          endDate.getTime() - params.days! * 24 * 60 * 60 * 1000,
+                          endDate.getTime() - days * 24 * 60 * 60 * 1000,
                       )
                       return { gte: startDate, lte: endDate }
                   })()
@@ -119,7 +139,10 @@ function buildHistoryStore(db: PrismaClient): CacheStore<HistoryPoint[], History
                             high: h.high,
                             low: h.low,
                             close: h.close,
-                            volume: h.volume != null ? toBigIntSafe(h.volume) : null,
+                            volume:
+                                h.volume != null
+                                    ? toBigIntSafe(h.volume)
+                                    : null,
                             fetchedAt: new Date(),
                         },
                         create: {
@@ -129,7 +152,10 @@ function buildHistoryStore(db: PrismaClient): CacheStore<HistoryPoint[], History
                             high: h.high,
                             low: h.low,
                             close: h.close,
-                            volume: h.volume != null ? toBigIntSafe(h.volume) : null,
+                            volume:
+                                h.volume != null
+                                    ? toBigIntSafe(h.volume)
+                                    : null,
                         },
                     }),
                 ),
@@ -149,7 +175,10 @@ function buildInfoStore(db: PrismaClient): CacheStore<CompanyOverview> {
                     name: row.name ?? symbol,
                     sector: row.sector ?? undefined,
                     pe: row.pe ?? undefined,
-                    marketCap: row.marketCap != null ? Number(row.marketCap) : undefined,
+                    marketCap:
+                        row.marketCap != null
+                            ? Number(row.marketCap)
+                            : undefined,
                     eps: row.eps ?? undefined,
                     dividendYield: row.dividendYield ?? undefined,
                 },
@@ -162,7 +191,10 @@ function buildInfoStore(db: PrismaClient): CacheStore<CompanyOverview> {
                 update: {
                     name: data.name ?? null,
                     pe: data.pe ?? null,
-                    marketCap: data.marketCap != null ? toBigIntSafe(data.marketCap) : null,
+                    marketCap:
+                        data.marketCap != null
+                            ? toBigIntSafe(data.marketCap)
+                            : null,
                     eps: data.eps ?? null,
                     dividendYield: data.dividendYield ?? null,
                     sector: data.sector ?? null,
@@ -172,7 +204,10 @@ function buildInfoStore(db: PrismaClient): CacheStore<CompanyOverview> {
                     symbol: data.symbol,
                     name: data.name ?? null,
                     pe: data.pe ?? null,
-                    marketCap: data.marketCap != null ? toBigIntSafe(data.marketCap) : null,
+                    marketCap:
+                        data.marketCap != null
+                            ? toBigIntSafe(data.marketCap)
+                            : null,
                     eps: data.eps ?? null,
                     dividendYield: data.dividendYield ?? null,
                     sector: data.sector ?? null,

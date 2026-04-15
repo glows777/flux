@@ -9,12 +9,10 @@
 
 import { beforeEach, describe, expect, it } from 'bun:test'
 import './setup'
-import {
-    mockGetWatchlistItems,
-} from './helpers/mock-boundaries'
 
 // Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
+import { mockGetWatchlistItems } from './helpers/mock-boundaries'
 
 // ==================== Test app ====================
 

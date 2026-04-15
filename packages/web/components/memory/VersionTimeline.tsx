@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { formatRelativeTime } from './SlotTabs'
 import { DocPreview } from './DocPreview'
+import { formatRelativeTime } from './SlotTabs'
 
 interface VersionEntry {
     readonly id: string

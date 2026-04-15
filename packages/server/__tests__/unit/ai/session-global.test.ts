@@ -1,7 +1,7 @@
-import { describe, test, expect, beforeEach, mock } from 'bun:test'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import {
-    listAllSessions,
     createSession,
+    listAllSessions,
     type SessionDeps,
 } from '@/core/ai/session'
 
@@ -33,8 +33,20 @@ describe('listAllSessions', () => {
 
     test('returns all sessions ordered by updatedAt desc', async () => {
         const sessions = [
-            { id: '1', symbol: 'AAPL', title: 'test', createdAt: new Date(), updatedAt: new Date() },
-            { id: '2', symbol: null, title: 'general', createdAt: new Date(), updatedAt: new Date() },
+            {
+                id: '1',
+                symbol: 'AAPL',
+                title: 'test',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            },
+            {
+                id: '2',
+                symbol: null,
+                title: 'general',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            },
         ]
         mockDb.chatSession.findMany.mockResolvedValueOnce(sessions)
 

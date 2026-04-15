@@ -11,7 +11,13 @@ interface TasksToolbarProps {
     onNewJob: () => void
 }
 
-export function TasksToolbar({ search, statusFilter, onSearchChange, onStatusChange, onNewJob }: TasksToolbarProps) {
+export function TasksToolbar({
+    search,
+    statusFilter,
+    onSearchChange,
+    onStatusChange,
+    onNewJob,
+}: TasksToolbarProps) {
     return (
         <div className='flex items-center gap-3 px-4 py-3 border-b border-white/5 shrink-0'>
             <div className='relative flex-1 max-w-xs'>

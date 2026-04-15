@@ -1,6 +1,10 @@
 import type { CacheEntry, CacheStore } from './types'
 
-export class MemoryStore<T, P extends Record<string, unknown> = Record<string, never>> implements CacheStore<T, P> {
+export class MemoryStore<
+    T,
+    P extends Record<string, unknown> = Record<string, never>,
+> implements CacheStore<T, P>
+{
     private readonly store = new Map<string, CacheEntry<T>>()
 
     async get(key: string, _params?: P): Promise<CacheEntry<T> | null> {

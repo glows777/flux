@@ -10,13 +10,13 @@
 
 import { beforeEach, describe, expect, it } from 'bun:test'
 import './setup'
-import {
-    mockRemoveFromWatchlist,
-    MockRemoveWatchlistError,
-} from './helpers/mock-boundaries'
 
 // Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
+import {
+    MockRemoveWatchlistError,
+    mockRemoveFromWatchlist,
+} from './helpers/mock-boundaries'
 
 // ==================== Test app ====================
 
@@ -64,7 +64,12 @@ describe('DELETE /api/watchlist/:symbol', () => {
     describe('Symbol not found', () => {
         it('returns 404 when symbol does not exist', async () => {
             mockRemoveFromWatchlist.mockImplementation(() =>
-                Promise.reject(new MockRemoveWatchlistError('Symbol not found in watchlist', 'NOT_FOUND')),
+                Promise.reject(
+                    new MockRemoveWatchlistError(
+                        'Symbol not found in watchlist',
+                        'NOT_FOUND',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist/ZZZZZ', {
@@ -76,7 +81,12 @@ describe('DELETE /api/watchlist/:symbol', () => {
 
         it('returns error message for not found', async () => {
             mockRemoveFromWatchlist.mockImplementation(() =>
-                Promise.reject(new MockRemoveWatchlistError('Symbol not found in watchlist', 'NOT_FOUND')),
+                Promise.reject(
+                    new MockRemoveWatchlistError(
+                        'Symbol not found in watchlist',
+                        'NOT_FOUND',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist/ZZZZZ', {
@@ -94,7 +104,12 @@ describe('DELETE /api/watchlist/:symbol', () => {
     describe('Input validation', () => {
         it('returns 400 for symbol with special characters', async () => {
             mockRemoveFromWatchlist.mockImplementation(() =>
-                Promise.reject(new MockRemoveWatchlistError('Invalid symbol', 'INVALID_INPUT')),
+                Promise.reject(
+                    new MockRemoveWatchlistError(
+                        'Invalid symbol',
+                        'INVALID_INPUT',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist/<script>', {
@@ -106,7 +121,12 @@ describe('DELETE /api/watchlist/:symbol', () => {
 
         it('returns error message for invalid input', async () => {
             mockRemoveFromWatchlist.mockImplementation(() =>
-                Promise.reject(new MockRemoveWatchlistError('Invalid symbol', 'INVALID_INPUT')),
+                Promise.reject(
+                    new MockRemoveWatchlistError(
+                        'Invalid symbol',
+                        'INVALID_INPUT',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist/<script>', {
@@ -131,7 +151,12 @@ describe('DELETE /api/watchlist/:symbol', () => {
 
             // Second delete: not found
             mockRemoveFromWatchlist.mockImplementation(() =>
-                Promise.reject(new MockRemoveWatchlistError('Symbol not found in watchlist', 'NOT_FOUND')),
+                Promise.reject(
+                    new MockRemoveWatchlistError(
+                        'Symbol not found in watchlist',
+                        'NOT_FOUND',
+                    ),
+                ),
             )
 
             const res2 = await app.request('/api/watchlist/AAPL', {

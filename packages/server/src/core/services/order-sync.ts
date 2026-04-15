@@ -6,9 +6,15 @@ import type { OrderEventNotification } from '@/core/trading-agent/types'
 export interface HandleOrderUpdateDeps {
     readonly db: {
         readonly order: {
-            findUnique(args: Record<string, unknown>): Promise<Record<string, unknown> | null>
-            update(args: Record<string, unknown>): Promise<Record<string, unknown>>
-            create(args: Record<string, unknown>): Promise<Record<string, unknown>>
+            findUnique(
+                args: Record<string, unknown>,
+            ): Promise<Record<string, unknown> | null>
+            update(
+                args: Record<string, unknown>,
+            ): Promise<Record<string, unknown>>
+            create(
+                args: Record<string, unknown>,
+            ): Promise<Record<string, unknown>>
         }
     }
     readonly notifyOrderEvent: (n: OrderEventNotification) => Promise<void>
@@ -111,16 +117,18 @@ export function createOrderSyncService(deps: OrderSyncDeps): OrderSyncService {
         console.log('[order-sync] WebSocket disconnected')
     })
 
-    tradeWs.onOrderUpdate(async (event: { event: string; order: Record<string, unknown> }) => {
-        try {
-            await handleOrderUpdate(event, {
-                db: deps.db,
-                notifyOrderEvent: defaultNotifyOrderEvent,
-            })
-        } catch (error) {
-            console.error('[order-sync] handleOrderUpdate failed:', error)
-        }
-    })
+    tradeWs.onOrderUpdate(
+        async (event: { event: string; order: Record<string, unknown> }) => {
+            try {
+                await handleOrderUpdate(event, {
+                    db: deps.db,
+                    notifyOrderEvent: defaultNotifyOrderEvent,
+                })
+            } catch (error) {
+                console.error('[order-sync] handleOrderUpdate failed:', error)
+            }
+        },
+    )
 
     tradeWs.onAccountUpdate((event: unknown) => {
         console.log('[order-sync] Account update:', JSON.stringify(event))

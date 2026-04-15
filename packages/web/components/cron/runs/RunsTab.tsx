@@ -3,13 +3,21 @@
 import { useState } from 'react'
 import useSWR from 'swr'
 import { fetcher } from '@/lib/fetcher'
-import { RunsToolbar } from './RunsToolbar'
-import { RunsTable } from './RunsTable'
 import type { CronJobRow, CronJobRunRow } from '../types'
+import { RunsTable } from './RunsTable'
+import { RunsToolbar } from './RunsToolbar'
 
 export function RunsTab() {
-    const { data: runs, error: runsError, isLoading: runsLoading } = useSWR<CronJobRunRow[]>('/api/cron/runs?limit=50', fetcher, { refreshInterval: 5000 })
-    const { data: jobs } = useSWR<CronJobRow[]>('/api/cron', fetcher, { refreshInterval: 5000 })
+    const {
+        data: runs,
+        error: runsError,
+        isLoading: runsLoading,
+    } = useSWR<CronJobRunRow[]>('/api/cron/runs?limit=50', fetcher, {
+        refreshInterval: 5000,
+    })
+    const { data: jobs } = useSWR<CronJobRow[]>('/api/cron', fetcher, {
+        refreshInterval: 5000,
+    })
 
     const [search, setSearch] = useState('')
     const [statusFilter, setStatusFilter] = useState('all')

@@ -12,8 +12,9 @@ describe('MemoryStore', () => {
         await store.set('key1', 'value1')
         const entry = await store.get('key1')
         expect(entry).not.toBeNull()
-        expect(entry!.data).toBe('value1')
-        expect(entry!.fetchedAt).toBeInstanceOf(Date)
+        if (!entry) throw new Error('Expected entry to exist')
+        expect(entry.data).toBe('value1')
+        expect(entry.fetchedAt).toBeInstanceOf(Date)
     })
 
     test('overwrites existing value', async () => {
@@ -21,6 +22,7 @@ describe('MemoryStore', () => {
         await store.set('k', 1)
         await store.set('k', 2)
         const entry = await store.get('k')
-        expect(entry!.data).toBe(2)
+        if (!entry) throw new Error('Expected updated entry to exist')
+        expect(entry.data).toBe(2)
     })
 })

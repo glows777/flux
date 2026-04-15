@@ -1,4 +1,5 @@
-import { beforeAll, describe, expect, mock, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
+import type { TradingToolDeps } from '../../../../src/core/ai/trading-tools'
 
 // Mock bash-tool so skillPlugin.init() doesn't require real filesystem
 mock.module('bash-tool', () => ({
@@ -27,7 +28,7 @@ const mockToolDeps = {
 }
 
 const mockTradingToolDeps = {
-    alpacaClient: {} as any,
+    alpacaClient: {} as unknown as TradingToolDeps['alpacaClient'],
     db: {
         order: {
             create: mock(async () => ({})),

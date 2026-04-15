@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach } from 'bun:test'
+import { describe, expect, it, mock } from 'bun:test'
 import { handleOrderUpdate } from '@/core/services/order-sync'
 
 function makeDb() {

@@ -1,8 +1,8 @@
 // Server-only type re-exports (Prisma models)
 export type {
-    Watchlist,
-    StockHistory,
-    StockInfo,
     AIReport,
     NewsArticle,
+    StockHistory,
+    StockInfo,
+    Watchlist,
 } from '@prisma/client'

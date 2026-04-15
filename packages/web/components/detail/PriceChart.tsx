@@ -1,11 +1,19 @@
 'use client'
 
-import { useState } from 'react'
-import useSWR from 'swr'
-import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, YAxis } from 'recharts'
-import { PeriodButton } from './PeriodButton'
-import { fetcher } from '@/lib/fetcher'
 import { formatCurrency, type HoldingItem } from '@flux/shared'
+import { useState } from 'react'
+import {
+    Area,
+    AreaChart,
+    CartesianGrid,
+    ReferenceLine,
+    ResponsiveContainer,
+    Tooltip,
+    YAxis,
+} from 'recharts'
+import useSWR from 'swr'
+import { fetcher } from '@/lib/fetcher'
+import { PeriodButton } from './PeriodButton'
 
 interface PriceChartProps {
     symbol: string
@@ -22,7 +30,7 @@ const PERIOD_TO_API: Record<Period, string> = {
     '1周': '1W',
     '1月': '1M',
     '3月': '3M',
-    '今年': 'YTD',
+    今年: 'YTD',
     '1年': '1Y',
 }
 
@@ -44,12 +52,22 @@ interface StockHistoryResult {
 function formatDate(dateStr: string, period: Period): string {
     const date = new Date(dateStr)
     if (period === '1日') {
-        return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+        return date.toLocaleTimeString('zh-CN', {
+            hour: '2-digit',
+            minute: '2-digit',
+        })
     }
     if (period === '1周' || period === '1月') {
-        return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
+        return date.toLocaleDateString('zh-CN', {
+            month: 'short',
+            day: 'numeric',
+        })
     }
-    return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
+    return date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+    })
 }
 
 interface ChartTooltipPayload {
@@ -71,8 +89,12 @@ function ChartTooltip({
     const data = payload[0].payload
     return (
         <div className='rounded-lg border border-white/10 bg-black/90 px-3 py-2 backdrop-blur-sm'>
-            <div className='text-xs text-slate-400'>{formatDate(data.date, period)}</div>
-            <div className='text-sm font-medium text-emerald-400'>${data.price.toFixed(2)}</div>
+            <div className='text-xs text-slate-400'>
+                {formatDate(data.date, period)}
+            </div>
+            <div className='text-sm font-medium text-emerald-400'>
+                ${data.price.toFixed(2)}
+            </div>
         </div>
     )
 }
@@ -98,11 +120,11 @@ export function PriceChart({ symbol, name, position }: PriceChartProps) {
         price: p.close,
     }))
 
-    const lastClose = chartData.length > 0 ? chartData[chartData.length - 1].price : 0
+    const lastClose =
+        chartData.length > 0 ? chartData[chartData.length - 1].price : 0
     const firstOpen = history?.points?.[0]?.open ?? lastClose
-    const change = firstOpen !== 0
-        ? ((lastClose - firstOpen) / firstOpen) * 100
-        : 0
+    const change =
+        firstOpen !== 0 ? ((lastClose - firstOpen) / firstOpen) * 100 : 0
 
     const isPositive = change >= 0
     const changeColor = isPositive ? 'text-emerald-400' : 'text-rose-400'
@@ -123,14 +145,22 @@ export function PriceChart({ symbol, name, position }: PriceChartProps) {
                     ) : (
                         <>
                             <div className='flex items-center gap-2'>
-                                <span className='text-base font-semibold text-white'>{symbol.toUpperCase()}</span>
-                                <span className='text-sm text-slate-500'>&middot;</span>
-                                <span className='text-sm text-slate-500'>{name}</span>
+                                <span className='text-base font-semibold text-white'>
+                                    {symbol.toUpperCase()}
+                                </span>
+                                <span className='text-sm text-slate-500'>
+                                    &middot;
+                                </span>
+                                <span className='text-sm text-slate-500'>
+                                    {name}
+                                </span>
                             </div>
                             <div className='text-5xl font-light text-white tracking-tight'>
                                 ${lastClose.toFixed(2)}
                             </div>
-                            <span className={`text-sm font-medium ${changeColor}`}>
+                            <span
+                                className={`text-sm font-medium ${changeColor}`}
+                            >
                                 {changeSign}
                                 {change.toFixed(2)}%
                             </span>
@@ -156,7 +186,11 @@ export function PriceChart({ symbol, name, position }: PriceChartProps) {
                 {isLoading && chartData.length === 0 ? (
                     <div className='h-full w-full bg-white/5 rounded animate-pulse' />
                 ) : (
-                    <ResponsiveContainer width='100%' height='100%' initialDimension={{ width: 1, height: 1 }}>
+                    <ResponsiveContainer
+                        width='100%'
+                        height='100%'
+                        initialDimension={{ width: 1, height: 1 }}
+                    >
                         <AreaChart data={chartData}>
                             <defs>
                                 <linearGradient
@@ -178,7 +212,11 @@ export function PriceChart({ symbol, name, position }: PriceChartProps) {
                                     />
                                 </linearGradient>
                             </defs>
-                            <CartesianGrid horizontal vertical={false} stroke='rgba(255,255,255,0.03)' />
+                            <CartesianGrid
+                                horizontal
+                                vertical={false}
+                                stroke='rgba(255,255,255,0.03)'
+                            />
                             <YAxis
                                 dataKey='price'
                                 axisLine={false}
@@ -191,7 +229,10 @@ export function PriceChart({ symbol, name, position }: PriceChartProps) {
                             />
                             <Tooltip
                                 content={<ChartTooltip period={activePeriod} />}
-                                cursor={{ stroke: 'rgba(255,255,255,0.15)', strokeWidth: 1 }}
+                                cursor={{
+                                    stroke: 'rgba(255,255,255,0.15)',
+                                    strokeWidth: 1,
+                                }}
                             />
                             <Area
                                 type='monotone'
@@ -203,13 +244,22 @@ export function PriceChart({ symbol, name, position }: PriceChartProps) {
                             {position && (
                                 <ReferenceLine
                                     y={position.avgCost}
-                                    stroke={position.currentPrice >= position.avgCost ? '#34d399' : '#fb7185'}
-                                    strokeDasharray="6 4"
+                                    stroke={
+                                        position.currentPrice >=
+                                        position.avgCost
+                                            ? '#34d399'
+                                            : '#fb7185'
+                                    }
+                                    strokeDasharray='6 4'
                                     strokeWidth={1.5}
                                     label={{
                                         value: `成本 $${position.avgCost.toFixed(2)}`,
                                         position: 'right',
-                                        fill: position.currentPrice >= position.avgCost ? '#34d399' : '#fb7185',
+                                        fill:
+                                            position.currentPrice >=
+                                            position.avgCost
+                                                ? '#34d399'
+                                                : '#fb7185',
                                         fontSize: 11,
                                     }}
                                 />

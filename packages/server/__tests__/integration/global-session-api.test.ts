@@ -1,11 +1,11 @@
-import { describe, test, expect, beforeEach } from 'bun:test'
-import {
-    mockListAllSessions,
-    mockDeleteSession,
-    mockRenameSession,
-    mockLoadMessages,
-} from './helpers/mock-boundaries'
+import { beforeEach, describe, expect, test } from 'bun:test'
 import { createHonoApp } from '@/routes/index'
+import {
+    mockDeleteSession,
+    mockListAllSessions,
+    mockLoadMessages,
+    mockRenameSession,
+} from './helpers/mock-boundaries'
 
 const app = createHonoApp()
 
@@ -16,8 +16,20 @@ describe('GET /api/sessions', () => {
 
     test('returns all sessions', async () => {
         mockListAllSessions.mockResolvedValueOnce([
-            { id: '1', symbol: 'AAPL', title: 'test', createdAt: new Date(), updatedAt: new Date() },
-            { id: '2', symbol: null, title: 'general', createdAt: new Date(), updatedAt: new Date() },
+            {
+                id: '1',
+                symbol: 'AAPL',
+                title: 'test',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            },
+            {
+                id: '2',
+                symbol: null,
+                title: 'general',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            },
         ])
         const res = await app.request('/api/sessions')
         const json = await res.json()
@@ -36,11 +48,15 @@ describe('GET /api/sessions', () => {
 })
 
 describe('DELETE /api/sessions/:id', () => {
-    beforeEach(() => { mockDeleteSession.mockReset() })
+    beforeEach(() => {
+        mockDeleteSession.mockReset()
+    })
 
     test('deletes session successfully', async () => {
         mockDeleteSession.mockResolvedValueOnce(undefined)
-        const res = await app.request('/api/sessions/ses_1', { method: 'DELETE' })
+        const res = await app.request('/api/sessions/ses_1', {
+            method: 'DELETE',
+        })
         const json = await res.json()
         expect(res.status).toBe(200)
         expect(json.success).toBe(true)
@@ -48,18 +64,28 @@ describe('DELETE /api/sessions/:id', () => {
 
     test('returns 404 for non-existent session', async () => {
         const { SessionError } = await import('@/core/ai/session')
-        mockDeleteSession.mockRejectedValueOnce(new SessionError('Session not found', 'NOT_FOUND'))
-        const res = await app.request('/api/sessions/not_exist', { method: 'DELETE' })
+        mockDeleteSession.mockRejectedValueOnce(
+            new SessionError('Session not found', 'NOT_FOUND'),
+        )
+        const res = await app.request('/api/sessions/not_exist', {
+            method: 'DELETE',
+        })
         expect(res.status).toBe(404)
     })
 })
 
 describe('PATCH /api/sessions/:id', () => {
-    beforeEach(() => { mockRenameSession.mockReset() })
+    beforeEach(() => {
+        mockRenameSession.mockReset()
+    })
 
     test('renames session successfully', async () => {
         mockRenameSession.mockResolvedValueOnce({
-            id: 'ses_1', symbol: null, title: '新标题', createdAt: new Date(), updatedAt: new Date(),
+            id: 'ses_1',
+            symbol: null,
+            title: '新标题',
+            createdAt: new Date(),
+            updatedAt: new Date(),
         })
         const res = await app.request('/api/sessions/ses_1', {
             method: 'PATCH',
@@ -83,11 +109,17 @@ describe('PATCH /api/sessions/:id', () => {
 })
 
 describe('GET /api/sessions/:id/messages', () => {
-    beforeEach(() => { mockLoadMessages.mockReset() })
+    beforeEach(() => {
+        mockLoadMessages.mockReset()
+    })
 
     test('loads session messages', async () => {
         mockLoadMessages.mockResolvedValueOnce([
-            { id: 'msg_1', role: 'user', parts: [{ type: 'text', text: 'hello' }] },
+            {
+                id: 'msg_1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            },
         ])
         const res = await app.request('/api/sessions/ses_1/messages')
         const json = await res.json()

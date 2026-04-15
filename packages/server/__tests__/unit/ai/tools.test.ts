@@ -218,7 +218,7 @@ describe('createTools', () => {
                 `Tool "${name}" missing description`,
             ).toBeDefined()
             expect(typeof t.description).toBe('string')
-            expect(t.description!.length).toBeGreaterThan(0)
+            expect(t.description?.length).toBeGreaterThan(0)
         }
     })
 })
@@ -344,7 +344,7 @@ describe('Display tools', () => {
                 `Tool "${name}" missing description`,
             ).toBeDefined()
             expect(typeof t.description).toBe('string')
-            expect(t.description!.length).toBeGreaterThan(0)
+            expect(t.description?.length).toBeGreaterThan(0)
         }
     })
 })

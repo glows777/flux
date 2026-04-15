@@ -1,5 +1,6 @@
 'use client'
 
+import type { StockMetrics } from '@flux/shared'
 import { ArrowUpRight, Maximize2, Minimize2 } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -12,7 +13,6 @@ import {
 } from 'react-resizable-panels'
 import useSWR from 'swr'
 import { fetcher } from '@/lib/fetcher'
-import type { StockMetrics } from '@flux/shared'
 import { AICortex } from './AICortex'
 import { MetricsGrid } from './MetricsGrid'
 import { NewsFeed } from './NewsFeed'
@@ -34,6 +34,13 @@ const noopStorage: Storage = {
         return 0
     },
 }
+
+const DETAIL_SKELETON_KEYS = [
+    'detail-skeleton-1',
+    'detail-skeleton-2',
+    'detail-skeleton-3',
+    'detail-skeleton-4',
+] as const
 
 function BackLink() {
     return (
@@ -57,9 +64,9 @@ function DetailSkeleton() {
                     <div className='h-[350px] bg-white/5 rounded' />
                 </div>
                 <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
-                    {Array.from({ length: 4 }, (_, i) => (
+                    {DETAIL_SKELETON_KEYS.map((key) => (
                         <div
-                            key={i}
+                            key={key}
                             className='animate-pulse rounded-2xl border border-white/5 bg-white/[0.02] p-4 h-20'
                         />
                     ))}
@@ -81,7 +88,9 @@ function DetailSkeleton() {
  */
 export function DetailView({ symbol }: DetailViewProps) {
     const [aiThinking, setAiThinking] = useState(false)
-    const [expandedPanel, setExpandedPanel] = useState<'chart' | 'ai' | null>(null)
+    const [expandedPanel, setExpandedPanel] = useState<'chart' | 'ai' | null>(
+        null,
+    )
 
     const chartPanelRef = usePanelRef()
     const aiPanelRef = usePanelRef()
@@ -129,13 +138,19 @@ export function DetailView({ symbol }: DetailViewProps) {
 
     // Sync state when user manually drags separator to restore a collapsed panel
     const handleChartResize = useCallback(() => {
-        if (expandedPanelRef.current === 'ai' && !chartPanelRef.current?.isCollapsed()) {
+        if (
+            expandedPanelRef.current === 'ai' &&
+            !chartPanelRef.current?.isCollapsed()
+        ) {
             setExpandedPanel(null)
         }
     }, [chartPanelRef])
 
     const handleAIResize = useCallback(() => {
-        if (expandedPanelRef.current === 'chart' && !aiPanelRef.current?.isCollapsed()) {
+        if (
+            expandedPanelRef.current === 'chart' &&
+            !aiPanelRef.current?.isCollapsed()
+        ) {
             setExpandedPanel(null)
         }
     }, [aiPanelRef])
@@ -209,12 +224,24 @@ export function DetailView({ symbol }: DetailViewProps) {
                                 type='button'
                                 onClick={toggleExpandChart}
                                 className='absolute top-1 right-4 z-10 p-1.5 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all opacity-0 group-hover/panel:opacity-100'
-                                title={expandedPanel === 'chart' ? '恢复默认布局' : '图表全屏'}
+                                title={
+                                    expandedPanel === 'chart'
+                                        ? '恢复默认布局'
+                                        : '图表全屏'
+                                }
                             >
-                                {expandedPanel === 'chart' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                                {expandedPanel === 'chart' ? (
+                                    <Minimize2 size={14} />
+                                ) : (
+                                    <Maximize2 size={14} />
+                                )}
                             </button>
                             <div className='flex flex-col gap-6 pr-2 overflow-y-auto h-full'>
-                                <PriceChart symbol={symbol} name={name} position={position} />
+                                <PriceChart
+                                    symbol={symbol}
+                                    name={name}
+                                    position={position}
+                                />
                                 <PositionCard symbol={symbol} />
                                 <MetricsGrid symbol={symbol} />
                                 <NewsFeed symbol={symbol} />
@@ -242,9 +269,17 @@ export function DetailView({ symbol }: DetailViewProps) {
                                 type='button'
                                 onClick={toggleExpandAI}
                                 className='absolute top-5 right-5 z-10 p-1.5 rounded-lg bg-black/60 backdrop-blur-sm border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all opacity-0 group-hover/panel:opacity-100'
-                                title={expandedPanel === 'ai' ? '恢复默认布局' : 'AI 面板全屏'}
+                                title={
+                                    expandedPanel === 'ai'
+                                        ? '恢复默认布局'
+                                        : 'AI 面板全屏'
+                                }
                             >
-                                {expandedPanel === 'ai' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                                {expandedPanel === 'ai' ? (
+                                    <Minimize2 size={14} />
+                                ) : (
+                                    <Maximize2 size={14} />
+                                )}
                             </button>
                             <AICortex
                                 symbol={symbol}

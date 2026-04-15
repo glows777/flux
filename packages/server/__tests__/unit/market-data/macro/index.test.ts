@@ -1,13 +1,13 @@
-import { describe, expect, mock, test, beforeEach } from 'bun:test'
+import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
+import type { Quote } from '@/core/market-data/common/types'
+import type { YahooFinanceClient } from '@/core/market-data/common/yahoo-client'
 import {
     createMacroService,
     findVixFromMacro,
-    VIX_DISPLAY_NAME,
     type MacroService,
+    VIX_DISPLAY_NAME,
 } from '@/core/market-data/macro/index'
-import type { Quote } from '@/core/market-data/common/types'
-import type { YahooFinanceClient } from '@/core/market-data/common/yahoo-client'
-import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
 
 function makeQuote(symbol: string, price: number, change: number): Quote {
     return { symbol, price, change, volume: 1000, timestamp: new Date() }
@@ -38,9 +38,7 @@ function createMockYahoo(): YahooFinanceClient {
 
 function createMockFinnhub(): FinnhubClient {
     return {
-        getQuote: mock(async (s: string) =>
-            makeQuote(s, 100, 0.5),
-        ),
+        getQuote: mock(async (s: string) => makeQuote(s, 100, 0.5)),
         getDailyHistory: mock(async () => []),
         getCompanyOverview: mock(async (s: string) => ({
             symbol: s,

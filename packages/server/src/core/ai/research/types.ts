@@ -3,18 +3,19 @@ import type { LanguageModel } from 'ai'
 // --- Constants ---
 
 export const RESEARCH_TIMEOUTS = {
-  searchTavily: 15_000,
-  webSearch: 120_000,
-  webFetch: 30_000,
-  searchX: Number(process.env.SEARCH_X_TIMEOUT) || 120_000,
+    searchTavily: 15_000,
+    webSearch: 120_000,
+    webFetch: 30_000,
+    searchX: Number(process.env.SEARCH_X_TIMEOUT) || 120_000,
 } as const
 
-export const X_SEARCH_CACHE_TTL = Number(process.env.X_SEARCH_CACHE_TTL) || 5 * 60 * 1000
+export const X_SEARCH_CACHE_TTL =
+    Number(process.env.X_SEARCH_CACHE_TTL) || 5 * 60 * 1000
 export const X_SEARCH_CACHE_MAX_SIZE = 50
 
 export const X_SEARCH_CONFIG = {
-  enableImageUnderstanding: true,
-  enableVideoUnderstanding: true,
+    enableImageUnderstanding: true,
+    enableVideoUnderstanding: true,
 } as const
 
 export const X_SEARCH_SYSTEM_PROMPT = `You are a research assistant. Search X and the web to answer the user's query. Return a comprehensive report with your findings. Include relevant sources.`
@@ -28,42 +29,42 @@ export const MIN_DIRECT_CONTENT_LENGTH = 500
 // --- Types ---
 
 export interface SearchOptions {
-  topic?: 'general' | 'news' | 'finance'
-  maxResults?: number
-  timeRange?: 'day' | 'week' | 'month' | 'year'
+    topic?: 'general' | 'news' | 'finance'
+    maxResults?: number
+    timeRange?: 'day' | 'week' | 'month' | 'year'
 }
 
 export interface SearchResponse {
-  results: Array<{
-    title: string
-    url: string
-    content: string
-    score: number
-    publishedDate?: string
-  }>
+    results: Array<{
+        title: string
+        url: string
+        content: string
+        score: number
+        publishedDate?: string
+    }>
 }
 
 export interface PageContent {
-  content: string
-  bytesFetched: number
-  truncated: boolean
-  source: 'direct' | 'jina'
+    content: string
+    bytesFetched: number
+    truncated: boolean
+    source: 'direct' | 'jina'
 }
 
 export type WebFetchSuccess = {
-  url: string
-  summary: string
-  bytesFetched: number
-  truncated: boolean
-  source: 'direct' | 'jina'
+    url: string
+    summary: string
+    bytesFetched: number
+    truncated: boolean
+    source: 'direct' | 'jina'
 }
 
 export type WebFetchFallback = {
-  url: string
-  content: string
-  bytesFetched: number
-  truncated: boolean
-  source: 'direct' | 'jina'
+    url: string
+    content: string
+    bytesFetched: number
+    truncated: boolean
+    source: 'direct' | 'jina'
 }
 
 export type WebFetchError = { error: string }
@@ -71,11 +72,11 @@ export type WebFetchError = { error: string }
 export type WebFetchResult = WebFetchSuccess | WebFetchFallback | WebFetchError
 
 export interface ResearchDeps {
-  searchWeb(query: string, options?: SearchOptions): Promise<SearchResponse>
-  generateText: typeof import('ai').generateText
-  searchModel: LanguageModel
-  readPage(url: string): Promise<PageContent>
-  summarize(content: string, question: string): Promise<string>
+    searchWeb(query: string, options?: SearchOptions): Promise<SearchResponse>
+    generateText: typeof import('ai').generateText
+    searchModel: LanguageModel
+    readPage(url: string): Promise<PageContent>
+    summarize(content: string, question: string): Promise<string>
 }
 
 // --- Prompts ---
@@ -123,65 +124,67 @@ export const WEB_FETCH_SUMMARY_PROMPT = `Web page content:
 // --- SSRF Prevention ---
 
 const PRIVATE_IP_PATTERNS = [
-  /^127\./,
-  /^0\./,
-  /^10\./,
-  /^172\.(1[6-9]|2\d|3[01])\./,
-  /^192\.168\./,
-  /^169\.254\./,
+    /^127\./,
+    /^0\./,
+    /^10\./,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\./,
+    /^169\.254\./,
 ]
 
 const BLOCKED_HOSTNAMES = ['localhost', 'metadata.google.internal']
 
 export function isPublicUrl(u: string): boolean {
-  let parsed: URL
-  try {
-    parsed = new URL(u)
-  } catch {
-    return false
-  }
+    let parsed: URL
+    try {
+        parsed = new URL(u)
+    } catch {
+        return false
+    }
 
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    return false
-  }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return false
+    }
 
-  const hostname = parsed.hostname
-  if (!hostname) {
-    return false
-  }
+    const hostname = parsed.hostname
+    if (!hostname) {
+        return false
+    }
 
-  if (BLOCKED_HOSTNAMES.includes(hostname)) {
-    return false
-  }
+    if (BLOCKED_HOSTNAMES.includes(hostname)) {
+        return false
+    }
 
-  // Handle IPv6
-  const bareHost = hostname.replace(/^\[|\]$/g, '')
+    // Handle IPv6
+    const bareHost = hostname.replace(/^\[|\]$/g, '')
 
-  if (bareHost === '::1') {
-    return false
-  }
+    if (bareHost === '::1') {
+        return false
+    }
 
-  // IPv6-mapped IPv4 (::ffff:x.x.x.x or ::ffff:XXYY:ZZWW)
-  const v4MappedDotted = bareHost.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i)
-  if (v4MappedDotted) {
-    return !isPrivateIPv4(v4MappedDotted[1])
-  }
+    // IPv6-mapped IPv4 (::ffff:x.x.x.x or ::ffff:XXYY:ZZWW)
+    const v4MappedDotted = bareHost.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i)
+    if (v4MappedDotted) {
+        return !isPrivateIPv4(v4MappedDotted[1])
+    }
 
-  const v4MappedHex = bareHost.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i)
-  if (v4MappedHex) {
-    const hi = parseInt(v4MappedHex[1], 16)
-    const lo = parseInt(v4MappedHex[2], 16)
-    const ip = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
-    return !isPrivateIPv4(ip)
-  }
+    const v4MappedHex = bareHost.match(
+        /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i,
+    )
+    if (v4MappedHex) {
+        const hi = parseInt(v4MappedHex[1], 16)
+        const lo = parseInt(v4MappedHex[2], 16)
+        const ip = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`
+        return !isPrivateIPv4(ip)
+    }
 
-  if (isPrivateIPv4(bareHost)) {
-    return false
-  }
+    if (isPrivateIPv4(bareHost)) {
+        return false
+    }
 
-  return true
+    return true
 }
 
 function isPrivateIPv4(ip: string): boolean {
-  return PRIVATE_IP_PATTERNS.some((pattern) => pattern.test(ip))
+    return PRIVATE_IP_PATTERNS.some((pattern) => pattern.test(ip))
 }

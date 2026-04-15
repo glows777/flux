@@ -54,7 +54,9 @@ describe('buildAgentSystemPrompt', () => {
         })
 
         it('P2-T09b: 展示工具规则在带 options 时也存在', () => {
-            const result = buildAgentSystemPrompt('AAPL', undefined, { memoryContext: 'test' })
+            const result = buildAgentSystemPrompt('AAPL', undefined, {
+                memoryContext: 'test',
+            })
 
             expect(result).toContain('展示工具使用规则')
             expect(result).toContain('display_*')

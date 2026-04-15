@@ -6,12 +6,12 @@
  * Batch quotes attempt Yahoo batch first, then fall back to individual fetches.
  */
 
+import { CachedDataSource } from '../common/cached-source'
+import { FallbackChain } from '../common/fallback-chain'
+import type { FinnhubClient } from '../common/finnhub-client'
+import { MemoryStore } from '../common/store-memory'
 import type { Quote } from '../common/types'
 import type { YahooFinanceClient } from '../common/yahoo-client'
-import type { FinnhubClient } from '../common/finnhub-client'
-import { CachedDataSource } from '../common/cached-source'
-import { MemoryStore } from '../common/store-memory'
-import { FallbackChain } from '../common/fallback-chain'
 
 const QUOTE_TTL_MS = 30_000 // 30 seconds
 const QUOTE_TIMEOUT_MS = 3_000
@@ -59,9 +59,7 @@ export function createQuoteService(deps: {
                 return await deps.yahoo.getBatchQuotes(symbols)
             } catch {
                 const entries = await Promise.allSettled(
-                    symbols.map(
-                        async (s) => [s, await source.get(s)] as const,
-                    ),
+                    symbols.map(async (s) => [s, await source.get(s)] as const),
                 )
                 const map = new Map<string, Quote>()
                 for (const entry of entries) {

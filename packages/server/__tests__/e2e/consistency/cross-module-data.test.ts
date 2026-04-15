@@ -5,7 +5,7 @@
  * watchlist → stock-info, etc.
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
+import { afterAll, beforeEach, describe, expect, it } from 'bun:test'
 import { prisma } from '@/core/db'
 import { truncateAllTables } from '../helpers/db-utils'
 import {
@@ -23,7 +23,6 @@ import { createTestApp, jsonGet, jsonPost } from '../helpers/test-app'
 const app = createTestApp()
 
 describe('Cross-Module Data Consistency (P1)', () => {
-
     beforeEach(async () => {
         await truncateAllTables(prisma)
 
@@ -101,5 +100,4 @@ describe('Cross-Module Data Consistency (P1)', () => {
         expect(typeof wlPrice).toBe('number')
         expect(typeof infoJson.data.pe).toBe('number')
     })
-
 })

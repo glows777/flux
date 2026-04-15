@@ -33,15 +33,13 @@ describe('withTimeout', () => {
     it('T06-03: propagates original rejection untouched', async () => {
         const failing = Promise.reject(new Error('original error'))
 
-        await expect(
-            withTimeout(failing, 1_000, 'fail-op'),
-        ).rejects.toThrow('original error')
+        await expect(withTimeout(failing, 1_000, 'fail-op')).rejects.toThrow(
+            'original error',
+        )
     })
 
     it('T06-04: timeout Error message includes label and ms', async () => {
-        const slow = new Promise<void>((resolve) =>
-            setTimeout(resolve, 5_000),
-        )
+        const slow = new Promise<void>((resolve) => setTimeout(resolve, 5_000))
 
         try {
             await withTimeout(slow, 30, 'myLabel')

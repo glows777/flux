@@ -10,7 +10,7 @@
  * - truncateMessages: 截断策略
  */
 
-import { describe, expect, it, mock, beforeEach } from 'bun:test'
+import { describe, expect, it, mock } from 'bun:test'
 import type { SessionDeps } from '@/core/ai/session'
 
 // ==================== Mock Prisma 工厂 ====================
@@ -20,38 +20,39 @@ function createMockDb() {
         chatSession: {
             findMany: mock(() => Promise.resolve([])),
             count: mock(() => Promise.resolve(0)),
-            create: mock(() => Promise.resolve({
-                id: 'session-1',
-                symbol: 'AAPL',
-                title: '请问现在的估值和竞品相比如何',
-                createdAt: new Date('2024-06-01'),
-                updatedAt: new Date('2024-06-01'),
-            })),
-            delete: mock(() => Promise.resolve({
-                id: 'session-1',
-                symbol: 'AAPL',
-                title: 'Test Session',
-                createdAt: new Date('2024-06-01'),
-                updatedAt: new Date('2024-06-01'),
-            })),
-            update: mock(() => Promise.resolve({
-                id: 'session-1',
-                symbol: 'AAPL',
-                title: 'New Title',
-                createdAt: new Date('2024-06-01'),
-                updatedAt: new Date('2024-06-01'),
-            })),
+            create: mock(() =>
+                Promise.resolve({
+                    id: 'session-1',
+                    symbol: 'AAPL',
+                    title: '请问现在的估值和竞品相比如何',
+                    createdAt: new Date('2024-06-01'),
+                    updatedAt: new Date('2024-06-01'),
+                }),
+            ),
+            delete: mock(() =>
+                Promise.resolve({
+                    id: 'session-1',
+                    symbol: 'AAPL',
+                    title: 'Test Session',
+                    createdAt: new Date('2024-06-01'),
+                    updatedAt: new Date('2024-06-01'),
+                }),
+            ),
+            update: mock(() =>
+                Promise.resolve({
+                    id: 'session-1',
+                    symbol: 'AAPL',
+                    title: 'New Title',
+                    createdAt: new Date('2024-06-01'),
+                    updatedAt: new Date('2024-06-01'),
+                }),
+            ),
         },
         chatMessage: {
             findMany: mock(() => Promise.resolve([])),
             create: mock(() => Promise.resolve({})),
         },
     }
-}
-
-function createMockDeps(dbOverrides?: Partial<ReturnType<typeof createMockDb>>): SessionDeps {
-    const db = { ...createMockDb(), ...dbOverrides }
-    return { db } as unknown as SessionDeps
 }
 
 // ==================== createSession ====================
@@ -63,14 +64,15 @@ describe('createSession', () => {
         const longMessage = '请问现在的估值和竞品相比如何，能否详细分析一下'
         const expectedTitle = longMessage.slice(0, 20)
         db.chatSession.count.mockImplementation(() => Promise.resolve(5))
-        db.chatSession.create.mockImplementation((args: { data: { symbol: string; title: string } }) =>
-            Promise.resolve({
-                id: 'session-new',
-                symbol: args.data.symbol,
-                title: args.data.title,
-                createdAt: new Date(),
-                updatedAt: new Date(),
-            }),
+        db.chatSession.create.mockImplementation(
+            (args: { data: { symbol: string; title: string } }) =>
+                Promise.resolve({
+                    id: 'session-new',
+                    symbol: args.data.symbol,
+                    title: args.data.title,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                }),
         )
         const deps = { db } as unknown as SessionDeps
 
@@ -82,7 +84,6 @@ describe('createSession', () => {
             data: { symbol: 'AAPL', title: expectedTitle },
         })
     })
-
 })
 
 // ==================== deleteSession ====================
@@ -91,26 +92,34 @@ describe('deleteSession', () => {
     it('T03-05: 正常删除 (Cascade 由 Prisma 处理)', async () => {
         const { deleteSession } = await import('@/core/ai/session')
         const db = createMockDb()
-        db.chatSession.delete.mockImplementation(() => Promise.resolve({
-            id: 'session-1',
-            symbol: 'AAPL',
-            title: 'Test',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        }))
+        db.chatSession.delete.mockImplementation(() =>
+            Promise.resolve({
+                id: 'session-1',
+                symbol: 'AAPL',
+                title: 'Test',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            }),
+        )
         const deps = { db } as unknown as SessionDeps
 
         await deleteSession('session-1', deps)
 
-        expect(db.chatSession.delete).toHaveBeenCalledWith({ where: { id: 'session-1' } })
+        expect(db.chatSession.delete).toHaveBeenCalledWith({
+            where: { id: 'session-1' },
+        })
     })
 
     it('T03-06: session 不存在时抛 NOT_FOUND', async () => {
-        const { deleteSession, SessionError } = await import('@/core/ai/session')
+        const { deleteSession, SessionError } = await import(
+            '@/core/ai/session'
+        )
         const db = createMockDb()
         const prismaNotFound = new Error('Record not found')
         Object.assign(prismaNotFound, { code: 'P2025' })
-        db.chatSession.delete.mockImplementation(() => Promise.reject(prismaNotFound))
+        db.chatSession.delete.mockImplementation(() =>
+            Promise.reject(prismaNotFound),
+        )
         const deps = { db } as unknown as SessionDeps
 
         try {
@@ -118,7 +127,9 @@ describe('deleteSession', () => {
             expect.unreachable('Should have thrown')
         } catch (error) {
             expect(error).toBeInstanceOf(SessionError)
-            expect((error as InstanceType<typeof SessionError>).code).toBe('NOT_FOUND')
+            expect((error as InstanceType<typeof SessionError>).code).toBe(
+                'NOT_FOUND',
+            )
         }
     })
 })
@@ -129,13 +140,15 @@ describe('renameSession', () => {
     it('T03-07: 正常重命名', async () => {
         const { renameSession } = await import('@/core/ai/session')
         const db = createMockDb()
-        db.chatSession.update.mockImplementation(() => Promise.resolve({
-            id: 'session-1',
-            symbol: 'AAPL',
-            title: 'New Title',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        }))
+        db.chatSession.update.mockImplementation(() =>
+            Promise.resolve({
+                id: 'session-1',
+                symbol: 'AAPL',
+                title: 'New Title',
+                createdAt: new Date(),
+                updatedAt: new Date(),
+            }),
+        )
         const deps = { db } as unknown as SessionDeps
 
         const result = await renameSession('session-1', 'New Title', deps)
@@ -148,7 +161,9 @@ describe('renameSession', () => {
     })
 
     it('T03-08: title 为空时抛 INVALID_INPUT', async () => {
-        const { renameSession, SessionError } = await import('@/core/ai/session')
+        const { renameSession, SessionError } = await import(
+            '@/core/ai/session'
+        )
         const db = createMockDb()
         const deps = { db } as unknown as SessionDeps
 
@@ -157,12 +172,16 @@ describe('renameSession', () => {
             expect.unreachable('Should have thrown')
         } catch (error) {
             expect(error).toBeInstanceOf(SessionError)
-            expect((error as InstanceType<typeof SessionError>).code).toBe('INVALID_INPUT')
+            expect((error as InstanceType<typeof SessionError>).code).toBe(
+                'INVALID_INPUT',
+            )
         }
     })
 
     it('title 超过 20 字时抛 INVALID_INPUT', async () => {
-        const { renameSession, SessionError } = await import('@/core/ai/session')
+        const { renameSession, SessionError } = await import(
+            '@/core/ai/session'
+        )
         const db = createMockDb()
         const deps = { db } as unknown as SessionDeps
 
@@ -171,16 +190,22 @@ describe('renameSession', () => {
             expect.unreachable('Should have thrown')
         } catch (error) {
             expect(error).toBeInstanceOf(SessionError)
-            expect((error as InstanceType<typeof SessionError>).code).toBe('INVALID_INPUT')
+            expect((error as InstanceType<typeof SessionError>).code).toBe(
+                'INVALID_INPUT',
+            )
         }
     })
 
     it('session 不存在时抛 NOT_FOUND', async () => {
-        const { renameSession, SessionError } = await import('@/core/ai/session')
+        const { renameSession, SessionError } = await import(
+            '@/core/ai/session'
+        )
         const db = createMockDb()
         const prismaNotFound = new Error('Record not found')
         Object.assign(prismaNotFound, { code: 'P2025' })
-        db.chatSession.update.mockImplementation(() => Promise.reject(prismaNotFound))
+        db.chatSession.update.mockImplementation(() =>
+            Promise.reject(prismaNotFound),
+        )
         const deps = { db } as unknown as SessionDeps
 
         try {
@@ -188,7 +213,9 @@ describe('renameSession', () => {
             expect.unreachable('Should have thrown')
         } catch (error) {
             expect(error).toBeInstanceOf(SessionError)
-            expect((error as InstanceType<typeof SessionError>).code).toBe('NOT_FOUND')
+            expect((error as InstanceType<typeof SessionError>).code).toBe(
+                'NOT_FOUND',
+            )
         }
     })
 })
@@ -203,17 +230,27 @@ describe('loadMessages', () => {
             {
                 id: 'msg-1',
                 sessionId: 'session-1',
-                content: JSON.stringify({ id: 'ui-1', role: 'user', parts: [{ type: 'text', text: 'hello' }] }),
+                content: JSON.stringify({
+                    id: 'ui-1',
+                    role: 'user',
+                    parts: [{ type: 'text', text: 'hello' }],
+                }),
                 createdAt: new Date('2024-06-01T00:00:00Z'),
             },
             {
                 id: 'msg-2',
                 sessionId: 'session-1',
-                content: JSON.stringify({ id: 'ui-2', role: 'assistant', parts: [{ type: 'text', text: 'hi there' }] }),
+                content: JSON.stringify({
+                    id: 'ui-2',
+                    role: 'assistant',
+                    parts: [{ type: 'text', text: 'hi there' }],
+                }),
                 createdAt: new Date('2024-06-01T00:01:00Z'),
             },
         ]
-        db.chatMessage.findMany.mockImplementation(() => Promise.resolve(mockMessages))
+        db.chatMessage.findMany.mockImplementation(() =>
+            Promise.resolve(mockMessages),
+        )
         const deps = { db } as unknown as SessionDeps
 
         const result = await loadMessages('session-1', deps)
@@ -249,14 +286,21 @@ describe('appendMessage', () => {
         db.chatMessage.upsert = mockUpsert
         const deps = { db } as unknown as SessionDeps
 
-        const message = { id: 'ui-3', role: 'assistant' as const, parts: [{ type: 'text' as const, text: 'response' }] }
+        const message = {
+            id: 'ui-3',
+            role: 'assistant' as const,
+            parts: [{ type: 'text' as const, text: 'response' }],
+        }
 
         await appendMessage('session-1', message as never, deps)
 
         expect(mockUpsert).toHaveBeenCalledTimes(1)
         expect(mockUpsert).toHaveBeenCalledWith({
             where: {
-                sessionId_messageId: { sessionId: 'session-1', messageId: 'ui-3' },
+                sessionId_messageId: {
+                    sessionId: 'session-1',
+                    messageId: 'ui-3',
+                },
             },
             create: {
                 sessionId: 'session-1',
@@ -273,24 +317,41 @@ describe('appendMessage', () => {
 // ==================== clearChannelSession ====================
 
 describe('clearChannelSession', () => {
+    type ClearSessionCreateArgs = {
+        data: {
+            channel: string
+            sourceId: string
+            createdBy: string
+            title: string
+        }
+        select: {
+            id: true
+        }
+    }
+
     it('creates a new session with channel metadata', async () => {
         const { clearChannelSession } = await import('@/core/ai/session')
         const db = createMockDb()
-        db.chatSession.create.mockImplementation((args: any) =>
-            Promise.resolve({ id: 'new-session-1' }),
+        db.chatSession.create.mockImplementation(
+            (_args: ClearSessionCreateArgs) =>
+                Promise.resolve({ id: 'new-session-1' }),
         )
         const deps = { db } as unknown as SessionDeps
 
-        const result = await clearChannelSession({
-            channel: 'discord',
-            sourceId: 'guild-1:channel-1',
-            createdBy: 'user-1',
-        }, deps)
+        const result = await clearChannelSession(
+            {
+                channel: 'discord',
+                sourceId: 'guild-1:channel-1',
+                createdBy: 'user-1',
+            },
+            deps,
+        )
 
         expect(result.id).toBe('new-session-1')
         expect(db.chatSession.create).toHaveBeenCalledTimes(1)
 
-        const createArgs = db.chatSession.create.mock.calls[0][0] as any
+        const createArgs = db.chatSession.create.mock
+            .calls[0][0] as ClearSessionCreateArgs
         expect(createArgs.data.channel).toBe('discord')
         expect(createArgs.data.sourceId).toBe('guild-1:channel-1')
         expect(createArgs.data.createdBy).toBe('user-1')
@@ -300,21 +361,26 @@ describe('clearChannelSession', () => {
     it('title contains channel name and human-readable time', async () => {
         const { clearChannelSession } = await import('@/core/ai/session')
         const db = createMockDb()
-        db.chatSession.create.mockImplementation((args: any) =>
-            Promise.resolve({ id: 'new-session-2' }),
+        db.chatSession.create.mockImplementation(
+            (_args: ClearSessionCreateArgs) =>
+                Promise.resolve({ id: 'new-session-2' }),
         )
         const deps = { db } as unknown as SessionDeps
 
-        await clearChannelSession({
-            channel: 'discord',
-            sourceId: 'user-1',
-            createdBy: 'user-1',
-        }, deps)
+        await clearChannelSession(
+            {
+                channel: 'discord',
+                sourceId: 'user-1',
+                createdBy: 'user-1',
+            },
+            deps,
+        )
 
-        const createArgs = db.chatSession.create.mock.calls[0][0] as any
+        const createArgs = db.chatSession.create.mock
+            .calls[0][0] as ClearSessionCreateArgs
         const title: string = createArgs.data.title
         expect(title).toStartWith('discord - created at ')
-        expect(title).not.toContain('T')  // not ISO timestamp
+        expect(title).not.toContain('T') // not ISO timestamp
     })
 })
 

@@ -9,16 +9,23 @@
  * rather than standalone unit tests.
  */
 
-import type { CacheEntry, CacheStore } from './types'
+import type { CacheStore } from './types'
 
-interface DbStoreOptions<T, P extends Record<string, unknown> = Record<string, never>> {
-    readonly findByKey: (key: string, params?: P) => Promise<{ data: T; fetchedAt: Date } | null>
+interface DbStoreOptions<
+    T,
+    P extends Record<string, unknown> = Record<string, never>,
+> {
+    readonly findByKey: (
+        key: string,
+        params?: P,
+    ) => Promise<{ data: T; fetchedAt: Date } | null>
     readonly upsertByKey: (key: string, data: T, params?: P) => Promise<void>
 }
 
-export function createDbStore<T, P extends Record<string, unknown> = Record<string, never>>(
-    options: DbStoreOptions<T, P>,
-): CacheStore<T, P> {
+export function createDbStore<
+    T,
+    P extends Record<string, unknown> = Record<string, never>,
+>(options: DbStoreOptions<T, P>): CacheStore<T, P> {
     return {
         async get(key, params?) {
             const result = await options.findByKey(key, params)

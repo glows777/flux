@@ -1,7 +1,58 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { CronJob } from '@prisma/client'
 import { CronScheduler, parseSchedule } from '@/scheduler/engine'
 
-const baseJob = {
+type SchedulerDeps = ConstructorParameters<typeof CronScheduler>[0]
+type SchedulerGateway = SchedulerDeps['gateway']
+type SchedulerPrisma = SchedulerDeps['prisma']
+type TestableCronScheduler = CronScheduler & {
+    readonly isStarted: boolean
+    readonly startedAt: number | null
+    readonly lastEngineActivityAt: number | null
+    readonly lastSuccessfulRunAt: number | null
+    readonly jobs: Map<string, { stop(): void }>
+    readonly running: Set<string>
+    readonly runningJobStartedAt: Map<string, number>
+    oldestRunningJobStartedAt: number | null
+    stop: () => Promise<void>
+    start: () => Promise<void>
+}
+
+function asTestableScheduler(scheduler: CronScheduler): TestableCronScheduler {
+    return scheduler as unknown as TestableCronScheduler
+}
+
+function createGateway(
+    gatewayChat: ReturnType<typeof mock> = mock(() =>
+        Promise.resolve({ success: true, text: 'done' }),
+    ),
+): SchedulerGateway {
+    return {
+        chat: gatewayChat,
+    } as unknown as SchedulerGateway
+}
+
+function createPrisma(
+    overrides: Partial<SchedulerPrisma> = {},
+): SchedulerPrisma {
+    return {
+        cronJob: {
+            findMany: mock(() => Promise.resolve([])),
+            update: mock(() =>
+                Promise.resolve({ id: 'job-1', retryCount: 0, enabled: true }),
+            ),
+            findFirst: mock(() => Promise.resolve(baseJob)),
+            count: mock(() => Promise.resolve(0)),
+            ...overrides.cronJob,
+        },
+        cronJobRun: {
+            create: mock(() => Promise.resolve({ id: 'run-1' })),
+            ...overrides.cronJobRun,
+        },
+    } as SchedulerPrisma
+}
+
+const baseJob: CronJob = {
     id: 'job-1',
     name: 'test',
     schedule: 'every:2m',
@@ -20,21 +71,21 @@ const baseJob = {
 }
 
 function createScheduler(options?: {
-    jobs?: any[]
-    gatewayChat?: any
+    jobs?: CronJob[]
+    gatewayChat?: ReturnType<typeof mock>
     enabledCount?: number
 }) {
     const mockFindMany = mock(() => Promise.resolve(options?.jobs ?? []))
-    const mockUpdate = mock(() => Promise.resolve({ id: 'job-1', retryCount: 0, enabled: true }))
+    const mockUpdate = mock(() =>
+        Promise.resolve({ id: 'job-1', retryCount: 0, enabled: true }),
+    )
     const mockFindFirst = mock(() => Promise.resolve(baseJob))
     const mockRunCreate = mock(() => Promise.resolve({ id: 'run-1' }))
     const mockCount = mock(() => Promise.resolve(options?.enabledCount ?? 0))
 
     const scheduler = new CronScheduler({
-        gateway: {
-            chat: options?.gatewayChat ?? mock(() => Promise.resolve({ success: true, text: 'done' })),
-        } as any,
-        prisma: {
+        gateway: createGateway(options?.gatewayChat),
+        prisma: createPrisma({
             cronJob: {
                 findMany: mockFindMany,
                 update: mockUpdate,
@@ -42,7 +93,7 @@ function createScheduler(options?: {
                 count: mockCount,
             },
             cronJobRun: { create: mockRunCreate },
-        } as any,
+        }),
     })
 
     return {
@@ -73,7 +124,7 @@ describe('CronScheduler.start', () => {
 
         await scheduler.start()
 
-        const internal = scheduler as any
+        const internal = asTestableScheduler(scheduler)
         expect(mocks.mockFindMany).toHaveBeenCalledTimes(1)
         expect(internal.isStarted).toBe(true)
         expect(typeof internal.startedAt).toBe('number')
@@ -137,7 +188,7 @@ describe('CronScheduler.checkHealth', () => {
         })
 
         await scheduler.start()
-        const internal = scheduler as any
+        const internal = asTestableScheduler(scheduler)
         const cron = internal.jobs.get('job-1')
         cron.stop()
 
@@ -155,7 +206,7 @@ describe('CronScheduler.checkHealth', () => {
         })
 
         await scheduler.start()
-        const internal = scheduler as any
+        const internal = asTestableScheduler(scheduler)
         const startedAt = Date.now() - 26 * 60 * 1000
         internal.running.add('job-1')
         internal.runningJobStartedAt.set('job-1', startedAt)
@@ -177,8 +228,9 @@ describe('CronScheduler.recoverHealth', () => {
         const stopMock = mock(() => Promise.resolve())
         const startMock = mock(() => Promise.resolve())
 
-        ;(scheduler as any).stop = stopMock
-        ;(scheduler as any).start = startMock
+        const testableScheduler = asTestableScheduler(scheduler)
+        testableScheduler.stop = stopMock
+        testableScheduler.start = startMock
 
         await scheduler.recoverHealth()
 
@@ -188,9 +240,13 @@ describe('CronScheduler.recoverHealth', () => {
 })
 
 describe('CronScheduler.handleResult via runNow', () => {
-    const mockCronJobUpdate = mock(() => Promise.resolve({
-        id: 'job-1', retryCount: 0, enabled: true,
-    }))
+    const mockCronJobUpdate = mock(() =>
+        Promise.resolve({
+            id: 'job-1',
+            retryCount: 0,
+            enabled: true,
+        }),
+    )
     const mockCronJobRunCreate = mock(() => Promise.resolve({ id: 'run-1' }))
     const mockCronJobFindFirst = mock(() => Promise.resolve(baseJob))
     const mockCronJobCount = mock(() => Promise.resolve(0))
@@ -203,18 +259,24 @@ describe('CronScheduler.handleResult via runNow', () => {
         mockCronJobFindFirst.mockReset()
         mockCronJobCount.mockReset()
 
-        mockCronJobUpdate.mockImplementation(() => Promise.resolve({
-            id: 'job-1', retryCount: 0, enabled: true,
-        }))
-        mockCronJobRunCreate.mockImplementation(() => Promise.resolve({ id: 'run-1' }))
+        mockCronJobUpdate.mockImplementation(() =>
+            Promise.resolve({
+                id: 'job-1',
+                retryCount: 0,
+                enabled: true,
+            }),
+        )
+        mockCronJobRunCreate.mockImplementation(() =>
+            Promise.resolve({ id: 'run-1' }),
+        )
         mockCronJobFindFirst.mockImplementation(() => Promise.resolve(baseJob))
         mockCronJobCount.mockImplementation(() => Promise.resolve(0))
 
         scheduler = new CronScheduler({
-            gateway: {
-                chat: mock(() => Promise.resolve({ success: true, text: 'done' })),
-            } as any,
-            prisma: {
+            gateway: createGateway(
+                mock(() => Promise.resolve({ success: true, text: 'done' })),
+            ),
+            prisma: createPrisma({
                 cronJob: {
                     findMany: mock(() => Promise.resolve([])),
                     update: mockCronJobUpdate,
@@ -222,7 +284,7 @@ describe('CronScheduler.handleResult via runNow', () => {
                     count: mockCronJobCount,
                 },
                 cronJobRun: { create: mockCronJobRunCreate },
-            } as any,
+            }),
         })
     })
 
@@ -236,7 +298,7 @@ describe('CronScheduler.handleResult via runNow', () => {
         expect(call.data.triggeredBy).toBe('manual')
         expect(typeof call.data.durationMs).toBe('number')
 
-        const internal = scheduler as any
+        const internal = asTestableScheduler(scheduler)
         expect(typeof internal.lastEngineActivityAt).toBe('number')
         expect(typeof internal.lastSuccessfulRunAt).toBe('number')
         expect(internal.running.has('job-1')).toBe(false)
@@ -245,10 +307,10 @@ describe('CronScheduler.handleResult via runNow', () => {
 
     test('writes an error run record on failure', async () => {
         const failScheduler = new CronScheduler({
-            gateway: {
-                chat: mock(() => Promise.resolve({ success: false, text: '' })),
-            } as any,
-            prisma: {
+            gateway: createGateway(
+                mock(() => Promise.resolve({ success: false, text: '' })),
+            ),
+            prisma: createPrisma({
                 cronJob: {
                     findMany: mock(() => Promise.resolve([])),
                     update: mockCronJobUpdate,
@@ -256,7 +318,7 @@ describe('CronScheduler.handleResult via runNow', () => {
                     count: mockCronJobCount,
                 },
                 cronJobRun: { create: mockCronJobRunCreate },
-            } as any,
+            }),
         })
 
         await failScheduler.runNow('job-1')
@@ -270,13 +332,15 @@ describe('CronScheduler.handleResult via runNow', () => {
     test('soft-deletes job and removes from scheduler after MAX_RETRIES failures', async () => {
         const jobAtMaxRetries = { ...baseJob, retryCount: 4 } // next failure = 5 = MAX_RETRIES
 
-        mockCronJobFindFirst.mockImplementation(() => Promise.resolve(jobAtMaxRetries))
+        mockCronJobFindFirst.mockImplementation(() =>
+            Promise.resolve(jobAtMaxRetries),
+        )
 
         const failScheduler = new CronScheduler({
-            gateway: {
-                chat: mock(() => Promise.resolve({ success: false, text: 'err' })),
-            } as any,
-            prisma: {
+            gateway: createGateway(
+                mock(() => Promise.resolve({ success: false, text: 'err' })),
+            ),
+            prisma: createPrisma({
                 cronJob: {
                     findMany: mock(() => Promise.resolve([jobAtMaxRetries])),
                     update: mockCronJobUpdate,
@@ -284,20 +348,20 @@ describe('CronScheduler.handleResult via runNow', () => {
                     count: mockCronJobCount,
                 },
                 cronJobRun: { create: mockCronJobRunCreate },
-            } as any,
+            }),
         })
 
         await failScheduler.start()
         await failScheduler.runNow('job-1')
 
         const updateCall = mockCronJobUpdate.mock.calls.find(
-            (c: any) => c[0].data?.deletedAt !== undefined,
+            (call) => call[0].data?.deletedAt !== undefined,
         )
         expect(updateCall).toBeDefined()
         expect(updateCall[0].data.enabled).toBe(false)
         expect(updateCall[0].data.deletedAt).toBeInstanceOf(Date)
 
-        const internal = failScheduler as any
+        const internal = asTestableScheduler(failScheduler)
         expect(internal.jobs.has('job-1')).toBe(false)
 
         await failScheduler.stop()

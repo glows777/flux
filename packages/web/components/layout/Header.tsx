@@ -1,11 +1,18 @@
 'use client'
 
+import type { MacroTicker } from '@flux/shared'
 import useSWR from 'swr'
 import { MacroTickerItem } from '@/components/market/MacroTickerItem'
 import { SearchBox } from '@/components/ui/SearchBox'
 import { fetcher } from '@/lib/fetcher'
 import { MACRO_TICKERS } from '@/lib/mock/data'
-import type { MacroTicker } from '@flux/shared'
+
+const MACRO_SKELETON_KEYS = [
+    'macro-skeleton-1',
+    'macro-skeleton-2',
+    'macro-skeleton-3',
+    'macro-skeleton-4',
+] as const
 
 export function Header() {
     const { data, isLoading, error } = useSWR<MacroTicker[]>(
@@ -21,9 +28,9 @@ export function Header() {
             {/* 宏观指标区域 - 可横向滚动 */}
             <div className='flex items-center gap-6 overflow-x-auto no-scrollbar'>
                 {isLoading
-                    ? Array.from({ length: 4 }, (_, i) => (
+                    ? MACRO_SKELETON_KEYS.map((key) => (
                           <div
-                              key={i}
+                              key={key}
                               className='animate-pulse flex items-center gap-2 shrink-0'
                           >
                               <div className='h-4 w-12 bg-white/5 rounded' />

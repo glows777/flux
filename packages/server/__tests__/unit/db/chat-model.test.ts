@@ -57,17 +57,41 @@ const createMockMessage = (
 
 // ─── Mock Prisma types ───
 
-type MockFn<TArgs extends unknown[], TReturn> = ReturnType<typeof mock<(...args: TArgs) => Promise<TReturn>>>
+type MockFn<TArgs extends unknown[], TReturn> = ReturnType<
+    typeof mock<(...args: TArgs) => Promise<TReturn>>
+>
 
 interface MockPrismaChatSession {
-    create: MockFn<[{ data: { symbol: string; title: string } }], MockChatSession>
-    findMany: MockFn<[{ where?: { symbol?: string }; orderBy?: { updatedAt?: 'desc' | 'asc' } }], MockChatSession[]>
+    create: MockFn<
+        [{ data: { symbol: string; title: string } }],
+        MockChatSession
+    >
+    findMany: MockFn<
+        [
+            {
+                where?: { symbol?: string }
+                orderBy?: { updatedAt?: 'desc' | 'asc' }
+            },
+        ],
+        MockChatSession[]
+    >
     delete: MockFn<[{ where: { id: string } }], MockChatSession>
 }
 
 interface MockPrismaChatMessage {
-    create: MockFn<[{ data: { sessionId: string; content: string } }], MockChatMessage>
-    findMany: MockFn<[{ where?: { sessionId?: string }; orderBy?: { createdAt?: 'asc' | 'desc' } }], MockChatMessage[]>
+    create: MockFn<
+        [{ data: { sessionId: string; content: string } }],
+        MockChatMessage
+    >
+    findMany: MockFn<
+        [
+            {
+                where?: { sessionId?: string }
+                orderBy?: { createdAt?: 'asc' | 'desc' }
+            },
+        ],
+        MockChatMessage[]
+    >
     count: MockFn<[{ where?: { sessionId?: string } }], number>
 }
 
@@ -116,12 +140,19 @@ describe('ChatSession Model', () => {
     })
 
     it('T01-02: Same symbol can have multiple sessions', async () => {
-        const session1 = createMockSession({ id: 'cuid-session-1', title: '估值分析' })
-        const session2 = createMockSession({ id: 'cuid-session-2', title: '技术面怎么看' })
+        const session1 = createMockSession({
+            id: 'cuid-session-1',
+            title: '估值分析',
+        })
+        const session2 = createMockSession({
+            id: 'cuid-session-2',
+            title: '技术面怎么看',
+        })
 
         mockPrisma.chatSession.create = mock(
             (args: { data: { symbol: string; title: string } }) => {
-                if (args.data.title === '估值分析') return Promise.resolve(session1)
+                if (args.data.title === '估值分析')
+                    return Promise.resolve(session1)
                 return Promise.resolve(session2)
             },
         )
@@ -155,8 +186,14 @@ describe('ChatSession Model', () => {
         ]
 
         mockPrisma.chatSession.findMany = mock(
-            (args: { where?: { symbol?: string }; orderBy?: { updatedAt?: 'desc' | 'asc' } }) => {
-                if (args.where?.symbol === 'AAPL' && args.orderBy?.updatedAt === 'desc') {
+            (args: {
+                where?: { symbol?: string }
+                orderBy?: { updatedAt?: 'desc' | 'asc' }
+            }) => {
+                if (
+                    args.where?.symbol === 'AAPL' &&
+                    args.orderBy?.updatedAt === 'desc'
+                ) {
                     return Promise.resolve(sessions)
                 }
                 return Promise.resolve([])
@@ -169,7 +206,9 @@ describe('ChatSession Model', () => {
         })
 
         expect(result).toHaveLength(2)
-        expect(result[0].updatedAt.getTime()).toBeGreaterThan(result[1].updatedAt.getTime())
+        expect(result[0].updatedAt.getTime()).toBeGreaterThan(
+            result[1].updatedAt.getTime(),
+        )
         expect(result[0].title).toBe('最新讨论')
     })
 })
@@ -221,7 +260,10 @@ describe('ChatMessage Model', () => {
             createMockMessage({
                 id: 'msg-2',
                 sessionId: 'cuid-session-1',
-                content: JSON.stringify({ role: 'assistant', content: '回答1' }),
+                content: JSON.stringify({
+                    role: 'assistant',
+                    content: '回答1',
+                }),
                 createdAt: new Date('2024-01-01T00:01:00Z'),
             }),
             createMockMessage({
@@ -233,8 +275,14 @@ describe('ChatMessage Model', () => {
         ]
 
         mockPrisma.chatMessage.findMany = mock(
-            (args: { where?: { sessionId?: string }; orderBy?: { createdAt?: 'asc' | 'desc' } }) => {
-                if (args.where?.sessionId === 'cuid-session-1' && args.orderBy?.createdAt === 'asc') {
+            (args: {
+                where?: { sessionId?: string }
+                orderBy?: { createdAt?: 'asc' | 'desc' }
+            }) => {
+                if (
+                    args.where?.sessionId === 'cuid-session-1' &&
+                    args.orderBy?.createdAt === 'asc'
+                ) {
                     return Promise.resolve(messages)
                 }
                 return Promise.resolve([])
@@ -248,7 +296,9 @@ describe('ChatMessage Model', () => {
 
         expect(result).toHaveLength(3)
         for (let i = 1; i < result.length; i++) {
-            expect(result[i].createdAt.getTime()).toBeGreaterThan(result[i - 1].createdAt.getTime())
+            expect(result[i].createdAt.getTime()).toBeGreaterThan(
+                result[i - 1].createdAt.getTime(),
+            )
         }
     })
 

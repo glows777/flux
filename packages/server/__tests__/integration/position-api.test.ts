@@ -9,10 +9,10 @@
 
 import { beforeEach, describe, expect, it } from 'bun:test'
 import './setup'
-import { mockGetPosition } from './helpers/mock-boundaries'
 
 // Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
+import { mockGetPosition } from './helpers/mock-boundaries'
 
 const app = createHonoApp()
 

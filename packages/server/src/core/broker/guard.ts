@@ -45,15 +45,18 @@ const DEFAULT_CONFIG: GuardConfig = {
 
 function loadConfig(): GuardConfig {
     return {
-        maxOrderAmount: process.env.GUARD_MAX_ORDER_AMOUNT != null
-            ? Number(process.env.GUARD_MAX_ORDER_AMOUNT)
-            : DEFAULT_CONFIG.maxOrderAmount,
-        cooldownMinutes: process.env.GUARD_COOLDOWN_MINUTES != null
-            ? Number(process.env.GUARD_COOLDOWN_MINUTES)
-            : DEFAULT_CONFIG.cooldownMinutes,
-        maxDailyLoss: process.env.GUARD_MAX_DAILY_LOSS != null
-            ? Number(process.env.GUARD_MAX_DAILY_LOSS)
-            : DEFAULT_CONFIG.maxDailyLoss,
+        maxOrderAmount:
+            process.env.GUARD_MAX_ORDER_AMOUNT != null
+                ? Number(process.env.GUARD_MAX_ORDER_AMOUNT)
+                : DEFAULT_CONFIG.maxOrderAmount,
+        cooldownMinutes:
+            process.env.GUARD_COOLDOWN_MINUTES != null
+                ? Number(process.env.GUARD_COOLDOWN_MINUTES)
+                : DEFAULT_CONFIG.cooldownMinutes,
+        maxDailyLoss:
+            process.env.GUARD_MAX_DAILY_LOSS != null
+                ? Number(process.env.GUARD_MAX_DAILY_LOSS)
+                : DEFAULT_CONFIG.maxDailyLoss,
     }
 }
 
@@ -83,7 +86,9 @@ function checkCooldown(
     const now = Date.now()
 
     const recentSameSymbol = context.todayOrders.some(
-        (o) => o.symbol === params.symbol && now - o.createdAt.getTime() < cooldownMs,
+        (o) =>
+            o.symbol === params.symbol &&
+            now - o.createdAt.getTime() < cooldownMs,
     )
 
     if (recentSameSymbol) {
@@ -101,11 +106,17 @@ function checkDailyLoss(
     config: GuardConfig,
 ): GuardResult {
     const filledSells = context.todayOrders.filter(
-        (o) => o.side === 'sell' && o.status === 'filled' && o.filledAvgPrice != null,
+        (o) =>
+            o.side === 'sell' &&
+            o.status === 'filled' &&
+            o.filledAvgPrice != null,
     )
 
     const filledBuys = context.todayOrders.filter(
-        (o) => o.side === 'buy' && o.status === 'filled' && o.filledAvgPrice != null,
+        (o) =>
+            o.side === 'buy' &&
+            o.status === 'filled' &&
+            o.filledAvgPrice != null,
     )
 
     const sellTotal = filledSells.reduce(

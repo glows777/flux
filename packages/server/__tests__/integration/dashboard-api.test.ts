@@ -9,14 +9,14 @@
 
 import { beforeEach, describe, expect, it } from 'bun:test'
 import './setup'
+import { createHonoApp } from '@/routes/index'
 import {
     mockGetAccount,
-    mockGetPositions,
-    mockGetMacroIndicators,
-    mockGetWatchlistItems,
     mockGetInfoWithCache,
+    mockGetMacroIndicators,
+    mockGetPositions,
+    mockGetWatchlistItems,
 } from './helpers/mock-boundaries'
-import { createHonoApp } from '@/routes/index'
 
 const mockAlpacaPosition = {
     symbol: 'AAPL',
@@ -32,7 +32,13 @@ const mockAlpacaPosition = {
 }
 
 const mockWatchlistData = [
-    { id: 'AAPL', name: 'Apple Inc.', price: 180, chg: 1.2, data: [175, 178, 180] },
+    {
+        id: 'AAPL',
+        name: 'Apple Inc.',
+        price: 180,
+        chg: 1.2,
+        data: [175, 178, 180],
+    },
     { id: 'NVDA', name: 'NVIDIA', price: 900, chg: 2.5, data: [870, 885, 900] },
 ]
 
@@ -131,9 +137,7 @@ describe('GET /api/dashboard', () => {
             mockGetAccount.mockImplementation(() =>
                 Promise.reject(new Error('Alpaca API down')),
             )
-            mockGetPositions.mockImplementation(() =>
-                Promise.resolve([]),
-            )
+            mockGetPositions.mockImplementation(() => Promise.resolve([]))
             mockGetWatchlistItems.mockImplementation(() =>
                 Promise.resolve(mockWatchlistData),
             )
@@ -162,9 +166,7 @@ describe('GET /api/dashboard', () => {
                     longMarketValue: 50000,
                 }),
             )
-            mockGetPositions.mockImplementation(() =>
-                Promise.resolve([]),
-            )
+            mockGetPositions.mockImplementation(() => Promise.resolve([]))
             mockGetWatchlistItems.mockImplementation(() =>
                 Promise.resolve(mockWatchlistData),
             )
@@ -194,12 +196,8 @@ describe('GET /api/dashboard', () => {
             mockGetPositions.mockImplementation(() =>
                 Promise.reject(new Error('positions fetch failed')),
             )
-            mockGetWatchlistItems.mockImplementation(() =>
-                Promise.resolve([]),
-            )
-            mockGetMacroIndicators.mockImplementation(() =>
-                Promise.resolve([]),
-            )
+            mockGetWatchlistItems.mockImplementation(() => Promise.resolve([]))
+            mockGetMacroIndicators.mockImplementation(() => Promise.resolve([]))
 
             const res = await app.request('/api/dashboard')
             const json = await res.json()

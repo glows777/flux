@@ -1,8 +1,14 @@
 import { sValidator } from '@hono/standard-validator'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { getSlotContent, writeSlot, getSlotHistory, VALID_SLOTS, SLOT_LIMITS } from '@/core/ai/memory'
 import type { MemorySlot } from '@/core/ai/memory'
+import {
+    getSlotContent,
+    getSlotHistory,
+    SLOT_LIMITS,
+    VALID_SLOTS,
+    writeSlot,
+} from '@/core/ai/memory'
 
 const SLOT_SCHEMA = z.enum(VALID_SLOTS as [MemorySlot, ...MemorySlot[]])
 
@@ -22,8 +28,16 @@ const historyQuerySchema = z.object({
         .default('10')
         .transform((val, ctx) => {
             const n = Number(val)
-            if (!Number.isFinite(n) || !Number.isInteger(n) || n < 1 || n > 50) {
-                ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'limit must be 1-50' })
+            if (
+                !Number.isFinite(n) ||
+                !Number.isInteger(n) ||
+                n < 1 ||
+                n > 50
+            ) {
+                ctx.addIssue({
+                    code: z.ZodIssueCode.custom,
+                    message: 'limit must be 1-50',
+                })
                 return z.NEVER
             }
             return n
@@ -53,7 +67,10 @@ const memory = new Hono()
             )
             return c.json({ success: true, data: entries })
         } catch {
-            return c.json({ success: false, error: 'Failed to list slots' }, 500)
+            return c.json(
+                { success: false, error: 'Failed to list slots' },
+                500,
+            )
         }
     })
 
@@ -82,7 +99,10 @@ const memory = new Hono()
             )
             return c.json({ success: true, data })
         } catch {
-            return c.json({ success: false, error: 'Failed to load full slot data' }, 500)
+            return c.json(
+                { success: false, error: 'Failed to load full slot data' },
+                500,
+            )
         }
     })
 
@@ -94,7 +114,10 @@ const memory = new Hono()
         }
         try {
             const content = await getSlotContent(parsed.data.slot)
-            return c.json({ success: true, data: { slot: parsed.data.slot, content } })
+            return c.json({
+                success: true,
+                data: { slot: parsed.data.slot, content },
+            })
         } catch {
             return c.json({ success: false, error: 'Failed to read slot' }, 500)
         }
@@ -105,9 +128,14 @@ const memory = new Hono()
         '/slots/:slot/history',
         sValidator('query', historyQuerySchema, onValidationError),
         async (c) => {
-            const parsed = slotParamSchema.safeParse({ slot: c.req.param('slot') })
+            const parsed = slotParamSchema.safeParse({
+                slot: c.req.param('slot'),
+            })
             if (!parsed.success) {
-                return c.json({ success: false, error: 'Invalid slot name' }, 400)
+                return c.json(
+                    { success: false, error: 'Invalid slot name' },
+                    400,
+                )
             }
             try {
                 const { limit } = c.req.valid('query')
@@ -123,7 +151,10 @@ const memory = new Hono()
                     })),
                 })
             } catch {
-                return c.json({ success: false, error: 'Failed to read slot history' }, 500)
+                return c.json(
+                    { success: false, error: 'Failed to read slot history' },
+                    500,
+                )
             }
         },
     )
@@ -133,19 +164,30 @@ const memory = new Hono()
         '/slots/:slot',
         sValidator('json', slotWriteBodySchema, onValidationError),
         async (c) => {
-            const parsed = slotParamSchema.safeParse({ slot: c.req.param('slot') })
+            const parsed = slotParamSchema.safeParse({
+                slot: c.req.param('slot'),
+            })
             if (!parsed.success) {
-                return c.json({ success: false, error: 'Invalid slot name' }, 400)
+                return c.json(
+                    { success: false, error: 'Invalid slot name' },
+                    400,
+                )
             }
             try {
                 const { content, reason } = c.req.valid('json')
                 await writeSlot(parsed.data.slot, content, 'user', reason)
                 return c.json({ success: true })
-            } catch (e: any) {
-                if (e?.name === 'SlotContentTooLongError') {
-                    return c.json({ success: false, error: e.message }, 422)
+            } catch (error: unknown) {
+                if (
+                    error instanceof Error &&
+                    error.name === 'SlotContentTooLongError'
+                ) {
+                    return c.json({ success: false, error: error.message }, 422)
                 }
-                return c.json({ success: false, error: 'Failed to write slot' }, 500)
+                return c.json(
+                    { success: false, error: 'Failed to write slot' },
+                    500,
+                )
             }
         },
     )

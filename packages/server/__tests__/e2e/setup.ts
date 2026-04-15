@@ -12,72 +12,54 @@
 import { mock } from 'bun:test'
 import { assertTestDatabase } from '../helpers/assert-test-db'
 import {
-    mockAppendDocument,
-    mockAppendTranscript,
-    mockCleanMessages,
+    mockAlpacaIsConfigured,
+    mockAutoTradingAgentPreset,
+    mockCancelOrder,
+    mockClosePosition,
     mockConvertToModelMessages,
-    mockCreateMemoryTools,
+    // runtime mocks
+    mockCreateAIRuntime,
+    // cron service mocks
+    mockCreateCronJob,
+    mockCreateCronJobRun,
     mockCreateHistoryTool,
+    mockCreateMemoryTools,
+    mockCreateOrder,
     // research mocks
     mockCreateResearchTools,
-    mockDeleteDocument,
+    mockDeleteCronJob,
     mockFinnhubGetCompanyNews,
-    mockFinnhubGetQuote,
-    mockFinnhubGetDailyHistory,
     mockFinnhubGetCompanyOverview,
-    mockFlushReindex,
-    mockGenerateEmbedding,
+    mockFinnhubGetDailyHistory,
+    mockFinnhubGetQuote,
     mockGenerateId,
     mockGenerateText,
-    mockGetDocumentDetail,
+    // Alpaca client mocks
+    mockGetAccount,
+    mockGetCronJob,
     mockGetEmbeddingModel,
     mockGetModel,
-    mockGetToolName,
+    mockGetOrders,
+    mockGetPosition,
+    mockGetPositions,
     mockGetSlotContent,
-    mockWriteSlot,
     mockGetSlotHistory,
+    mockGetToolName,
     mockIsToolUIPart,
-    mockListDocuments,
+    mockListAllRuns,
+    mockListCronJobRuns,
+    mockListCronJobs,
     mockLoadMemoryContext,
-    // memory mocks (legacy, kept for any remaining references)
-    mockReadDocument,
-    mockReindexDocument,
-    mockScheduleReindex,
-    mockSearchMemory,
     mockStepCountIs,
     mockStreamText,
-    mockSyncPortfolioDocument,
     mockTool,
-    mockWriteDocument,
+    // preset mocks
+    mockTradingAgentPreset,
+    mockUpdateCronJob,
+    mockWriteSlot,
     mockYahooChart,
     mockYahooQuote,
     mockYahooQuoteSummary,
-    // chat generate mock
-    mockChatGenerate,
-    // runtime mocks
-    mockCreateAIRuntime,
-    mockRuntime,
-    // preset mocks
-    mockTradingAgentPreset,
-    mockAutoTradingAgentPreset,
-    // cron service mocks
-    mockCreateCronJob,
-    mockListCronJobs,
-    mockUpdateCronJob,
-    mockDeleteCronJob,
-    mockGetCronJob,
-    mockCreateCronJobRun,
-    mockListCronJobRuns,
-    mockListAllRuns,
-    // Alpaca client mocks
-    mockGetAccount,
-    mockGetPositions,
-    mockGetPosition,
-    mockGetOrders,
-    mockAlpacaIsConfigured,
-    mockCreateOrder,
-    mockCancelOrder,
-    mockClosePosition,
 } from './helpers/mock-boundaries'
 
 // ─── Safety guard: refuse to run against non-test database ───
@@ -145,15 +127,33 @@ mock.module('@/core/ai/memory', () => ({
     createMemoryTools: mockCreateMemoryTools,
     createHistoryTool: mockCreateHistoryTool,
     SlotContentTooLongError: class SlotContentTooLongError extends Error {
-        slot: string; actual: number; limit: number
+        slot: string
+        actual: number
+        limit: number
         constructor(slot: string, actual: number, limit: number) {
             super(`Slot "${slot}" content too long`)
             this.name = 'SlotContentTooLongError'
-            this.slot = slot; this.actual = actual; this.limit = limit
+            this.slot = slot
+            this.actual = actual
+            this.limit = limit
         }
     },
-    VALID_SLOTS: ['user_profile', 'portfolio_thesis', 'market_views', 'active_focus', 'lessons', 'agent_strategy'],
-    SLOT_LIMITS: { user_profile: 500, market_views: 500, active_focus: 500, lessons: 1000, portfolio_thesis: 2000, agent_strategy: 2000 },
+    VALID_SLOTS: [
+        'user_profile',
+        'portfolio_thesis',
+        'market_views',
+        'active_focus',
+        'lessons',
+        'agent_strategy',
+    ],
+    SLOT_LIMITS: {
+        user_profile: 500,
+        market_views: 500,
+        active_focus: 500,
+        lessons: 1000,
+        portfolio_thesis: 2000,
+        agent_strategy: 2000,
+    },
 }))
 
 mock.module('@/core/ai/research', () => ({
@@ -177,7 +177,10 @@ mock.module('@/core/ai/research', () => ({
     FETCH_CACHE_MAX_SIZE: 100,
     X_SEARCH_CACHE_TTL: 300000,
     X_SEARCH_CACHE_MAX_SIZE: 50,
-    X_SEARCH_CONFIG: { enableImageUnderstanding: true, enableVideoUnderstanding: true },
+    X_SEARCH_CONFIG: {
+        enableImageUnderstanding: true,
+        enableVideoUnderstanding: true,
+    },
     X_SEARCH_SYSTEM_PROMPT: 'mock prompt',
 }))
 
@@ -202,10 +205,16 @@ mock.module('@/core/ai/runtime/create', () => ({
 mock.module('@/core/ai/runtime', () => ({
     createAIRuntime: mockCreateAIRuntime,
     PluginError: class PluginError extends Error {
-        constructor(message: string) { super(message); this.name = 'PluginError' }
+        constructor(message: string) {
+            super(message)
+            this.name = 'PluginError'
+        }
     },
     ToolConflictError: class ToolConflictError extends Error {
-        constructor(message: string) { super(message); this.name = 'ToolConflictError' }
+        constructor(message: string) {
+            super(message)
+            this.name = 'ToolConflictError'
+        }
     },
     DEFAULT_CHAT_PARAMS: { maxSteps: 20 },
 }))

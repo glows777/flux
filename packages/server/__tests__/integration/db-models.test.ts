@@ -63,7 +63,6 @@ describe('P2-02: Data Model Integration Tests', () => {
             expect(schemaContent).toContain('dividendYield Float?')
             expect(schemaContent).toContain('sector        String?')
         })
-
     })
 
     describe('T02-07: Prisma Generate Verification', () => {

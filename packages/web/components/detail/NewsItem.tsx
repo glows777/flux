@@ -55,12 +55,16 @@ export function NewsItem({
                         {source}
                     </span>
                     {sentiment !== 'neutral' && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${SENTIMENT_STYLES[sentiment]}`}>
+                        <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded ${SENTIMENT_STYLES[sentiment]}`}
+                        >
                             {SENTIMENT_LABELS[sentiment]}
                         </span>
                     )}
                 </div>
-                <span className='text-[10px] text-slate-600'>{formatRelativeTime(time)}</span>
+                <span className='text-[10px] text-slate-600'>
+                    {formatRelativeTime(time)}
+                </span>
             </div>
 
             {/* 标题 */}

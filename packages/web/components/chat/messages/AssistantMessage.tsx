@@ -1,5 +1,5 @@
-import { Cpu } from 'lucide-react'
 import type { UIMessage } from 'ai'
+import { Cpu } from 'lucide-react'
 import { MessageContent } from './MessageContent'
 
 export function AssistantMessage({

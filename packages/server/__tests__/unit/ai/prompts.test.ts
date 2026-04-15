@@ -19,10 +19,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import type { EnhancedIndicators } from '@/core/ai/prompts'
-import {
-    buildAgentSystemPrompt,
-    calculateIndicators,
-} from '@/core/ai/prompts'
+import { buildAgentSystemPrompt, calculateIndicators } from '@/core/ai/prompts'
 import type { HistoryPoint } from '@/core/market-data'
 
 // ==================== 测试数据工厂 ====================
@@ -136,8 +133,9 @@ describe('P2-14: calculateIndicators', () => {
         const result = calculateIndicators(history)
 
         expect(result.rsi).not.toBeNull()
-        expect(result.rsi!).toBeGreaterThanOrEqual(0)
-        expect(result.rsi!).toBeLessThanOrEqual(100)
+        if (result.rsi === null) throw new Error('Expected RSI value')
+        expect(result.rsi).toBeGreaterThanOrEqual(0)
+        expect(result.rsi).toBeLessThanOrEqual(100)
     })
 
     it('T14-03b: RSI 全涨时接近 100', () => {
@@ -329,9 +327,10 @@ describe('Enhanced: MACD', () => {
         const result = calculateIndicators(history)
 
         expect(result.macd).not.toBeNull()
-        expect(result.macd!.value).toBeDefined()
-        expect(result.macd!.signal).toBeDefined()
-        expect(result.macd!.histogram).toBeDefined()
+        if (!result.macd) throw new Error('Expected MACD value')
+        expect(result.macd.value).toBeDefined()
+        expect(result.macd.signal).toBeDefined()
+        expect(result.macd.histogram).toBeDefined()
     })
 
     it('MACD 不足 35 天数据返回 null', () => {
@@ -346,7 +345,8 @@ describe('Enhanced: MACD', () => {
         const result = calculateIndicators(history)
 
         expect(result.macd).not.toBeNull()
-        const { value, signal, histogram } = result.macd!
+        if (!result.macd) throw new Error('Expected MACD value')
+        const { value, signal, histogram } = result.macd
         expect(Math.abs(histogram - (value - signal))).toBeLessThan(0.0001)
     })
 
@@ -373,8 +373,9 @@ describe('Enhanced: MACD', () => {
 
         expect(result.macd).not.toBeNull()
         // golden cross: MACD line crosses above signal
-        if (result.macd!.crossover !== null) {
-            expect(result.macd!.crossover).toBe('golden')
+        if (!result.macd) throw new Error('Expected MACD value')
+        if (result.macd.crossover !== null) {
+            expect(result.macd.crossover).toBe('golden')
         }
     })
 
@@ -400,8 +401,9 @@ describe('Enhanced: MACD', () => {
         const result = calculateIndicators(history)
 
         expect(result.macd).not.toBeNull()
-        if (result.macd!.crossover !== null) {
-            expect(result.macd!.crossover).toBe('death')
+        if (!result.macd) throw new Error('Expected MACD value')
+        if (result.macd.crossover !== null) {
+            expect(result.macd.crossover).toBe('death')
         }
     })
 
@@ -411,7 +413,8 @@ describe('Enhanced: MACD', () => {
         const result = calculateIndicators(history)
 
         expect(result.macd).not.toBeNull()
-        expect(result.macd!.crossover).toBeNull()
+        if (!result.macd) throw new Error('Expected MACD value')
+        expect(result.macd.crossover).toBeNull()
     })
 })
 
@@ -509,7 +512,10 @@ describe('Enhanced: volumeRatio', () => {
         const result = calculateIndicators(history)
 
         expect(result.volumeRatio).not.toBeNull()
-        expect(result.volumeRatio!).toBeGreaterThan(1)
+        if (result.volumeRatio === null) {
+            throw new Error('Expected volumeRatio value')
+        }
+        expect(result.volumeRatio).toBeGreaterThan(1)
     })
 
     it('缩量 — 近 5 日均量 < 近 20 日均量 → <1', () => {
@@ -535,7 +541,10 @@ describe('Enhanced: volumeRatio', () => {
         const result = calculateIndicators(history)
 
         expect(result.volumeRatio).not.toBeNull()
-        expect(result.volumeRatio!).toBeLessThan(1)
+        if (result.volumeRatio === null) {
+            throw new Error('Expected volumeRatio value')
+        }
+        expect(result.volumeRatio).toBeLessThan(1)
     })
 
     it('不足 20 天 → volumeRatio 返回 null', () => {

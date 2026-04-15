@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach } from 'bun:test'
+import { beforeEach, describe, expect, type mock, test } from 'bun:test'
 import { mockClearChannelSession } from './helpers/mock-boundaries'
 
 /**
@@ -13,10 +13,18 @@ describe('Discord /clear session lifecycle', () => {
     test('clearChannelSession creates new session, resolveSession finds it', async () => {
         const { clearChannelSession } = await import('@/core/ai/session')
 
-        const oldSession = { id: 'old-session', createdAt: new Date('2026-03-28') }
-        const newSession = { id: 'new-session', createdAt: new Date('2026-03-30') }
+        const oldSession = {
+            id: 'old-session',
+            createdAt: new Date('2026-03-28'),
+        }
+        const newSession = {
+            id: 'new-session',
+            createdAt: new Date('2026-03-30'),
+        }
 
-        mockClearChannelSession.mockImplementation(() => Promise.resolve({ id: newSession.id }))
+        mockClearChannelSession.mockImplementation(() =>
+            Promise.resolve({ id: newSession.id }),
+        )
 
         const result = await clearChannelSession({
             channel: 'discord',
@@ -27,7 +35,9 @@ describe('Discord /clear session lifecycle', () => {
         expect(result.id).toBe('new-session')
 
         const { prisma } = await import('@/core/db')
-        const mockFindFirst = prisma.chatSession.findFirst as ReturnType<typeof mock>
+        const mockFindFirst = prisma.chatSession.findFirst as ReturnType<
+            typeof mock
+        >
         mockFindFirst.mockImplementation(() => Promise.resolve(newSession))
 
         const found = await prisma.chatSession.findFirst({
@@ -35,14 +45,19 @@ describe('Discord /clear session lifecycle', () => {
             orderBy: { createdAt: 'desc' },
         })
 
-        expect(found!.id).toBe('new-session')
-        expect(found!.id).not.toBe(oldSession.id)
+        expect(found).toBeDefined()
+        if (!found) throw new Error('Expected a resolved session')
+
+        expect(found.id).toBe('new-session')
+        expect(found.id).not.toBe(oldSession.id)
     })
 
     test('old session is preserved (not deleted)', async () => {
         const { clearChannelSession } = await import('@/core/ai/session')
 
-        mockClearChannelSession.mockImplementation(() => Promise.resolve({ id: 'new-session' }))
+        mockClearChannelSession.mockImplementation(() =>
+            Promise.resolve({ id: 'new-session' }),
+        )
 
         await clearChannelSession({
             channel: 'discord',
@@ -51,7 +66,9 @@ describe('Discord /clear session lifecycle', () => {
         })
 
         const { prisma } = await import('@/core/db')
-        const mockDelete = prisma.chatSession.delete as ReturnType<typeof mock> | undefined
+        const mockDelete = prisma.chatSession.delete as
+            | ReturnType<typeof mock>
+            | undefined
         if (mockDelete) {
             expect(mockDelete).not.toHaveBeenCalled()
         }

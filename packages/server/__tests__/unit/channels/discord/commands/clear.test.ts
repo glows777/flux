@@ -1,30 +1,40 @@
-import { describe, expect, test, mock } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import { clearCommand } from '@/channels/discord/commands/clear'
 import type { CommandContext } from '@/channels/discord/commands/types'
+import type { Gateway } from '@/gateway/gateway'
 
 function createMockContext() {
     return {
         gateway: {
             chat: mock(async () => ({})),
             clearSession: mock(async () => ({ id: 'new-session-1' })),
-        } as any,
+        } as unknown as Gateway,
     } satisfies CommandContext
 }
 
-function createMockInteraction(overrides: Record<string, any> = {}) {
+type MockInteraction = {
+    guild: { id: string } | null
+    channelId: string
+    user: { id: string }
+    reply: ReturnType<typeof mock>
+}
+
+function createMockInteraction(overrides: Partial<MockInteraction> = {}) {
     return {
         guild: null,
         channelId: 'dm-channel-1',
         user: { id: 'user-1' },
         reply: mock(async () => {}),
         ...overrides,
-    } as any
+    } as Parameters<typeof clearCommand.execute>[0]
 }
 
 describe('/clear command', () => {
     test('definition has name "clear" and no options', () => {
         expect(clearCommand.definition.name).toBe('clear')
-        const json = clearCommand.definition.toJSON() as any
+        const json = clearCommand.definition.toJSON() as {
+            options?: unknown[]
+        }
         expect(json.options ?? []).toHaveLength(0)
     })
 

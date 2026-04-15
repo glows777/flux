@@ -1,7 +1,7 @@
 'use client'
 
-import ReactMarkdown from 'react-markdown'
 import type { Components } from 'react-markdown'
+import ReactMarkdown from 'react-markdown'
 import remarkBreaks from 'remark-breaks'
 
 interface DocPreviewProps {
@@ -10,8 +10,7 @@ interface DocPreviewProps {
 
 const components: Components = {
     a: ({ href, children, ...props }) => {
-        const safeHref =
-            href && /^https?:\/\//.test(href) ? href : undefined
+        const safeHref = href && /^https?:\/\//.test(href) ? href : undefined
         return (
             <a
                 {...props}
@@ -29,7 +28,12 @@ const components: Components = {
 export function DocPreview({ content }: DocPreviewProps) {
     return (
         <div className='prose prose-invert prose-sm max-w-none px-4 py-3'>
-            <ReactMarkdown remarkPlugins={[remarkBreaks]} components={components}>{content}</ReactMarkdown>
+            <ReactMarkdown
+                remarkPlugins={[remarkBreaks]}
+                components={components}
+            >
+                {content}
+            </ReactMarkdown>
         </div>
     )
 }

@@ -23,16 +23,14 @@ export function ConfirmDialog({
 
     return (
         <div className='fixed inset-0 z-50 flex items-center justify-center'>
-            <div
+            <button
+                type='button'
                 className='absolute inset-0 bg-black/60'
                 onClick={onCancel}
-                onKeyDown={() => {}}
-                role='presentation'
+                aria-label='关闭对话框'
             />
             <div className='relative bg-[#0a0a0a] border border-white/10 rounded-lg p-5 max-w-sm w-full mx-4'>
-                <h3 className='text-sm font-medium text-white mb-1'>
-                    {title}
-                </h3>
+                <h3 className='text-sm font-medium text-white mb-1'>{title}</h3>
                 <p className='text-xs text-slate-400 mb-4'>{message}</p>
                 <div className='flex justify-end gap-2'>
                     <button

@@ -1,10 +1,16 @@
 'use client'
 
+import type { NewsItem as NewsItemType } from '@flux/shared'
 import type { ReactNode } from 'react'
 import useSWR from 'swr'
-import type { NewsItem as NewsItemType } from '@flux/shared'
 import { fetcher } from '@/lib/fetcher'
 import { NewsItem } from './NewsItem'
+
+const NEWS_SKELETON_KEYS = [
+    'news-skeleton-1',
+    'news-skeleton-2',
+    'news-skeleton-3',
+] as const
 
 interface NewsFeedProps {
     symbol: string
@@ -27,7 +33,11 @@ function NewsFeedShell({ children }: { children: ReactNode }) {
  * 从 API 获取实时情报流数据
  */
 export function NewsFeed({ symbol }: NewsFeedProps) {
-    const { data: items, isLoading, error } = useSWR<NewsItemType[]>(
+    const {
+        data: items,
+        isLoading,
+        error,
+    } = useSWR<NewsItemType[]>(
         `/api/stocks/${encodeURIComponent(symbol)}/news?limit=20`,
         fetcher,
     )
@@ -36,8 +46,8 @@ export function NewsFeed({ symbol }: NewsFeedProps) {
         return (
             <NewsFeedShell>
                 <div className='space-y-4'>
-                    {Array.from({ length: 3 }, (_, i) => (
-                        <div key={i} className='animate-pulse space-y-2'>
+                    {NEWS_SKELETON_KEYS.map((key) => (
+                        <div key={key} className='animate-pulse space-y-2'>
                             <div className='h-3 w-16 bg-white/5 rounded' />
                             <div className='h-4 w-full bg-white/5 rounded' />
                         </div>

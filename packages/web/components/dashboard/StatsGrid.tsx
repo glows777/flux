@@ -1,5 +1,10 @@
 import type { PortfolioSummary } from '@flux/shared'
-import { formatCurrency, formatPercent, formatSignedCurrency, getVixLabel } from '@flux/shared'
+import {
+    formatCurrency,
+    formatPercent,
+    formatSignedCurrency,
+    getVixLabel,
+} from '@flux/shared'
 import { StatCard } from './StatCard'
 
 interface StatsGridProps {
@@ -12,9 +17,10 @@ function getSubColor(value: number): 'emerald' | 'rose' | 'slate' {
     return 'slate'
 }
 
-function getTopContributorSub(
-    summary: PortfolioSummary,
-): { text: string; color: 'emerald' | 'rose' | 'slate' } {
+function getTopContributorSub(summary: PortfolioSummary): {
+    text: string
+    color: 'emerald' | 'rose' | 'slate'
+} {
     if (!summary.topContributor) {
         return { text: '添加持仓开始追踪', color: 'slate' }
     }
@@ -28,8 +34,14 @@ function getTopContributorSub(
 
 export function StatsGrid({ data }: StatsGridProps) {
     const summary = data ?? {
-        totalValue: 0, totalCost: 0, totalPnL: 0, totalPnLPercent: 0,
-        todayPnL: 0, todayPnLPercent: 0, topContributor: null, vix: 0,
+        totalValue: 0,
+        totalCost: 0,
+        totalPnL: 0,
+        totalPnLPercent: 0,
+        todayPnL: 0,
+        todayPnLPercent: 0,
+        topContributor: null,
+        vix: 0,
     }
 
     const pnLSub = getTopContributorSub(summary)

@@ -1,33 +1,41 @@
-import { describe, expect, test, mock } from 'bun:test'
-import { Router } from '@/gateway/router'
+import { describe, expect, mock, test } from 'bun:test'
+import type { AgentType, AIRuntime, ChatOutput } from '@/core/ai/runtime/types'
 import type { GatewayInput } from '@/gateway/router'
-import type { AIRuntime, ChatOutput, AgentType } from '@/core/ai/runtime/types'
+import { Router } from '@/gateway/router'
 
 function createMockRuntime(): AIRuntime {
-    const mockConsumeStream = mock(() => Promise.resolve({
-        text: 'Hello from AI',
-        responseMessage: {
-            id: 'resp-1',
-            role: 'assistant' as const,
-            parts: [{ type: 'text' as const, text: 'Hello from AI' }],
-        },
-        toolCalls: [],
-        usage: { inputTokens: 100, outputTokens: 50 },
-    }))
+    const mockConsumeStream = mock(() =>
+        Promise.resolve({
+            text: 'Hello from AI',
+            responseMessage: {
+                id: 'resp-1',
+                role: 'assistant' as const,
+                parts: [{ type: 'text' as const, text: 'Hello from AI' }],
+            },
+            toolCalls: [],
+            usage: { inputTokens: 100, outputTokens: 50 },
+        }),
+    )
 
     return {
-        chat: mock(() => Promise.resolve({
-            streamResult: {
-                text: Promise.resolve('Hello from AI'),
-                usage: Promise.resolve({ inputTokens: 100, outputTokens: 50 }),
-                steps: Promise.resolve([]),
-                toUIMessageStreamResponse: () => new Response('mock stream'),
-                toUIMessageStream: () => new ReadableStream(),
-            },
-            sessionId: 'session-1',
-            consumeStream: mockConsumeStream,
-            finalize: mock(() => Promise.resolve()),
-        } as ChatOutput)),
+        chat: mock(() =>
+            Promise.resolve({
+                streamResult: {
+                    text: Promise.resolve('Hello from AI'),
+                    usage: Promise.resolve({
+                        inputTokens: 100,
+                        outputTokens: 50,
+                    }),
+                    steps: Promise.resolve([]),
+                    toUIMessageStreamResponse: () =>
+                        new Response('mock stream'),
+                    toUIMessageStream: () => new ReadableStream(),
+                },
+                sessionId: 'session-1',
+                consumeStream: mockConsumeStream,
+                finalize: mock(() => Promise.resolve()),
+            } as ChatOutput),
+        ),
         getToolDisplayMap: mock(() => ({})),
         dispose: mock(() => Promise.resolve()),
     }
@@ -118,7 +126,8 @@ describe('Router', () => {
             symbol: 'NVDA',
         })
 
-        const callArgs = (tradingRuntime.chat as any).mock.calls[0][0]
+        const callArgs = (tradingRuntime.chat as ReturnType<typeof mock>).mock
+            .calls[0]?.[0]
         expect(callArgs.channel).toBe('discord')
         expect(callArgs.agentType).toBe('trading-agent')
         expect(callArgs.sourceId).toBe('guild:ch')

@@ -1,8 +1,16 @@
 'use client'
 
-import { BarChart2, Bell, Brain, Globe, Home, Layers, MessageSquare, Settings } from 'lucide-react'
-import { usePathname } from 'next/navigation'
-import { useRouter } from 'next/navigation'
+import {
+    BarChart2,
+    Bell,
+    Brain,
+    Globe,
+    Home,
+    Layers,
+    MessageSquare,
+    Settings,
+} from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
 import { Logo } from './Logo'
 import { NavIcon } from './NavIcon'
 

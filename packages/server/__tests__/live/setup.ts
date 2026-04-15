@@ -14,9 +14,9 @@ import { config } from 'dotenv'
 
 // Undo happy-dom global registration
 try {
-  GlobalRegistrator.unregister()
+    GlobalRegistrator.unregister()
 } catch {
-  // May already be unregistered
+    // May already be unregistered
 }
 
 // Force-remove XMLHttpRequest even if unregister() didn't clean it up.

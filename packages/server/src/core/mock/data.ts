@@ -1,8 +1,4 @@
-import type {
-    MacroTicker,
-    NewsItem,
-    WatchlistItem,
-} from '@flux/shared'
+import type { MacroTicker, NewsItem, WatchlistItem } from '@flux/shared'
 
 /**
  * 宏观指标
@@ -107,4 +103,3 @@ export const NEWS_FEED: NewsItem[] = [
         sentiment: 'positive',
     },
 ]
-

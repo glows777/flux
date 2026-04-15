@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import type { ChannelAdapter, ChannelTarget, ChannelMessage, ChannelType } from '@/channels/types'
+import type {
+    ChannelMessage,
+    ChannelTarget,
+    ChannelType,
+} from '@/channels/types'
 
 describe('Channel types', () => {
     test('ChannelType includes expected values', () => {

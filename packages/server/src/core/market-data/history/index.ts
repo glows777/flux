@@ -6,16 +6,20 @@
  * Uses concurrency limiting to prevent thundering herd on cold start.
  */
 
-import type { CacheStore, HistoryPoint, HistoryStoreParams } from '../common/types'
-import type { YahooFinanceClient } from '../common/yahoo-client'
-import type { FinnhubClient } from '../common/finnhub-client'
 import { CachedDataSource } from '../common/cached-source'
-import { FallbackChain } from '../common/fallback-chain'
-import { withCoverage, type CoverageStore } from '../common/coverage'
 import { ConcurrencyLimiter } from '../common/concurrency'
+import { type CoverageStore, withCoverage } from '../common/coverage'
+import { FallbackChain } from '../common/fallback-chain'
+import type { FinnhubClient } from '../common/finnhub-client'
+import type {
+    CacheStore,
+    HistoryPoint,
+    HistoryStoreParams,
+} from '../common/types'
+import type { YahooFinanceClient } from '../common/yahoo-client'
 import { getDaysForPeriod, type Period } from './period'
 
-export { getDaysForPeriod, VALID_PERIODS, type Period } from './period'
+export { getDaysForPeriod, type Period, VALID_PERIODS } from './period'
 
 const HISTORY_TIMEOUT_MS = 5_000
 const RECENT_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
@@ -38,7 +42,10 @@ export interface StockHistoryResult {
 }
 
 export interface HistoryService {
-    getHistory(symbol: string, period: Period | string): Promise<StockHistoryResult>
+    getHistory(
+        symbol: string,
+        period: Period | string,
+    ): Promise<StockHistoryResult>
     getHistoryRaw(symbol: string, days: number): Promise<HistoryPoint[]>
 }
 

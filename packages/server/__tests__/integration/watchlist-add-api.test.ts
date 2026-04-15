@@ -11,13 +11,13 @@
 
 import { beforeEach, describe, expect, it } from 'bun:test'
 import './setup'
-import {
-    mockAddToWatchlist,
-    MockAddWatchlistError,
-} from './helpers/mock-boundaries'
 
 // Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
+import {
+    MockAddWatchlistError,
+    mockAddToWatchlist,
+} from './helpers/mock-boundaries'
 
 // ==================== Test app ====================
 
@@ -30,18 +30,20 @@ describe('POST /api/watchlist', () => {
         mockAddToWatchlist.mockReset()
 
         // Default: successful add
-        mockAddToWatchlist.mockImplementation(() => Promise.resolve({
-            id: 'AAPL',
-            name: 'Apple Inc.',
-            price: 150.0,
-            chg: 1.5,
-            signal: 'hold',
-            score: 70,
-            data: Array.from({ length: 20 }, (_, i) => ({
-                date: `2024-06-${String(20 - i).padStart(2, '0')}`,
-                close: 150 + i,
-            })),
-        }))
+        mockAddToWatchlist.mockImplementation(() =>
+            Promise.resolve({
+                id: 'AAPL',
+                name: 'Apple Inc.',
+                price: 150.0,
+                chg: 1.5,
+                signal: 'hold',
+                score: 70,
+                data: Array.from({ length: 20 }, (_, i) => ({
+                    date: `2024-06-${String(20 - i).padStart(2, '0')}`,
+                    close: 150 + i,
+                })),
+            }),
+        )
     })
 
     // ─── T08-11: Complete add flow ───
@@ -103,7 +105,12 @@ describe('POST /api/watchlist', () => {
     describe('T08-12: Duplicate add returns 409', () => {
         it('returns 409 when symbol already exists', async () => {
             mockAddToWatchlist.mockImplementation(() =>
-                Promise.reject(new MockAddWatchlistError('Symbol already in watchlist', 'DUPLICATE')),
+                Promise.reject(
+                    new MockAddWatchlistError(
+                        'Symbol already in watchlist',
+                        'DUPLICATE',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist', {
@@ -117,7 +124,12 @@ describe('POST /api/watchlist', () => {
 
         it('returns error message for duplicate', async () => {
             mockAddToWatchlist.mockImplementation(() =>
-                Promise.reject(new MockAddWatchlistError('Symbol already in watchlist', 'DUPLICATE')),
+                Promise.reject(
+                    new MockAddWatchlistError(
+                        'Symbol already in watchlist',
+                        'DUPLICATE',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist', {
@@ -137,7 +149,12 @@ describe('POST /api/watchlist', () => {
     describe('Input validation', () => {
         it('returns 400 for empty symbol', async () => {
             mockAddToWatchlist.mockImplementation(() =>
-                Promise.reject(new MockAddWatchlistError('Invalid symbol format', 'INVALID_INPUT')),
+                Promise.reject(
+                    new MockAddWatchlistError(
+                        'Invalid symbol format',
+                        'INVALID_INPUT',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist', {
@@ -151,7 +168,12 @@ describe('POST /api/watchlist', () => {
 
         it('returns 400 for missing symbol', async () => {
             mockAddToWatchlist.mockImplementation(() =>
-                Promise.reject(new MockAddWatchlistError('Invalid symbol format', 'INVALID_INPUT')),
+                Promise.reject(
+                    new MockAddWatchlistError(
+                        'Invalid symbol format',
+                        'INVALID_INPUT',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist', {
@@ -165,7 +187,12 @@ describe('POST /api/watchlist', () => {
 
         it('returns error message for invalid input', async () => {
             mockAddToWatchlist.mockImplementation(() =>
-                Promise.reject(new MockAddWatchlistError('Invalid symbol format', 'INVALID_INPUT')),
+                Promise.reject(
+                    new MockAddWatchlistError(
+                        'Invalid symbol format',
+                        'INVALID_INPUT',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist', {
@@ -198,7 +225,12 @@ describe('POST /api/watchlist', () => {
     describe('Symbol not found', () => {
         it('returns 404 when symbol does not exist in market', async () => {
             mockAddToWatchlist.mockImplementation(() =>
-                Promise.reject(new MockAddWatchlistError('Invalid symbol or unable to fetch data', 'SYMBOL_NOT_FOUND')),
+                Promise.reject(
+                    new MockAddWatchlistError(
+                        'Invalid symbol or unable to fetch data',
+                        'SYMBOL_NOT_FOUND',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist', {
@@ -212,7 +244,12 @@ describe('POST /api/watchlist', () => {
 
         it('returns error message for unknown symbol', async () => {
             mockAddToWatchlist.mockImplementation(() =>
-                Promise.reject(new MockAddWatchlistError('Invalid symbol or unable to fetch data', 'SYMBOL_NOT_FOUND')),
+                Promise.reject(
+                    new MockAddWatchlistError(
+                        'Invalid symbol or unable to fetch data',
+                        'SYMBOL_NOT_FOUND',
+                    ),
+                ),
             )
 
             const res = await app.request('/api/watchlist', {

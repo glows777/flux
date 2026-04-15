@@ -1,4 +1,14 @@
-import { Sparkles, BarChart3, ShieldAlert, TrendingUp, GitCompare, Globe, ArrowLeftRight, BookOpen, Star } from 'lucide-react'
+import {
+    ArrowLeftRight,
+    BarChart3,
+    BookOpen,
+    GitCompare,
+    Globe,
+    ShieldAlert,
+    Sparkles,
+    Star,
+    TrendingUp,
+} from 'lucide-react'
 
 interface ChatWelcomeProps {
     readonly symbol?: string | null
@@ -22,8 +32,14 @@ function getSymbolSuggestions(symbol: string) {
     ] as const
 }
 
-export function ChatWelcome({ symbol, assetName, onSuggestionClick }: ChatWelcomeProps) {
-    const suggestions = symbol ? getSymbolSuggestions(symbol) : GENERIC_SUGGESTIONS
+export function ChatWelcome({
+    symbol,
+    assetName,
+    onSuggestionClick,
+}: ChatWelcomeProps) {
+    const suggestions = symbol
+        ? getSymbolSuggestions(symbol)
+        : GENERIC_SUGGESTIONS
 
     return (
         <div className='min-h-full flex items-center justify-center'>
@@ -48,8 +64,13 @@ export function ChatWelcome({ symbol, assetName, onSuggestionClick }: ChatWelcom
                             onClick={() => onSuggestionClick?.(text)}
                             className='flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/10 hover:border-emerald-500/30 hover:bg-white/[0.07] transition-all text-left group/chip'
                         >
-                            <Icon size={16} className='text-slate-500 group-hover/chip:text-emerald-400 transition-colors shrink-0' />
-                            <span className='text-xs text-slate-400 group-hover/chip:text-slate-300 transition-colors'>{text}</span>
+                            <Icon
+                                size={16}
+                                className='text-slate-500 group-hover/chip:text-emerald-400 transition-colors shrink-0'
+                            />
+                            <span className='text-xs text-slate-400 group-hover/chip:text-slate-300 transition-colors'>
+                                {text}
+                            </span>
                         </button>
                     ))}
                 </div>

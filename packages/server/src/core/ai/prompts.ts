@@ -384,4 +384,3 @@ export function calculateIndicators(
         volumeRatio,
     }
 }
-
