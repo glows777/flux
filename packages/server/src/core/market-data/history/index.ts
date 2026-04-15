@@ -18,9 +18,18 @@ import type {
 } from '../common/types'
 import type { YahooFinanceClient } from '../common/yahoo-client'
 import { dedupeHistoryPointsByUtcDay } from './daily'
-import { getDaysForPeriod, type Period } from './period'
+import {
+    filterHistoryPointsForPeriod,
+    getDaysForPeriod,
+    type Period,
+} from './period'
 
-export { getDaysForPeriod, type Period, VALID_PERIODS } from './period'
+export {
+    filterHistoryPointsForPeriod,
+    getDaysForPeriod,
+    type Period,
+    VALID_PERIODS,
+} from './period'
 
 const HISTORY_TIMEOUT_MS = 5_000
 const RECENT_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
@@ -92,13 +101,33 @@ export function createHistoryService(deps: {
 
     return {
         async getHistory(symbol, period) {
-            const days = getDaysForPeriod(period as Period)
-            const raw = dedupeHistoryPointsByUtcDay(
-                await covered.get(symbol, { days }),
+            const normalizedPeriod = period as Period
+            const days = getDaysForPeriod(normalizedPeriod)
+            const now = new Date(Date.now())
+            let raw = filterHistoryPointsForPeriod(
+                dedupeHistoryPointsByUtcDay(
+                    await covered.get(symbol, {
+                        days,
+                        period: normalizedPeriod,
+                    }),
+                ),
+                normalizedPeriod,
+                now,
             )
+
+            if (normalizedPeriod !== 'YTD' && raw.length < days) {
+                raw = filterHistoryPointsForPeriod(
+                    dedupeHistoryPointsByUtcDay(
+                        await source.forceFetch(symbol),
+                    ),
+                    normalizedPeriod,
+                    now,
+                )
+            }
+
             return {
                 symbol,
-                period,
+                period: normalizedPeriod,
                 points: raw.map((p) => ({
                     date: p.date.toISOString().slice(0, 10),
                     open: p.open,

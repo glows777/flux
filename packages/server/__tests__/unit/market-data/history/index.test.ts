@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { CoverageStore } from '@/core/market-data/common/coverage'
 import type { FinnhubClient } from '@/core/market-data/common/finnhub-client'
 import type {
@@ -27,6 +27,35 @@ function makeHistoryPoints(count: number): HistoryPoint[] {
     }))
 }
 
+const REAL_DATE_NOW = Date.now
+const FIXED_NOW = new Date('2026-04-15T00:00:00.000Z').getTime()
+
+function makeRecentWeekdayHistoryPoints(
+    count: number,
+    endDate = new Date('2026-04-14T00:00:00.000Z'),
+): HistoryPoint[] {
+    const points: HistoryPoint[] = []
+    const cursor = new Date(endDate)
+
+    while (points.length < count) {
+        const day = cursor.getUTCDay()
+        if (day !== 0 && day !== 6) {
+            const index = count - points.length
+            points.push({
+                date: new Date(cursor),
+                open: 100 + index,
+                high: 105 + index,
+                low: 98 + index,
+                close: 102 + index,
+                volume: 1000 * index,
+            })
+        }
+        cursor.setUTCDate(cursor.getUTCDate() - 1)
+    }
+
+    return points.reverse()
+}
+
 function createMockHistoryStore(): CacheStore<
     HistoryPoint[],
     HistoryStoreParams
@@ -49,6 +78,22 @@ function createMockHistoryStore(): CacheStore<
     }
 }
 
+function createCalendarRangeHistoryStore(
+    points: HistoryPoint[],
+): CacheStore<HistoryPoint[], HistoryStoreParams> {
+    return {
+        get: mock(async (_key: string, params?: HistoryStoreParams) => {
+            const days = Number(params?.days ?? points.length)
+            const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+            return {
+                data: points.filter((point) => point.date >= cutoff),
+                fetchedAt: new Date(Date.now()),
+            }
+        }),
+        set: mock(async () => undefined),
+    }
+}
+
 function createMockCoverageStore(): CoverageStore {
     const coverage = new Map<string, Date>()
     return {
@@ -56,6 +101,13 @@ function createMockCoverageStore(): CoverageStore {
         updateCoveredFrom: mock(async (key: string, from: Date) => {
             coverage.set(key, from)
         }),
+    }
+}
+
+function createCoveredHistoryStore(): CoverageStore {
+    return {
+        getCoveredFrom: mock(async () => new Date('2020-01-01T00:00:00.000Z')),
+        updateCoveredFrom: mock(async () => undefined),
     }
 }
 
@@ -121,6 +173,7 @@ describe('HistoryService', () => {
     let service: HistoryService
 
     beforeEach(() => {
+        Date.now = () => FIXED_NOW
         yahoo = createMockYahoo()
         finnhub = createMockFinnhub()
         historyStore = createMockHistoryStore()
@@ -133,7 +186,53 @@ describe('HistoryService', () => {
         })
     })
 
+    afterEach(() => {
+        Date.now = REAL_DATE_NOW
+    })
+
     describe('getHistory', () => {
+        test('returns only the requested trading sessions on a cold-cache 1M request', async () => {
+            const yearlyPoints = makeRecentWeekdayHistoryPoints(252)
+
+            yahoo = createMockYahoo(yearlyPoints)
+            finnhub = createMockFinnhub()
+            historyStore = createMockHistoryStore()
+            coverageStore = createMockCoverageStore()
+            service = createHistoryService({
+                yahoo,
+                finnhub,
+                historyStore,
+                coverageStore,
+            })
+
+            const result = await service.getHistory('AAPL', '1M')
+
+            expect(result.points).toHaveLength(22)
+            expect(result.points[0]?.date).toBe('2026-03-16')
+            expect(result.points.at(-1)?.date).toBe('2026-04-14')
+        })
+
+        test('returns the full 252 trading sessions for a cached 1Y request', async () => {
+            const yearlyPoints = makeRecentWeekdayHistoryPoints(252)
+
+            yahoo = createMockYahoo(yearlyPoints)
+            finnhub = createMockFinnhub()
+            historyStore = createCalendarRangeHistoryStore(yearlyPoints)
+            coverageStore = createCoveredHistoryStore()
+            service = createHistoryService({
+                yahoo,
+                finnhub,
+                historyStore,
+                coverageStore,
+            })
+
+            const result = await service.getHistory('AAPL', '1Y')
+
+            expect(result.points).toHaveLength(252)
+            expect(result.points[0]?.date).toBe('2025-04-28')
+            expect(result.points.at(-1)?.date).toBe('2026-04-14')
+        })
+
         test('returns formatted chart data points', async () => {
             const result = await service.getHistory('AAPL', '1W')
             expect(result.symbol).toBe('AAPL')

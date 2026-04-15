@@ -131,4 +131,5 @@ export interface CacheStore<
  */
 export interface HistoryStoreParams extends Record<string, unknown> {
     readonly days?: number
+    readonly period?: string
 }

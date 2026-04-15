@@ -34,13 +34,13 @@ export function withCoverage<
                 coveredFrom === null || requestedFrom < coveredFrom
 
             if (hasUncoveredRange) {
-                const fresh = await source.forceFetch(key)
+                await source.forceFetch(key)
                 // hasUncoveredRange guarantees: coveredFrom === null OR requestedFrom < coveredFrom
                 // In both cases, requestedFrom is the correct new boundary.
                 const newFrom =
                     coveredFrom === null ? requestedFrom : requestedFrom
                 await coverageStore.updateCoveredFrom(key, newFrom)
-                return fresh
+                return source.get(key, options as unknown as P)
             }
 
             // Coverage is satisfied — read from cache with params so the

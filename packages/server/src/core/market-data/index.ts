@@ -26,6 +26,7 @@ import type {
 import { YahooFinanceClient } from './common/yahoo-client'
 import { createHistoryService } from './history'
 import { dedupeHistoryPointsByUtcDay } from './history/daily'
+import { getStartOfYearUtc } from './history/period'
 import { createInfoService } from './info'
 import { createMacroService } from './macro'
 import { createNewsService } from './news'
@@ -86,32 +87,62 @@ function buildHistoryStore(
 ): CacheStore<HistoryPoint[], HistoryStoreParams> {
     return createDbStore<HistoryPoint[], HistoryStoreParams>({
         async findByKey(symbol, params?) {
-            // Build date filter when days is provided (matches old sync.ts behavior)
-            const dateFilter = params?.days
-                ? (() => {
-                      const days = params.days
-                      const now = new Date()
-                      const endDate = new Date(
-                          Date.UTC(
-                              now.getUTCFullYear(),
-                              now.getUTCMonth(),
-                              now.getUTCDate(),
-                          ),
-                      )
-                      const startDate = new Date(
-                          endDate.getTime() - days * 24 * 60 * 60 * 1000,
-                      )
-                      return { gte: startDate, lte: endDate }
-                  })()
-                : undefined
+            const now = new Date()
+            const endDate = new Date(
+                Date.UTC(
+                    now.getUTCFullYear(),
+                    now.getUTCMonth(),
+                    now.getUTCDate(),
+                ),
+            )
 
-            const rows = await db.stockHistory.findMany({
-                where: {
-                    symbol,
-                    ...(dateFilter ? { date: dateFilter } : {}),
-                },
-                orderBy: { date: 'asc' },
-            })
+            const rows = await (async () => {
+                if (params?.period === 'YTD') {
+                    return db.stockHistory.findMany({
+                        where: {
+                            symbol,
+                            date: {
+                                gte: getStartOfYearUtc(now),
+                                lte: endDate,
+                            },
+                        },
+                        orderBy: { date: 'asc' },
+                    })
+                }
+
+                if (params?.period && params.days) {
+                    const recentRows = await db.stockHistory.findMany({
+                        where: {
+                            symbol,
+                            date: { lte: endDate },
+                        },
+                        orderBy: { date: 'desc' },
+                        take: params.days,
+                    })
+                    recentRows.reverse()
+                    return recentRows
+                }
+
+                // Raw history requests still use a calendar-date window.
+                const dateFilter = params?.days
+                    ? (() => {
+                          const days = params.days
+                          const startDate = new Date(
+                              endDate.getTime() - days * 24 * 60 * 60 * 1000,
+                          )
+                          return { gte: startDate, lte: endDate }
+                      })()
+                    : undefined
+
+                return db.stockHistory.findMany({
+                    where: {
+                        symbol,
+                        ...(dateFilter ? { date: dateFilter } : {}),
+                    },
+                    orderBy: { date: 'asc' },
+                })
+            })()
+
             if (rows.length === 0) return null
             const latestFetchedAt = rows.reduce(
                 (max, r) => (r.fetchedAt > max ? r.fetchedAt : max),
@@ -125,8 +156,7 @@ function buildHistoryStore(
                         high: r.high,
                         low: r.low,
                         close: r.close,
-                        volume:
-                            r.volume != null ? Number(r.volume) : undefined,
+                        volume: r.volume != null ? Number(r.volume) : undefined,
                     })),
                 ),
                 fetchedAt: latestFetchedAt,

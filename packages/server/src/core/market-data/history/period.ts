@@ -1,3 +1,5 @@
+import type { HistoryPoint } from '../common/types'
+
 /**
  * Period definitions and day calculations for stock history.
  *
@@ -31,4 +33,21 @@ export function getDaysForPeriod(period: Period): number {
         return Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)))
     }
     return PERIOD_DAYS[period]
+}
+
+export function getStartOfYearUtc(now = new Date()): Date {
+    return new Date(Date.UTC(now.getUTCFullYear(), 0, 1))
+}
+
+export function filterHistoryPointsForPeriod(
+    points: readonly HistoryPoint[],
+    period: Period,
+    now = new Date(),
+): HistoryPoint[] {
+    if (period === 'YTD') {
+        const startOfYear = getStartOfYearUtc(now)
+        return points.filter((point) => point.date >= startOfYear)
+    }
+
+    return points.slice(-getDaysForPeriod(period))
 }
