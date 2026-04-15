@@ -94,6 +94,31 @@ function createCalendarRangeHistoryStore(
     }
 }
 
+function createFixedHistoryStore(
+    points: HistoryPoint[],
+    fetchedAt: Date,
+): CacheStore<HistoryPoint[], HistoryStoreParams> {
+    let currentData = points
+    let currentFetchedAt = fetchedAt
+
+    return {
+        get: mock(async () => ({
+            data: currentData,
+            fetchedAt: currentFetchedAt,
+        })),
+        set: mock(
+            async (
+                _key: string,
+                value: HistoryPoint[],
+                _params?: HistoryStoreParams,
+            ) => {
+                currentData = value
+                currentFetchedAt = new Date(Date.now())
+            },
+        ),
+    }
+}
+
 function createMockCoverageStore(): CoverageStore {
     const coverage = new Map<string, Date>()
     return {
@@ -210,6 +235,33 @@ describe('HistoryService', () => {
             expect(result.points).toHaveLength(22)
             expect(result.points[0]?.date).toBe('2026-03-16')
             expect(result.points.at(-1)?.date).toBe('2026-04-14')
+        })
+
+        test('refreshes stale cached history when the latest point is weeks behind today', async () => {
+            const stalePoints = makeRecentWeekdayHistoryPoints(
+                252,
+                new Date('2026-03-30T00:00:00.000Z'),
+            )
+            const freshPoints = makeRecentWeekdayHistoryPoints(252)
+
+            yahoo = createMockYahoo(freshPoints)
+            finnhub = createMockFinnhub()
+            historyStore = createFixedHistoryStore(
+                stalePoints,
+                new Date('2026-03-30T00:00:00.000Z'),
+            )
+            coverageStore = createCoveredHistoryStore()
+            service = createHistoryService({
+                yahoo,
+                finnhub,
+                historyStore,
+                coverageStore,
+            })
+
+            const result = await service.getHistory('AAPL', '1M')
+
+            expect(result.points.at(-1)?.date).toBe('2026-04-14')
+            expect(yahoo.getDailyHistory).toHaveBeenCalledTimes(1)
         })
 
         test('returns the full 252 trading sessions for a cached 1Y request', async () => {

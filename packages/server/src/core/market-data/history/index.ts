@@ -1,7 +1,7 @@
 /**
  * History Service
  *
- * Provides stock price history with tiered caching and coverage tracking.
+ * Provides stock price history with cache TTL and coverage tracking.
  * Primary: Yahoo Finance, Fallback: Finnhub.
  * Uses concurrency limiting to prevent thundering herd on cold start.
  */
@@ -33,7 +33,6 @@ export {
 
 const HISTORY_TIMEOUT_MS = 5_000
 const RECENT_TTL_MS = 24 * 60 * 60 * 1000 // 24 hours
-const RECENT_WINDOW_DAYS = 5
 const MAX_CONCURRENT_FETCHES = 3
 
 export interface ChartDataPoint {
@@ -90,11 +89,6 @@ export function createHistoryService(deps: {
         fetchFn: async (symbol) =>
             dedupeHistoryPointsByUtcDay(await chain.execute(symbol)),
         ttl: RECENT_TTL_MS,
-        strategy: 'tiered',
-        tieredOptions: {
-            recentWindowDays: RECENT_WINDOW_DAYS,
-            recentTtl: RECENT_TTL_MS,
-        },
     })
 
     const covered = withCoverage(source, deps.coverageStore)
