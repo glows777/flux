@@ -49,6 +49,14 @@ interface StockHistoryResult {
     points: ChartDataPoint[]
 }
 
+interface StockQuoteResult {
+    symbol: string
+    price: number
+    change: number
+    volume?: number
+    timestamp: string
+}
+
 function formatDate(dateStr: string, period: Period): string {
     const date = new Date(dateStr)
     if (period === '1日') {
@@ -114,6 +122,10 @@ export function PriceChart({ symbol, name, position }: PriceChartProps) {
         fetcher,
         { keepPreviousData: true },
     )
+    const { data: quote } = useSWR<StockQuoteResult>(
+        `/api/stocks/${encodedSymbol}/quote`,
+        fetcher,
+    )
 
     const chartData = (history?.points ?? []).map((p) => ({
         date: p.date,
@@ -122,9 +134,11 @@ export function PriceChart({ symbol, name, position }: PriceChartProps) {
 
     const lastClose =
         chartData.length > 0 ? chartData[chartData.length - 1].price : 0
+    const headlinePrice = quote?.price ?? lastClose
     const firstOpen = history?.points?.[0]?.open ?? lastClose
-    const change =
+    const historyChange =
         firstOpen !== 0 ? ((lastClose - firstOpen) / firstOpen) * 100 : 0
+    const change = quote?.change ?? historyChange
 
     const isPositive = change >= 0
     const changeColor = isPositive ? 'text-emerald-400' : 'text-rose-400'
@@ -156,7 +170,7 @@ export function PriceChart({ symbol, name, position }: PriceChartProps) {
                                 </span>
                             </div>
                             <div className='text-5xl font-light text-white tracking-tight'>
-                                ${lastClose.toFixed(2)}
+                                ${headlinePrice.toFixed(2)}
                             </div>
                             <span
                                 className={`text-sm font-medium ${changeColor}`}

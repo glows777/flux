@@ -166,6 +166,7 @@ mock.module('@/core/market-data', () => ({
     getNews: mockGetStockNews,
     getStockNews: mockGetStockNews,
     getStockInfo: mockGetStockInfo,
+    getStockQuote: mockGetQuoteWithCache,
     searchStocks: mockSearchStocks,
     getMacro: mockGetMacroIndicators,
     getMacroIndicators: mockGetMacroIndicators,

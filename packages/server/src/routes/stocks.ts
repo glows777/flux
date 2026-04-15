@@ -8,6 +8,7 @@ import {
     getInfo,
     getNews,
     getStockInfo,
+    getStockQuote,
     type Period,
     VALID_PERIODS,
 } from '@/core/market-data'
@@ -85,6 +86,29 @@ const stocks = new Hono()
             } catch {
                 return c.json(
                     { success: false, error: 'Failed to fetch stock history' },
+                    500,
+                )
+            }
+        },
+    )
+
+    .get(
+        '/:symbol/quote',
+        sValidator('param', symbolParamSchema, onValidationError),
+        async (c) => {
+            try {
+                const symbol = c.req.valid('param').symbol.toUpperCase()
+                const data = await getStockQuote(symbol)
+                return c.json({
+                    success: true,
+                    data: {
+                        ...data,
+                        timestamp: data.timestamp.toISOString(),
+                    },
+                })
+            } catch {
+                return c.json(
+                    { success: false, error: 'Failed to fetch stock quote' },
                     500,
                 )
             }

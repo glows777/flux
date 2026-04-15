@@ -17,6 +17,7 @@ import type {
     HistoryStoreParams,
 } from '../common/types'
 import type { YahooFinanceClient } from '../common/yahoo-client'
+import { dedupeHistoryPointsByUtcDay } from './daily'
 import { getDaysForPeriod, type Period } from './period'
 
 export { getDaysForPeriod, type Period, VALID_PERIODS } from './period'
@@ -77,7 +78,8 @@ export function createHistoryService(deps: {
 
     const source = new CachedDataSource<HistoryPoint[], HistoryStoreParams>({
         store: deps.historyStore,
-        fetchFn: (symbol) => chain.execute(symbol),
+        fetchFn: async (symbol) =>
+            dedupeHistoryPointsByUtcDay(await chain.execute(symbol)),
         ttl: RECENT_TTL_MS,
         strategy: 'tiered',
         tieredOptions: {
@@ -91,7 +93,9 @@ export function createHistoryService(deps: {
     return {
         async getHistory(symbol, period) {
             const days = getDaysForPeriod(period as Period)
-            const raw = await covered.get(symbol, { days })
+            const raw = dedupeHistoryPointsByUtcDay(
+                await covered.get(symbol, { days }),
+            )
             return {
                 symbol,
                 period,
@@ -107,7 +111,9 @@ export function createHistoryService(deps: {
         },
 
         async getHistoryRaw(symbol, days) {
-            return covered.get(symbol, { days })
+            return dedupeHistoryPointsByUtcDay(
+                await covered.get(symbol, { days }),
+            )
         },
     }
 }

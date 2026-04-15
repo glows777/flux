@@ -21,9 +21,11 @@ import type {
     FinnhubNewsItem,
     HistoryPoint,
     HistoryStoreParams,
+    Quote,
 } from './common/types'
 import { YahooFinanceClient } from './common/yahoo-client'
 import { createHistoryService } from './history'
+import { dedupeHistoryPointsByUtcDay } from './history/daily'
 import { createInfoService } from './info'
 import { createMacroService } from './macro'
 import { createNewsService } from './news'
@@ -116,22 +118,26 @@ function buildHistoryStore(
                 rows[0].fetchedAt,
             )
             return {
-                data: rows.map((r) => ({
-                    date: r.date,
-                    open: r.open,
-                    high: r.high,
-                    low: r.low,
-                    close: r.close,
-                    volume: r.volume != null ? Number(r.volume) : undefined,
-                })),
+                data: dedupeHistoryPointsByUtcDay(
+                    rows.map((r) => ({
+                        date: r.date,
+                        open: r.open,
+                        high: r.high,
+                        low: r.low,
+                        close: r.close,
+                        volume:
+                            r.volume != null ? Number(r.volume) : undefined,
+                    })),
+                ),
                 fetchedAt: latestFetchedAt,
             }
         },
         async upsertByKey(symbol, data) {
             // Upsert doesn't need date-range params — always writes by symbol+date key
-            if (data.length === 0) return
+            const normalized = dedupeHistoryPointsByUtcDay(data)
+            if (normalized.length === 0) return
             await db.$transaction(
-                data.map((h) =>
+                normalized.map((h) =>
                     db.stockHistory.upsert({
                         where: { symbol_date: { symbol, date: h.date } },
                         update: {
@@ -375,6 +381,10 @@ export async function getStockInfo(symbol: string): Promise<StockMetrics> {
         dividendYield: info.dividendYield,
         fetchedAt: new Date().toISOString(),
     }
+}
+
+export async function getStockQuote(symbol: string): Promise<Quote> {
+    return getQuote(symbol)
 }
 
 // ---------------------------------------------------------------------------

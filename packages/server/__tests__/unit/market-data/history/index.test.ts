@@ -162,6 +162,67 @@ describe('HistoryService', () => {
             await service.getHistory('AAPL', '1M')
             expect(coverageStore.updateCoveredFrom).toHaveBeenCalled()
         })
+
+        test('deduplicates points that fall on the same UTC day', async () => {
+            const duplicateDayPoints: HistoryPoint[] = [
+                {
+                    date: new Date('2024-03-25T13:30:00.000Z'),
+                    open: 100,
+                    high: 110,
+                    low: 95,
+                    close: 105,
+                    volume: 1000,
+                },
+                {
+                    date: new Date('2024-03-25T20:00:00.000Z'),
+                    open: 101,
+                    high: 111,
+                    low: 96,
+                    close: 106,
+                    volume: 1100,
+                },
+                {
+                    date: new Date('2024-03-26T13:30:00.000Z'),
+                    open: 102,
+                    high: 112,
+                    low: 97,
+                    close: 107,
+                    volume: 1200,
+                },
+            ]
+
+            yahoo = createMockYahoo(duplicateDayPoints)
+            finnhub = createMockFinnhub()
+            historyStore = createMockHistoryStore()
+            coverageStore = createMockCoverageStore()
+            service = createHistoryService({
+                yahoo,
+                finnhub,
+                historyStore,
+                coverageStore,
+            })
+
+            const result = await service.getHistory('AAPL', '1W')
+
+            expect(result.points).toEqual([
+                {
+                    date: '2024-03-25',
+                    open: 101,
+                    high: 111,
+                    low: 96,
+                    close: 106,
+                    volume: 1100,
+                },
+                {
+                    date: '2024-03-26',
+                    open: 102,
+                    high: 112,
+                    low: 97,
+                    close: 107,
+                    volume: 1200,
+                },
+            ])
+        })
     })
 
     describe('getHistoryRaw', () => {
@@ -170,6 +231,47 @@ describe('HistoryService', () => {
             expect(raw.length).toBeGreaterThan(0)
             expect(raw[0].date).toBeInstanceOf(Date)
             expect(typeof raw[0].close).toBe('number')
+        })
+
+        test('returns one raw point per UTC day, keeping the latest timestamp', async () => {
+            const duplicateDayPoints: HistoryPoint[] = [
+                {
+                    date: new Date('2024-03-25T00:00:00.000Z'),
+                    open: 99,
+                    high: 109,
+                    low: 94,
+                    close: 104,
+                    volume: 900,
+                },
+                {
+                    date: new Date('2024-03-25T20:00:00.000Z'),
+                    open: 101,
+                    high: 111,
+                    low: 96,
+                    close: 106,
+                    volume: 1100,
+                },
+            ]
+
+            yahoo = createMockYahoo(duplicateDayPoints)
+            finnhub = createMockFinnhub()
+            historyStore = createMockHistoryStore()
+            coverageStore = createMockCoverageStore()
+            service = createHistoryService({
+                yahoo,
+                finnhub,
+                historyStore,
+                coverageStore,
+            })
+
+            const raw = await service.getHistoryRaw('AAPL', 10)
+
+            expect(raw).toHaveLength(1)
+            expect(raw[0]).toMatchObject({
+                close: 106,
+                volume: 1100,
+            })
+            expect(raw[0].date.toISOString()).toBe('2024-03-25T00:00:00.000Z')
         })
     })
 })

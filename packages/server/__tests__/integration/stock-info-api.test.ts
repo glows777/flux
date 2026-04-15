@@ -16,7 +16,7 @@ import './setup'
 
 // Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
-import { mockGetStockInfo } from './helpers/mock-boundaries'
+import { mockGetQuoteWithCache, mockGetStockInfo } from './helpers/mock-boundaries'
 
 // ==================== Test app ====================
 
@@ -203,5 +203,52 @@ describe('GET /api/stocks/:symbol/info', () => {
             expect(json.data).toHaveProperty('name')
             expect(json.data).toHaveProperty('fetchedAt')
         })
+    })
+})
+
+describe('GET /api/stocks/:symbol/quote', () => {
+    beforeEach(() => {
+        mockGetQuoteWithCache.mockReset()
+        mockGetQuoteWithCache.mockImplementation(async (symbol: string) => ({
+            symbol: symbol.toUpperCase(),
+            price: 182.55,
+            change: 1.25,
+            volume: 1000000,
+            timestamp: new Date('2026-04-15T14:35:00.000Z'),
+        }))
+    })
+
+    it('returns realtime quote payload', async () => {
+        const res = await app.request('/api/stocks/AAPL/quote')
+        const json = await res.json()
+
+        expect(res.status).toBe(200)
+        expect(json.success).toBe(true)
+        expect(json.data).toEqual({
+            symbol: 'AAPL',
+            price: 182.55,
+            change: 1.25,
+            volume: 1000000,
+            timestamp: '2026-04-15T14:35:00.000Z',
+        })
+    })
+
+    it('calls getQuote with uppercase symbol', async () => {
+        await app.request('/api/stocks/aapl/quote')
+
+        expect(mockGetQuoteWithCache).toHaveBeenCalledWith('AAPL')
+    })
+
+    it('returns 500 when getQuote throws', async () => {
+        mockGetQuoteWithCache.mockImplementation(async () => {
+            throw new Error('quote failed')
+        })
+
+        const res = await app.request('/api/stocks/AAPL/quote')
+        const json = await res.json()
+
+        expect(res.status).toBe(500)
+        expect(json.success).toBe(false)
+        expect(json.error).toBe('Failed to fetch stock quote')
     })
 })
