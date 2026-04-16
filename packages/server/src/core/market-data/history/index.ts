@@ -111,13 +111,19 @@ export function createHistoryService(deps: {
             )
 
             if (normalizedPeriod !== 'YTD' && raw.length < days) {
-                raw = filterHistoryPointsForPeriod(
-                    dedupeHistoryPointsByUtcDay(
-                        await source.forceFetch(symbol),
-                    ),
-                    normalizedPeriod,
-                    now,
-                )
+                try {
+                    raw = filterHistoryPointsForPeriod(
+                        dedupeHistoryPointsByUtcDay(
+                            await source.forceFetch(symbol),
+                        ),
+                        normalizedPeriod,
+                        now,
+                    )
+                } catch (error) {
+                    if (raw.length === 0) {
+                        throw error
+                    }
+                }
             }
 
             return {

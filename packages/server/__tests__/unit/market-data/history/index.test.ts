@@ -285,6 +285,43 @@ describe('HistoryService', () => {
             expect(result.points.at(-1)?.date).toBe('2026-04-14')
         })
 
+        test('returns partial cached 1Y history when refresh fails', async () => {
+            const stalePartialPoints = makeRecentWeekdayHistoryPoints(
+                208,
+                new Date('2026-03-30T00:00:00.000Z'),
+            )
+
+            yahoo = createMockYahoo()
+            finnhub = createMockFinnhub()
+            ;(
+                yahoo.getDailyHistory as ReturnType<typeof mock>
+            ).mockImplementation(async () => {
+                throw new Error('Yahoo blocked')
+            })
+            ;(
+                finnhub.getDailyHistory as ReturnType<typeof mock>
+            ).mockImplementation(async () => {
+                throw new Error('Finnhub forbidden')
+            })
+            historyStore = createFixedHistoryStore(
+                stalePartialPoints,
+                new Date('2026-03-30T00:00:00.000Z'),
+            )
+            coverageStore = createCoveredHistoryStore()
+            service = createHistoryService({
+                yahoo,
+                finnhub,
+                historyStore,
+                coverageStore,
+            })
+
+            const result = await service.getHistory('AAPL', '1Y')
+
+            expect(result.points).toHaveLength(208)
+            expect(result.points[0]?.date).toBe('2025-06-12')
+            expect(result.points.at(-1)?.date).toBe('2026-03-30')
+        })
+
         test('returns formatted chart data points', async () => {
             const result = await service.getHistory('AAPL', '1W')
             expect(result.symbol).toBe('AAPL')
