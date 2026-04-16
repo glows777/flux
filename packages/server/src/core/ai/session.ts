@@ -113,10 +113,20 @@ export async function renameSession(
         )
     }
 
+    const existingSession = await db.chatSession.findUnique({
+        where: { id },
+        select: { updatedAt: true },
+    })
+
+    if (!existingSession) {
+        throw new SessionError('Session not found', 'NOT_FOUND')
+    }
+
     try {
         return await db.chatSession.update({
             where: { id },
-            data: { title },
+            // Preserve activity ordering: renaming should not bump updatedAt.
+            data: { title, updatedAt: existingSession.updatedAt },
         })
     } catch (error) {
         if (isPrismaNotFoundError(error)) {

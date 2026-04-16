@@ -20,6 +20,7 @@ function createMockDb() {
         chatSession: {
             findMany: mock(() => Promise.resolve([])),
             count: mock(() => Promise.resolve(0)),
+            findUnique: mock(() => Promise.resolve(null)),
             create: mock(() =>
                 Promise.resolve({
                     id: 'session-1',
@@ -140,13 +141,20 @@ describe('renameSession', () => {
     it('T03-07: 正常重命名', async () => {
         const { renameSession } = await import('@/core/ai/session')
         const db = createMockDb()
+        const originalUpdatedAt = new Date('2024-06-01T12:00:00.000Z')
+        db.chatSession.findUnique.mockImplementation(() =>
+            Promise.resolve({
+                id: 'session-1',
+                updatedAt: originalUpdatedAt,
+            }),
+        )
         db.chatSession.update.mockImplementation(() =>
             Promise.resolve({
                 id: 'session-1',
                 symbol: 'AAPL',
                 title: 'New Title',
                 createdAt: new Date(),
-                updatedAt: new Date(),
+                updatedAt: originalUpdatedAt,
             }),
         )
         const deps = { db } as unknown as SessionDeps
@@ -154,9 +162,13 @@ describe('renameSession', () => {
         const result = await renameSession('session-1', 'New Title', deps)
 
         expect(result.title).toBe('New Title')
+        expect(db.chatSession.findUnique).toHaveBeenCalledWith({
+            where: { id: 'session-1' },
+            select: { updatedAt: true },
+        })
         expect(db.chatSession.update).toHaveBeenCalledWith({
             where: { id: 'session-1' },
-            data: { title: 'New Title' },
+            data: { title: 'New Title', updatedAt: originalUpdatedAt },
         })
     })
 
@@ -165,6 +177,12 @@ describe('renameSession', () => {
             '@/core/ai/session'
         )
         const db = createMockDb()
+        db.chatSession.findUnique.mockImplementation(() =>
+            Promise.resolve({
+                id: 'session-1',
+                updatedAt: new Date('2024-06-01T12:00:00.000Z'),
+            }),
+        )
         const deps = { db } as unknown as SessionDeps
 
         try {
@@ -183,6 +201,12 @@ describe('renameSession', () => {
             '@/core/ai/session'
         )
         const db = createMockDb()
+        db.chatSession.findUnique.mockImplementation(() =>
+            Promise.resolve({
+                id: 'session-1',
+                updatedAt: new Date('2024-06-01T12:00:00.000Z'),
+            }),
+        )
         const deps = { db } as unknown as SessionDeps
 
         try {
@@ -201,11 +225,7 @@ describe('renameSession', () => {
             '@/core/ai/session'
         )
         const db = createMockDb()
-        const prismaNotFound = new Error('Record not found')
-        Object.assign(prismaNotFound, { code: 'P2025' })
-        db.chatSession.update.mockImplementation(() =>
-            Promise.reject(prismaNotFound),
-        )
+        db.chatSession.findUnique.mockImplementation(() => Promise.resolve(null))
         const deps = { db } as unknown as SessionDeps
 
         try {

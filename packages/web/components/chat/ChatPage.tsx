@@ -23,6 +23,21 @@ type ChatMetadata = { sessionId?: string }
 const MAX_Q_LENGTH = 500
 const SIDEBAR_STORAGE_KEY = 'flux-chat-sidebar'
 
+function getAdjacentSessionId(
+    sessions: readonly ChatSession[],
+    deletedSessionId: string,
+): string | null {
+    const deletedIndex = sessions.findIndex(
+        (session) => session.id === deletedSessionId,
+    )
+
+    if (deletedIndex === -1) return null
+
+    return (
+        sessions[deletedIndex + 1]?.id ?? sessions[deletedIndex - 1]?.id ?? null
+    )
+}
+
 function loadSessionMessages(
     sessionId: string,
     signal: AbortSignal,
@@ -208,21 +223,27 @@ export function ChatPage() {
                     method: 'DELETE',
                 })
                 if (res.ok) {
+                    const adjacentSessionId =
+                        sessions != null ? getAdjacentSessionId(sessions, id) : null
+
                     mutateSessions()
-                    setSessionId((prev) => {
-                        if (prev === id) {
-                            setChatId(undefined)
-                            setMessages([])
-                            return null
-                        }
-                        return prev
-                    })
+
+                    if (sessionIdRef.current !== id) return
+
+                    if (adjacentSessionId) {
+                        handleSwitchSession(adjacentSessionId)
+                        return
+                    }
+
+                    setSessionId(null)
+                    setChatId(undefined)
+                    setMessages([])
                 }
             } catch {
                 // Deletion failure is non-fatal
             }
         },
-        [mutateSessions, setMessages],
+        [handleSwitchSession, mutateSessions, sessions, setMessages],
     )
 
     const handleRenameSession = useCallback(
