@@ -1,9 +1,9 @@
 <div align="center">
   <img src="docs/assets/logo.png" alt="Flux Logo" width="120" />
   <h1>Flux</h1>
-  <p><strong>Self-evolving AI trading agent</strong></p>
-  <p>An autonomous agent that discovers its own trading strategy through live experimentation,
-  powered by a full-stack financial intelligence platform.</p>
+  <p><strong>AI-first trading workspace</strong></p>
+  <p>A self-hosted trading stack with autonomous execution, live market intelligence,
+  and a plugin-based AI runtime for web, cron, and Discord workflows.</p>
   <p>
     <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: Alpha" />
     <img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js" />
@@ -40,20 +40,20 @@
 **Financial Intelligence**
 - Real-time quotes, 6-period price charts, company fundamentals
 - Multi-source news aggregation (RSS + Finnhub, 3-tier fallback)
-- AI research reports with 24h caching (Gemini)
-- Earnings analysis: L1 hard data (FMP) + L2 AI deep analysis (transcript → Gemini)
+- Macro indicators and portfolio-aware dashboard data
+- Built-in web research tools (`webSearch`, `webFetch`) for live analysis inside chat
 
 **AI Infrastructure**
 - Plugin-based runtime — prompt, session, memory, tools, trading as composable plugins
 - Agentic tool calling — agent autonomously fetches data, searches, and executes
-- Vector memory (pgvector) — RAG-powered knowledge retrieval across sessions
+- Versioned memory slots — persistent thesis, market views, user profile, and lessons
 - Multi-model support (Anthropic, OpenAI-compatible, xAI)
 - Interactive copilot mode — chat-driven analysis and trading with guard rails
 
 **Platform**
 - Monorepo: Next.js 16 frontend + Hono API server + shared types
 - End-to-end type safety via Hono RPC client
-- Cron scheduler for heartbeat and morning brief
+- Cron scheduler with a web dashboard, run history, and manual triggers
 - Multi-channel: Web + Discord bot
 
 ## Quick Start
@@ -67,9 +67,11 @@ cp .env.example .env
 docker compose up -d
 ```
 
-Open `http://localhost:3000` — dashboard is ready.
+This starts PostgreSQL on `localhost:5433`, the Hono API on `localhost:3001`, and the Next.js app on `localhost:3000`.
 
-The auto-trading agent starts its heartbeat loop automatically during US market hours.
+Open `http://localhost:3000` to use the dashboard, chat workspace, and cron console.
+
+When trading credentials are configured, Flux seeds its trading heartbeat job on startup and runs it through the scheduler.
 
 ## Development
 
@@ -88,7 +90,7 @@ bun run db:push:accept-data-loss
 bun run db:generate
 ```
 
-Use this only when the release intentionally drops tables or columns. The finance and Morning Brief removal release requires this command because it removes `EarningsCache` and `MorningBriefCache`.
+Use this only when a release intentionally drops tables or columns.
 
 ```bash
 bun run test:all              # Unit + integration + E2E
@@ -119,7 +121,7 @@ Data flows through layered caching (Quote 24h → History permanent → Info 7d 
 
 ### Gateway
 
-The `GatewayRouter` dispatches all incoming requests to the correct agent runtime:
+The `Gateway` routes conversation and trigger flows through the shared `Router`, which dispatches each request to the correct agent runtime:
 
 | Source | Agent | Use Case |
 |--------|-------|----------|
@@ -145,7 +147,7 @@ heartbeat → auto-trading-prompt → session → memory → skill → auto-trad
 |--------|---------------|
 | prompt | Global system prompt + memory context |
 | session | Chat session persistence + history truncation |
-| memory | Vector search (pgvector) + transcript indexing |
+| memory | Versioned slot memory for thesis, preferences, market views, and lessons |
 | skill | Dynamic knowledge packages + bash sandbox |
 | data | Market data tools (quotes, history, news, search) |
 | display | UI rendering (rating cards, signal badges) |
@@ -168,24 +170,31 @@ All channels implement a shared `ChannelAdapter` interface and route through the
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/chat` | AI chat (streaming SSE) |
-| GET/POST | `/api/brief` | Morning brief (cached / force refresh) |
-| GET | `/api/dashboard` | Dashboard aggregate (portfolio, watchlist, brief) |
+| GET | `/api/dashboard` | Dashboard aggregate (portfolio, watchlist, position symbols) |
 | GET | `/api/macro` | Macro indicators (SPY, QQQ, TLT, VIX) |
-| GET/POST/DELETE | `/api/watchlist` | Watchlist CRUD |
+| GET | `/api/watchlist` | Watchlist list |
+| POST | `/api/watchlist` | Add a symbol to the watchlist |
+| DELETE | `/api/watchlist/:symbol` | Remove a symbol from the watchlist |
 | GET | `/api/stocks/:symbol/history` | OHLCV price history |
+| GET | `/api/stocks/:symbol/quote` | Realtime quote snapshot |
 | GET | `/api/stocks/:symbol/info` | Company fundamentals |
 | GET | `/api/stocks/:symbol/news` | News aggregation |
 | GET | `/api/stocks/:symbol/position` | Open position from Alpaca |
-| POST | `/api/stocks/:symbol/report` | AI research report |
-| GET | `/api/stocks/:symbol/earnings/quarters` | Available earnings quarters |
-| GET | `/api/stocks/:symbol/earnings` | L1 hard earnings data |
-| POST | `/api/stocks/:symbol/earnings/analysis` | L2 AI earnings analysis |
-| PUT | `/api/stocks/:symbol/earnings/transcript` | Upload earnings transcript |
-| GET/DELETE/PATCH | `/api/sessions` | Chat session CRUD |
+| GET | `/api/sessions` | List chat sessions |
+| PATCH | `/api/sessions/:id` | Rename a chat session |
+| DELETE | `/api/sessions/:id` | Delete a chat session |
 | GET | `/api/sessions/:id/messages` | Session message history |
-| GET/POST/PUT/DELETE | `/api/memory` | Vector memory CRUD |
-| GET | `/api/memory/search` | Semantic memory search |
-| CRUD | `/api/cron` | Scheduled job management |
+| GET | `/api/memory/slots` | List current memory slots |
+| GET | `/api/memory/slots/full` | Load all slots with recent history |
+| GET | `/api/memory/slots/:slot` | Read the latest slot content |
+| GET | `/api/memory/slots/:slot/history` | Read slot version history |
+| PUT | `/api/memory/slots/:slot` | Write slot content manually |
+| GET | `/api/cron` | List scheduled jobs |
+| POST | `/api/cron` | Create a scheduled job |
+| PUT | `/api/cron/:id` | Update a scheduled job |
+| DELETE | `/api/cron/:id` | Delete a scheduled job |
+| GET | `/api/cron/runs` | List recent runs across all jobs |
+| GET | `/api/cron/:id/runs` | List runs for one job |
 | POST | `/api/cron/:id/run` | Trigger job immediately |
 | GET | `/api/health` | System health |
 
@@ -194,7 +203,7 @@ All channels implement a shared `ChannelAdapter` interface and route through the
 | Layer | Stack |
 |-------|-------|
 | Frontend | Next.js 16, React 19, Tailwind CSS v4, SWR, Recharts |
-| Backend | Hono, Prisma 7, PostgreSQL, pgvector |
+| Backend | Hono, Prisma 7, PostgreSQL |
 | AI | Vercel AI SDK, Anthropic, OpenAI-compatible, xAI |
 | Trading | Alpaca API (paper trading) |
 | Infra | Bun, Docker Compose, Biome |

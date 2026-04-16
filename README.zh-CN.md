@@ -1,9 +1,9 @@
 <div align="center">
   <img src="docs/assets/logo.png" alt="Flux Logo" width="120" />
   <h1>Flux</h1>
-  <p><strong>自我进化的 AI 交易代理</strong></p>
-  <p>一个通过实盘实验自主发现交易策略的自主代理，
-  由全栈金融情报平台驱动。</p>
+  <p><strong>AI First 交易工作台</strong></p>
+  <p>一个自托管的交易系统，集成自主执行、实时市场情报，
+  以及可服务于 Web、Cron 和 Discord 工作流的插件化 AI 运行时。</p>
   <p>
     <img src="https://img.shields.io/badge/status-alpha-orange" alt="Status: Alpha" />
     <img src="https://img.shields.io/badge/Next.js-16-black" alt="Next.js" />
@@ -40,20 +40,20 @@
 **金融情报**
 - 实时报价、6 周期价格图表、公司基本面数据
 - 多源新闻聚合（RSS + Finnhub，三级降级策略）
-- AI 研究报告，带 24 小时缓存（Gemini）
-- 财报分析：L1 硬数据（FMP）+ L2 AI 深度分析（财报电话会议记录 → Gemini）
+- 宏观指标与带持仓上下文的 Dashboard 聚合数据
+- 内置 `webSearch` 与 `webFetch`，支持在聊天中做实时研究
 
 **AI 基础设施**
 - 插件化运行时——提示词、会话、记忆、工具、交易均以可组合插件形式接入
 - Agentic 工具调用——代理自主获取数据、执行搜索和下单操作
-- 向量记忆（pgvector）——跨会话的 RAG 知识检索
+- 版本化记忆槽位——持续保存交易 thesis、市场观点、用户偏好与复盘教训
 - 多模型支持（Anthropic、OpenAI 兼容协议、xAI）
 - 交互式 Copilot 模式——对话驱动的分析与交易，内置安全护栏
 
 **平台**
 - Monorepo 架构：Next.js 16 前端 + Hono API 服务 + 共享类型
 - 基于 Hono RPC 客户端的端到端类型安全
-- Cron 调度器，用于心跳循环与每日早报
+- Cron 调度器，配套 Web 控制台、运行历史与手动触发能力
 - 多渠道接入：Web + Discord 机器人
 
 ## 快速开始
@@ -67,9 +67,11 @@ cp .env.example .env
 docker compose up -d
 ```
 
-打开 `http://localhost:3000`，仪表盘即可使用。
+这会启动 `localhost:5433` 的 PostgreSQL、`localhost:3001` 的 Hono API，以及 `localhost:3000` 的 Next.js 应用。
 
-自动交易代理会在美股交易时段自动启动心跳循环。
+打开 `http://localhost:3000`，即可使用 Dashboard、聊天工作台和 Cron 控制台。
+
+当你配置好交易相关凭证后，Flux 会在启动时自动创建交易心跳任务，并由调度器执行。
 
 ## 开发
 
@@ -88,7 +90,7 @@ bun run db:push:accept-data-loss
 bun run db:generate
 ```
 
-只在明确要删除表或列时使用它。本次移除 finance 和 Morning Brief 功能的发布就需要这个命令，因为它会删除 `EarningsCache` 和 `MorningBriefCache`。
+只在明确要删除表或列时使用它。
 
 ```bash
 bun run test:all              # Unit + integration + E2E
@@ -119,7 +121,7 @@ User (Web/Discord) ──→ │ ──→ Trading Copilot               Order D
 
 ### 网关
 
-`GatewayRouter` 将所有传入请求分发到对应的 Agent 运行时：
+`Gateway` 统一处理 conversation 和 trigger 两类流程，再通过共享的 `Router` 将请求分发到对应的 Agent 运行时：
 
 | 来源 | Agent | 用途 |
 |------|-------|------|
@@ -145,7 +147,7 @@ heartbeat → auto-trading-prompt → session → memory → skill → auto-trad
 |------|------|
 | prompt | 全局系统提示词 + 记忆上下文 |
 | session | 会话持久化 + 历史消息截断 |
-| memory | 向量搜索 (pgvector) + 对话记录索引 |
+| memory | 版本化记忆槽位，用于保存 thesis、偏好、市场观点与复盘教训 |
 | skill | 动态知识包 + bash 沙箱执行 |
 | data | 市场数据工具（报价、历史、新闻、搜索） |
 | display | UI 渲染（评级卡片、信号徽章） |
@@ -167,34 +169,41 @@ heartbeat → auto-trading-prompt → session → memory → skill → auto-trad
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/chat` | AI chat (streaming SSE) |
-| GET/POST | `/api/brief` | Morning brief (cached / force refresh) |
-| GET | `/api/dashboard` | Dashboard aggregate (portfolio, watchlist, brief) |
-| GET | `/api/macro` | Macro indicators (SPY, QQQ, TLT, VIX) |
-| GET/POST/DELETE | `/api/watchlist` | Watchlist CRUD |
-| GET | `/api/stocks/:symbol/history` | OHLCV price history |
-| GET | `/api/stocks/:symbol/info` | Company fundamentals |
-| GET | `/api/stocks/:symbol/news` | News aggregation |
-| GET | `/api/stocks/:symbol/position` | Open position from Alpaca |
-| POST | `/api/stocks/:symbol/report` | AI research report |
-| GET | `/api/stocks/:symbol/earnings/quarters` | Available earnings quarters |
-| GET | `/api/stocks/:symbol/earnings` | L1 hard earnings data |
-| POST | `/api/stocks/:symbol/earnings/analysis` | L2 AI earnings analysis |
-| PUT | `/api/stocks/:symbol/earnings/transcript` | Upload earnings transcript |
-| GET/DELETE/PATCH | `/api/sessions` | Chat session CRUD |
-| GET | `/api/sessions/:id/messages` | Session message history |
-| GET/POST/PUT/DELETE | `/api/memory` | Vector memory CRUD |
-| GET | `/api/memory/search` | Semantic memory search |
-| CRUD | `/api/cron` | Scheduled job management |
-| POST | `/api/cron/:id/run` | Trigger job immediately |
-| GET | `/api/health` | System health |
+| POST | `/api/chat` | AI chat（SSE 流式响应） |
+| GET | `/api/dashboard` | Dashboard 聚合数据（portfolio、watchlist、position symbols） |
+| GET | `/api/macro` | 宏观指标（SPY、QQQ、TLT、VIX） |
+| GET | `/api/watchlist` | 获取自选股列表 |
+| POST | `/api/watchlist` | 添加自选股 |
+| DELETE | `/api/watchlist/:symbol` | 删除自选股 |
+| GET | `/api/stocks/:symbol/history` | OHLCV 历史价格 |
+| GET | `/api/stocks/:symbol/quote` | 实时报价快照 |
+| GET | `/api/stocks/:symbol/info` | 公司基本面 |
+| GET | `/api/stocks/:symbol/news` | 新闻聚合 |
+| GET | `/api/stocks/:symbol/position` | Alpaca 当前持仓 |
+| GET | `/api/sessions` | 获取聊天会话列表 |
+| PATCH | `/api/sessions/:id` | 重命名聊天会话 |
+| DELETE | `/api/sessions/:id` | 删除聊天会话 |
+| GET | `/api/sessions/:id/messages` | 获取会话消息历史 |
+| GET | `/api/memory/slots` | 获取当前记忆槽位列表 |
+| GET | `/api/memory/slots/full` | 获取所有槽位及最近历史版本 |
+| GET | `/api/memory/slots/:slot` | 读取指定槽位最新内容 |
+| GET | `/api/memory/slots/:slot/history` | 读取指定槽位版本历史 |
+| PUT | `/api/memory/slots/:slot` | 手动写入槽位内容 |
+| GET | `/api/cron` | 获取定时任务列表 |
+| POST | `/api/cron` | 创建定时任务 |
+| PUT | `/api/cron/:id` | 更新定时任务 |
+| DELETE | `/api/cron/:id` | 删除定时任务 |
+| GET | `/api/cron/runs` | 获取所有任务的最近运行记录 |
+| GET | `/api/cron/:id/runs` | 获取单个任务的运行记录 |
+| POST | `/api/cron/:id/run` | 立即触发任务 |
+| GET | `/api/health` | 系统健康状态 |
 
 ## 技术栈
 
 | Layer | Stack |
 |-------|-------|
 | Frontend | Next.js 16, React 19, Tailwind CSS v4, SWR, Recharts |
-| Backend | Hono, Prisma 7, PostgreSQL, pgvector |
+| Backend | Hono, Prisma 7, PostgreSQL |
 | AI | Vercel AI SDK, Anthropic, OpenAI-compatible, xAI |
 | Trading | Alpaca API (paper trading) |
 | Infra | Bun, Docker Compose, Biome |
