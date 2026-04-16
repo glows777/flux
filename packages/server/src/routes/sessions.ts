@@ -5,6 +5,7 @@ import {
     deleteSession,
     listAllSessions,
     loadMessages,
+    loadSessionError,
     renameSession,
     SessionError,
 } from '@/core/ai/session'
@@ -90,9 +91,22 @@ const sessions = new Hono()
     .get('/:id/messages', async (c) => {
         try {
             const id = c.req.param('id')
-            const messages = await loadMessages(id)
-            return c.json({ success: true, data: messages })
-        } catch {
+            const [messages, lastError] = await Promise.all([
+                loadMessages(id),
+                loadSessionError(id),
+            ])
+            return c.json({
+                success: true,
+                data: { messages, error: lastError },
+            })
+        } catch (error) {
+            if (error instanceof SessionError) {
+                const status = SESSION_ERROR_CODE_TO_STATUS[error.code] ?? 500
+                return c.json(
+                    { success: false, error: error.message },
+                    status as 400 | 404 | 409 | 500,
+                )
+            }
             return c.json(
                 { success: false, error: 'Failed to load messages' },
                 500,

@@ -19,6 +19,13 @@ const sessions: ChatSession[] = [
         createdAt: '2026-04-15T09:00:00.000Z',
         updatedAt: '2026-04-15T12:00:00.000Z',
     },
+    {
+        id: 'session-3',
+        symbol: 'NVDA',
+        title: 'Failing session',
+        createdAt: '2026-04-14T09:00:00.000Z',
+        updatedAt: '2026-04-14T12:00:00.000Z',
+    },
 ]
 
 const mockMutateSessions = mock(() => Promise.resolve(sessions))
@@ -27,6 +34,7 @@ const mockSendMessage = mock(() => {})
 const mockRegenerate = mock(() => {})
 
 let chatMessages: UIMessage[] = []
+let chatError: Error | undefined = undefined
 
 mock.module('next/navigation', () => ({
     useRouter: () => ({ replace: mock(() => {}) }),
@@ -57,8 +65,8 @@ mock.module('swr', () => ({
 mock.module('@ai-sdk/react', () => ({
     useChat: () => ({
         messages: chatMessages,
-        status: 'ready',
-        error: undefined,
+        status: chatError ? 'error' : 'ready',
+        error: chatError,
         setMessages: mockSetMessages,
         sendMessage: mockSendMessage,
         regenerate: mockRegenerate,
@@ -98,26 +106,51 @@ mock.module('@/components/chat/ChatWelcome', () => ({
     ),
 }))
 
-for (const modulePath of [
-    '@/components/chat/messages/AssistantMessage',
-    '@/components/chat/messages/ErrorBanner',
-    '@/components/chat/messages/TruncationNotice',
-    '@/components/chat/messages/UserMessage',
-]) {
-    mock.module(modulePath, () => ({
-        AssistantMessage: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-        ErrorBanner: () => <div>error</div>,
-        TruncationNotice: () => <div>truncation</div>,
-        UserMessage: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-    }))
-}
+mock.module('@/components/chat/messages/AssistantMessage', () => ({
+    AssistantMessage: ({ children }: { children?: ReactNode }) => (
+        <div>{children}</div>
+    ),
+}))
+
+mock.module('@/components/chat/messages/ErrorBanner', () => ({
+    ErrorBanner: ({
+        error,
+        onReload,
+    }: {
+        error: Error
+        onReload: () => void
+    }) => (
+        <div data-testid='error-banner'>
+            <span data-testid='error-message'>{error.message}</span>
+            <button
+                type='button'
+                data-testid='retry-button'
+                onClick={onReload}
+            >
+                retry
+            </button>
+        </div>
+    ),
+}))
+
+mock.module('@/components/chat/messages/TruncationNotice', () => ({
+    TruncationNotice: () => <div>truncation</div>,
+}))
+
+mock.module('@/components/chat/messages/UserMessage', () => ({
+    UserMessage: ({ content }: { content?: string }) => <div>{content}</div>,
+}))
 
 const fetchMock = mock((input: string | URL, init?: RequestInit) => {
     const url = String(input)
 
     if (url === '/api/sessions/session-1/messages') {
         return Promise.resolve({
-            json: () => Promise.resolve({ success: true, data: [] }),
+            json: () =>
+                Promise.resolve({
+                    success: true,
+                    data: { messages: [], error: null },
+                }),
         })
     }
 
@@ -126,13 +159,41 @@ const fetchMock = mock((input: string | URL, init?: RequestInit) => {
             json: () =>
                 Promise.resolve({
                     success: true,
-                    data: [
-                        {
-                            id: 'message-2',
-                            role: 'user',
-                            parts: [{ type: 'text', text: 'hello from session 2' }],
+                    data: {
+                        messages: [
+                            {
+                                id: 'message-2',
+                                role: 'user',
+                                parts: [
+                                    { type: 'text', text: 'hello from session 2' },
+                                ],
+                            },
+                        ],
+                        error: null,
+                    },
+                }),
+        })
+    }
+
+    if (url === '/api/sessions/session-3/messages') {
+        return Promise.resolve({
+            json: () =>
+                Promise.resolve({
+                    success: true,
+                    data: {
+                        messages: [
+                            {
+                                id: 'message-3',
+                                role: 'user',
+                                parts: [{ type: 'text', text: 'what is NVDA?' }],
+                            },
+                        ],
+                        error: {
+                            message: 'rate limited',
+                            name: 'RateLimitError',
+                            code: 'RATE',
                         },
-                    ],
+                    },
                 }),
         })
     }
@@ -150,6 +211,7 @@ describe('ChatPage', () => {
     beforeEach(() => {
         cleanup()
         chatMessages = []
+        chatError = undefined
         mockMutateSessions.mockClear()
         mockSetMessages.mockClear()
         mockSendMessage.mockClear()
@@ -185,6 +247,80 @@ describe('ChatPage', () => {
                 '/api/sessions/session-2/messages',
                 expect.anything(),
             ),
+        )
+    })
+
+    it('retry forwards sessionId in regenerate body (Fix 1 regression guard)', async () => {
+        // Simulate a live error from useChat
+        chatError = new Error('stream failed')
+        // Non-empty messages so the error branch renders (ChatWelcome shows when empty)
+        chatMessages = [
+            {
+                id: 'msg-u1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hi' }],
+            } as UIMessage,
+        ]
+
+        render(<ChatPage />)
+
+        // Wait for initial session restore
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'session-1',
+            ),
+        )
+
+        fireEvent.click(screen.getByTestId('retry-button'))
+
+        expect(mockRegenerate).toHaveBeenCalledTimes(1)
+        const arg = mockRegenerate.mock.calls[0]?.[0] as
+            | { body?: { sessionId?: string | null; symbol?: string | null } }
+            | undefined
+        expect(arg?.body?.sessionId).toBe('session-1')
+    })
+
+    it('renders ErrorBanner from persistedError when session has a stored error (Fix 2)', async () => {
+        // Provide a user message so the banner-rendering branch renders
+        // (ChatWelcome replaces the message list when empty).
+        chatMessages = [
+            {
+                id: 'message-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+        ]
+
+        // Override fetch for session-1 to return the new {messages,error} shape
+        // with a persisted error, keeping all other routes intact.
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: chatMessages,
+                                error: {
+                                    message: 'rate limited',
+                                    name: 'RateLimitError',
+                                    code: 'RATE',
+                                },
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        // Wait for session restore + persistedError to populate + ErrorBanner to render
+        const banner = await screen.findByTestId('error-banner')
+        expect(banner).toBeDefined()
+        expect(screen.getByTestId('error-message').textContent).toBe(
+            'rate limited',
         )
     })
 })

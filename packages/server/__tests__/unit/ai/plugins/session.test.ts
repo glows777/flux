@@ -67,7 +67,11 @@ describe('sessionPlugin', () => {
         const mockAppend = mock(() => Promise.resolve())
         const mockTouch = mock(() => Promise.resolve())
         const plugin = sessionPlugin({
-            deps: { appendMessage: mockAppend, touchSession: mockTouch },
+            deps: {
+                appendMessage: mockAppend,
+                touchSession: mockTouch,
+                clearSessionError: mock(() => Promise.resolve()),
+            },
         })
         const ctx: AfterChatContext = {
             sessionId: 's1',
@@ -105,6 +109,7 @@ describe('sessionPlugin', () => {
                 createSession: mockCreate,
                 appendMessage: mockAppend,
                 touchSession: mock(() => Promise.resolve()),
+                clearSessionError: mock(() => Promise.resolve()),
             },
         })
         const ctx: HookContext = {
@@ -138,6 +143,7 @@ describe('sessionPlugin', () => {
                 createSession: mockCreate,
                 appendMessage: mockAppend,
                 touchSession: mock(() => Promise.resolve()),
+                clearSessionError: mock(() => Promise.resolve()),
             },
         })
         const ctx: HookContext = {
@@ -170,6 +176,7 @@ describe('sessionPlugin', () => {
                 createSession: mock(() => Promise.resolve('s1')),
                 appendMessage: mockAppend,
                 touchSession: mock(() => Promise.resolve()),
+                clearSessionError: mock(() => Promise.resolve()),
             },
         })
         const userMsg = {
@@ -203,6 +210,7 @@ describe('sessionPlugin', () => {
                 resolveSession: mockResolve,
                 appendMessage: mockAppend,
                 touchSession: mock(() => Promise.resolve()),
+                clearSessionError: mock(() => Promise.resolve()),
             },
         })
         const ctx: HookContext = {
@@ -237,6 +245,7 @@ describe('sessionPlugin', () => {
                 createSession: mockCreate,
                 appendMessage: mockAppend,
                 touchSession: mock(() => Promise.resolve()),
+                clearSessionError: mock(() => Promise.resolve()),
             },
         })
         const ctx: HookContext = {
@@ -260,5 +269,140 @@ describe('sessionPlugin', () => {
         await plugin.beforeChat(ctx)
         expect(mockCreate).toHaveBeenCalled()
         expect(ctx.meta.get('sessionId')).toBe('fresh-trigger-session')
+    })
+
+    test('beforeChat clears prior session error', async () => {
+        const mockClear = mock(() => Promise.resolve())
+        const plugin = sessionPlugin({
+            deps: {
+                createSession: mock(() => Promise.resolve('s1')),
+                appendMessage: mock(() => Promise.resolve()),
+                touchSession: mock(() => Promise.resolve()),
+                clearSessionError: mockClear,
+            },
+        })
+        const ctx: HookContext = {
+            sessionId: 'existing',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [
+                {
+                    id: '1',
+                    role: 'user',
+                    content: 'hi',
+                    parts: [{ type: 'text', text: 'hi' }],
+                },
+            ] as UIMessage[],
+            meta: new Map(),
+        }
+        if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
+
+        await plugin.beforeChat(ctx)
+        expect(mockClear).toHaveBeenCalledWith('existing')
+    })
+
+    test('afterChat clears session error (idempotent safety net)', async () => {
+        const mockClear = mock(() => Promise.resolve())
+        const plugin = sessionPlugin({
+            deps: {
+                appendMessage: mock(() => Promise.resolve()),
+                touchSession: mock(() => Promise.resolve()),
+                clearSessionError: mockClear,
+            },
+        })
+        const ctx: AfterChatContext = {
+            sessionId: 's1',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+            result: {
+                text: 'hi',
+                usage: { inputTokens: 0, outputTokens: 0 },
+                toolCalls: [],
+            },
+            responseMessage: {
+                id: 'msg-1',
+                role: 'assistant',
+                content: 'hi',
+                parts: [],
+            } as UIMessage,
+            toolCalls: [],
+        }
+        if (!plugin.afterChat) throw new Error('Expected afterChat hook')
+
+        await plugin.afterChat(ctx)
+        expect(mockClear).toHaveBeenCalledWith('s1')
+    })
+
+    test('onError persists error with name/message/code when sessionId resolved', async () => {
+        const mockSave = mock(() => Promise.resolve())
+        const plugin = sessionPlugin({
+            deps: { saveSessionError: mockSave },
+        })
+        const err = Object.assign(new Error('rate limited'), {
+            name: 'RateLimitError',
+            code: 'RATE_LIMIT',
+        })
+        const ctx: HookContext = {
+            sessionId: 's1',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map([['sessionId', 's1']]),
+        }
+        if (!plugin.onError) throw new Error('Expected onError hook')
+
+        await plugin.onError(ctx, err)
+        expect(mockSave).toHaveBeenCalledWith('s1', {
+            message: 'rate limited',
+            name: 'RateLimitError',
+            code: 'RATE_LIMIT',
+        })
+    })
+
+    test('onError no-ops when sessionId is not in meta', async () => {
+        const mockSave = mock(() => Promise.resolve())
+        const plugin = sessionPlugin({
+            deps: { saveSessionError: mockSave },
+        })
+        const ctx: HookContext = {
+            sessionId: '',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        }
+        if (!plugin.onError) throw new Error('Expected onError hook')
+
+        await plugin.onError(ctx, new Error('early failure'))
+        expect(mockSave).not.toHaveBeenCalled()
+    })
+
+    test('onError omits code when error.code is not a string', async () => {
+        const mockSave = mock(() => Promise.resolve())
+        const plugin = sessionPlugin({
+            deps: { saveSessionError: mockSave },
+        })
+        const ctx: HookContext = {
+            sessionId: 's1',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map([['sessionId', 's1']]),
+        }
+        if (!plugin.onError) throw new Error('Expected onError hook')
+
+        await plugin.onError(ctx, new Error('plain error'))
+        expect(mockSave).toHaveBeenCalledWith('s1', {
+            message: 'plain error',
+            name: 'Error',
+            code: undefined,
+        })
     })
 })

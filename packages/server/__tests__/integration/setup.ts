@@ -75,11 +75,14 @@ import {
     mockListAllSessions,
     mockListCronJobRuns,
     mockListCronJobs,
+    mockClearSessionError,
     mockListSessions,
     mockLoadMemoryContext,
     mockLoadMessages,
     // session — loadMessagesForTranscript
     mockLoadMessagesForTranscript,
+    mockLoadSessionError,
+    mockSaveSessionError,
     mockRemoveFromWatchlist,
     mockRenameSession,
     // search mock
@@ -313,6 +316,9 @@ mock.module('@/core/ai/session', () => ({
     loadMessagesForTranscript: mockLoadMessagesForTranscript,
     appendMessage: mockAppendMessage,
     truncateMessages: mockTruncateMessages,
+    loadSessionError: mockLoadSessionError,
+    saveSessionError: mockSaveSessionError,
+    clearSessionError: mockClearSessionError,
 }))
 
 mock.module('ai', () => ({

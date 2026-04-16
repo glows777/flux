@@ -5,7 +5,7 @@
  * 所有函数通过 deps 参数支持测试替换。
  */
 
-import type { PrismaClient } from '@prisma/client'
+import { Prisma, type PrismaClient } from '@prisma/client'
 import type { UIMessage } from 'ai'
 import { prisma as defaultPrisma } from '@/core/db'
 
@@ -235,6 +235,101 @@ export async function appendMessage(
             content: JSON.stringify(message),
         },
     })
+}
+
+// --- Session Error Persistence ---
+
+/**
+ * 当前 session 最近一次失败的 chat 尝试。
+ * beforeChat/afterChat 清空，onError 写入。
+ * 前端刷新/切换 session 时读取，用于展示 ErrorBanner + 重试按钮。
+ */
+export interface SessionErrorRecord {
+    readonly message: string
+    readonly name: string
+    readonly code?: string
+}
+
+export async function saveSessionError(
+    sessionId: string,
+    error: SessionErrorRecord,
+    deps?: SessionDeps,
+): Promise<void> {
+    const { db } = deps ?? getDefaultDeps()
+
+    try {
+        await db.chatSession.update({
+            where: { id: sessionId },
+            data: {
+                lastError: { ...error },
+                lastErrorAt: new Date(),
+                // Don't bump updatedAt — error shouldn't promote session in sidebar.
+            },
+            select: { id: true },
+        })
+    } catch (err) {
+        if (isPrismaNotFoundError(err)) {
+            // Session was deleted mid-error — silently drop.
+            return
+        }
+        throw err
+    }
+}
+
+export async function clearSessionError(
+    sessionId: string,
+    deps?: SessionDeps,
+): Promise<void> {
+    const { db } = deps ?? getDefaultDeps()
+
+    try {
+        await db.chatSession.update({
+            where: { id: sessionId },
+            // Prisma requires JsonNull sentinel to write SQL NULL into a Json field;
+            // plain `null` is forbidden by the type system.
+            data: { lastError: Prisma.JsonNull, lastErrorAt: null },
+            select: { id: true },
+        })
+    } catch (err) {
+        if (isPrismaNotFoundError(err)) return
+        throw err
+    }
+}
+
+export async function loadSessionError(
+    sessionId: string,
+    deps?: SessionDeps,
+): Promise<SessionErrorRecord | null> {
+    const { db } = deps ?? getDefaultDeps()
+
+    const row = await db.chatSession.findUnique({
+        where: { id: sessionId },
+        select: { lastError: true },
+    })
+
+    if (!row) {
+        throw new SessionError('Session not found', 'NOT_FOUND')
+    }
+
+    const raw = row.lastError
+    if (raw == null) return null
+
+    // Prisma returns JsonValue. We wrote a flat object; narrow defensively.
+    if (
+        typeof raw !== 'object' ||
+        Array.isArray(raw) ||
+        typeof (raw as { message?: unknown }).message !== 'string' ||
+        typeof (raw as { name?: unknown }).name !== 'string'
+    ) {
+        return null
+    }
+
+    const rec = raw as { message: string; name: string; code?: unknown }
+    return {
+        message: rec.message,
+        name: rec.name,
+        code: typeof rec.code === 'string' ? rec.code : undefined,
+    }
 }
 
 // --- Transcript Loading ---

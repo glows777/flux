@@ -211,6 +211,12 @@ export const mockLoadMessages = mock(
 )
 export const mockAppendMessage = mock(() => Promise.resolve())
 export const mockTruncateMessages = mock((messages: unknown[]) => messages)
+export const mockLoadSessionError = mock(
+    (): Promise<{ message: string; name: string; code?: string } | null> =>
+        Promise.resolve(null),
+)
+export const mockSaveSessionError = mock(() => Promise.resolve())
+export const mockClearSessionError = mock(() => Promise.resolve())
 
 // ─── @/lib/ai/session — loadMessagesForTranscript ───
 

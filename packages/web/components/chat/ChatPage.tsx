@@ -20,6 +20,17 @@ import { UserMessage } from './messages/UserMessage'
 
 type ChatMetadata = { sessionId?: string }
 
+type PersistedSessionError = {
+    readonly message: string
+    readonly name: string
+    readonly code?: string
+}
+
+type SessionLoadResult = {
+    readonly messages: UIMessage<ChatMetadata>[]
+    readonly error: PersistedSessionError | null
+}
+
 const MAX_Q_LENGTH = 500
 const SIDEBAR_STORAGE_KEY = 'flux-chat-sidebar'
 
@@ -41,10 +52,21 @@ function getAdjacentSessionId(
 function loadSessionMessages(
     sessionId: string,
     signal: AbortSignal,
-): Promise<UIMessage<ChatMetadata>[] | null> {
+): Promise<SessionLoadResult | null> {
     return fetch(`/api/sessions/${sessionId}/messages`, { signal })
         .then((r) => r.json())
-        .then((json) => (json.success && json.data ? json.data : null))
+        .then((json) => {
+            if (!json.success || !json.data) return null
+            // Backend returns { messages, error }. Guard against older shape
+            // (plain array) in case of deploy-order skew.
+            if (Array.isArray(json.data)) {
+                return { messages: json.data, error: null }
+            }
+            return {
+                messages: json.data.messages ?? [],
+                error: json.data.error ?? null,
+            }
+        })
         .catch(() => null)
 }
 
@@ -57,6 +79,8 @@ export function ChatPage() {
     const [sessionId, setSessionId] = useState<string | null>(null)
     const [inputValue, setInputValue] = useState('')
     const [chatId, setChatId] = useState<string | undefined>(undefined)
+    const [persistedError, setPersistedError] =
+        useState<PersistedSessionError | null>(null)
 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [sidebarMounted, setSidebarMounted] = useState(false)
@@ -136,8 +160,10 @@ export function ChatPage() {
         setSessionId(mostRecent.id)
         setChatId(mostRecent.id)
 
-        loadSessionMessages(mostRecent.id, controller.signal).then((data) => {
-            if (data) setMessages(data)
+        loadSessionMessages(mostRecent.id, controller.signal).then((result) => {
+            if (!result) return
+            setMessages(result.messages)
+            setPersistedError(result.error)
         })
 
         return () => controller.abort()
@@ -157,6 +183,7 @@ export function ChatPage() {
         setSessionId(null)
         setChatId(undefined)
         setMessages([])
+        setPersistedError(null)
 
         sendMessage({ text: truncatedQ }, { body: { sessionId: null, symbol } })
 
@@ -175,6 +202,7 @@ export function ChatPage() {
         const text = inputValue.trim()
         if (!text || isLoading) return
 
+        setPersistedError(null)
         sendMessage(
             { text },
             { body: { sessionId: sessionIdRef.current, symbol } },
@@ -185,6 +213,7 @@ export function ChatPage() {
     const handleSuggestionClick = useCallback(
         (text: string) => {
             if (isLoading) return
+            setPersistedError(null)
             sendMessage(
                 { text },
                 { body: { sessionId: sessionIdRef.current, symbol } },
@@ -197,7 +226,15 @@ export function ChatPage() {
         setSessionId(null)
         setChatId(undefined)
         setMessages([])
+        setPersistedError(null)
     }, [setMessages])
+
+    const handleRetry = useCallback(() => {
+        setPersistedError(null)
+        regenerate({
+            body: { sessionId: sessionIdRef.current, symbol },
+        })
+    }, [regenerate, symbol])
 
     const switchAbortRef = useRef<AbortController | null>(null)
 
@@ -209,8 +246,11 @@ export function ChatPage() {
 
             setSessionId(id)
             setChatId(id)
-            loadSessionMessages(id, controller.signal).then((data) => {
-                if (data) setMessages(data)
+            setPersistedError(null)
+            loadSessionMessages(id, controller.signal).then((result) => {
+                if (!result) return
+                setMessages(result.messages)
+                setPersistedError(result.error)
             })
         },
         [setMessages],
@@ -238,6 +278,7 @@ export function ChatPage() {
                     setSessionId(null)
                     setChatId(undefined)
                     setMessages([])
+                    setPersistedError(null)
                 }
             } catch {
                 // Deletion failure is non-fatal
@@ -354,12 +395,25 @@ export function ChatPage() {
                                 return messageNode
                             })}
 
-                            {error && (
+                            {error ? (
                                 <ErrorBanner
                                     error={error}
-                                    onReload={regenerate}
+                                    onReload={handleRetry}
                                 />
-                            )}
+                            ) : persistedError ? (
+                                <ErrorBanner
+                                    error={
+                                        // Reconstruct an Error so ErrorBanner
+                                        // stays source-agnostic (same API whether
+                                        // from useChat or DB).
+                                        Object.assign(
+                                            new Error(persistedError.message),
+                                            { name: persistedError.name },
+                                        )
+                                    }
+                                    onReload={handleRetry}
+                                />
+                            ) : null}
                             <div ref={bottomRef} />
                         </div>
                     )}

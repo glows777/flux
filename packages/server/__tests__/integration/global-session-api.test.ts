@@ -4,6 +4,7 @@ import {
     mockDeleteSession,
     mockListAllSessions,
     mockLoadMessages,
+    mockLoadSessionError,
     mockRenameSession,
 } from './helpers/mock-boundaries'
 
@@ -111,9 +112,10 @@ describe('PATCH /api/sessions/:id', () => {
 describe('GET /api/sessions/:id/messages', () => {
     beforeEach(() => {
         mockLoadMessages.mockReset()
+        mockLoadSessionError.mockReset()
     })
 
-    test('loads session messages', async () => {
+    test('returns { messages, error: null } when session has no error', async () => {
         mockLoadMessages.mockResolvedValueOnce([
             {
                 id: 'msg_1',
@@ -121,9 +123,45 @@ describe('GET /api/sessions/:id/messages', () => {
                 parts: [{ type: 'text', text: 'hello' }],
             },
         ])
+        mockLoadSessionError.mockResolvedValueOnce(null)
         const res = await app.request('/api/sessions/ses_1/messages')
         const json = await res.json()
         expect(res.status).toBe(200)
-        expect(json.data).toHaveLength(1)
+        expect(json.success).toBe(true)
+        expect(json.data.messages).toHaveLength(1)
+        expect(json.data.error).toBeNull()
+    })
+
+    test('returns persisted error record alongside messages', async () => {
+        mockLoadMessages.mockResolvedValueOnce([
+            {
+                id: 'msg_1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            },
+        ])
+        mockLoadSessionError.mockResolvedValueOnce({
+            message: 'rate limited',
+            name: 'RateLimitError',
+            code: 'RATE',
+        })
+        const res = await app.request('/api/sessions/ses_1/messages')
+        const json = await res.json()
+        expect(res.status).toBe(200)
+        expect(json.data.messages).toHaveLength(1)
+        expect(json.data.error).toEqual({
+            message: 'rate limited',
+            name: 'RateLimitError',
+            code: 'RATE',
+        })
+    })
+
+    test('returns 404 when session does not exist', async () => {
+        const { SessionError } = await import('@/core/ai/session')
+        mockLoadSessionError.mockRejectedValueOnce(
+            new SessionError('Session not found', 'NOT_FOUND'),
+        )
+        const res = await app.request('/api/sessions/missing/messages')
+        expect(res.status).toBe(404)
     })
 })

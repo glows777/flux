@@ -435,3 +435,140 @@ describe('truncateMessages', () => {
         expect((result[19] as { id: string }).id).toBe('msg-29')
     })
 })
+
+// ==================== Session Error Persistence ====================
+
+describe('saveSessionError', () => {
+    it('writes JSON payload and lastErrorAt, does not bump updatedAt', async () => {
+        const { saveSessionError } = await import('@/core/ai/session')
+        const db = createMockDb()
+
+        await saveSessionError(
+            's1',
+            { message: 'boom', name: 'Error', code: 'X' },
+            { db } as unknown as SessionDeps,
+        )
+
+        type UpdateArgs = {
+            where: { id: string }
+            data: {
+                lastError: { message: string; name: string; code?: string }
+                lastErrorAt: Date
+                updatedAt?: Date
+            }
+        }
+        const args = db.chatSession.update.mock.calls[0][0] as UpdateArgs
+        expect(args.where.id).toBe('s1')
+        expect(args.data.lastError).toEqual({
+            message: 'boom',
+            name: 'Error',
+            code: 'X',
+        })
+        expect(args.data.lastErrorAt).toBeInstanceOf(Date)
+        expect(args.data.updatedAt).toBeUndefined()
+    })
+
+    it('silently ignores P2025 (session deleted mid-error)', async () => {
+        const { saveSessionError } = await import('@/core/ai/session')
+        const db = createMockDb()
+        db.chatSession.update = mock(() => {
+            const err = new Error('Not found')
+            ;(err as unknown as { code: string }).code = 'P2025'
+            return Promise.reject(err)
+        })
+
+        // Should not throw
+        await saveSessionError(
+            'deleted-session',
+            { message: 'x', name: 'Error' },
+            { db } as unknown as SessionDeps,
+        )
+    })
+})
+
+describe('clearSessionError', () => {
+    it('writes Prisma.JsonNull sentinel and nulls lastErrorAt', async () => {
+        const { Prisma } = await import('@prisma/client')
+        const { clearSessionError } = await import('@/core/ai/session')
+        const db = createMockDb()
+
+        await clearSessionError('s1', { db } as unknown as SessionDeps)
+
+        type UpdateArgs = {
+            data: { lastError: unknown; lastErrorAt: null }
+        }
+        const args = db.chatSession.update.mock.calls[0][0] as UpdateArgs
+        // JsonNull is the sentinel Prisma requires to write SQL NULL into a Json column.
+        expect(args.data.lastError).toBe(Prisma.JsonNull)
+        expect(args.data.lastErrorAt).toBeNull()
+    })
+})
+
+describe('loadSessionError', () => {
+    it('returns null when lastError is null', async () => {
+        const { loadSessionError } = await import('@/core/ai/session')
+        const db = createMockDb()
+        db.chatSession.findUnique = mock(() =>
+            Promise.resolve({ lastError: null }),
+        ) as typeof db.chatSession.findUnique
+
+        const result = await loadSessionError(
+            's1',
+            { db } as unknown as SessionDeps,
+        )
+
+        expect(result).toBeNull()
+    })
+
+    it('returns structured record when lastError is valid JSON object', async () => {
+        const { loadSessionError } = await import('@/core/ai/session')
+        const db = createMockDb()
+        db.chatSession.findUnique = mock(() =>
+            Promise.resolve({
+                lastError: {
+                    message: 'boom',
+                    name: 'RateLimitError',
+                    code: 'RATE',
+                },
+            }),
+        ) as typeof db.chatSession.findUnique
+
+        const result = await loadSessionError(
+            's1',
+            { db } as unknown as SessionDeps,
+        )
+
+        expect(result).toEqual({
+            message: 'boom',
+            name: 'RateLimitError',
+            code: 'RATE',
+        })
+    })
+
+    it('returns null for malformed lastError payload (defensive)', async () => {
+        const { loadSessionError } = await import('@/core/ai/session')
+        const db = createMockDb()
+        db.chatSession.findUnique = mock(() =>
+            Promise.resolve({ lastError: 'not-an-object' }),
+        ) as typeof db.chatSession.findUnique
+
+        const result = await loadSessionError(
+            's1',
+            { db } as unknown as SessionDeps,
+        )
+
+        expect(result).toBeNull()
+    })
+
+    it('throws SessionError NOT_FOUND when session missing', async () => {
+        const { loadSessionError, SessionError } = await import(
+            '@/core/ai/session'
+        )
+        const db = createMockDb()
+        db.chatSession.findUnique = mock(() => Promise.resolve(null))
+
+        await expect(
+            loadSessionError('missing', { db } as unknown as SessionDeps),
+        ).rejects.toBeInstanceOf(SessionError)
+    })
+})

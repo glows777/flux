@@ -7,8 +7,11 @@ import type {
 } from '../../runtime/types'
 import {
     appendMessage as defaultAppendMessage,
+    clearSessionError as defaultClearSessionError,
     createSession as defaultCreateSession,
     loadMessages as defaultLoadMessages,
+    saveSessionError as defaultSaveSessionError,
+    type SessionErrorRecord,
     touchSession as defaultTouchSession,
 } from '../../session'
 
@@ -29,6 +32,11 @@ interface SessionPluginDeps {
         symbol?: string
         title?: string
     }) => Promise<string>
+    saveSessionError: (
+        sessionId: string,
+        error: SessionErrorRecord,
+    ) => Promise<void>
+    clearSessionError: (sessionId: string) => Promise<void>
 }
 
 interface SessionPluginOptions {
@@ -98,6 +106,8 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
         appendMessage: defaultAppendMessage,
         touchSession: defaultTouchSession,
         resolveSession: defaultResolveSession,
+        saveSessionError: defaultSaveSessionError,
+        clearSessionError: defaultClearSessionError,
         ...options?.deps,
     }
 
@@ -137,6 +147,10 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
             if (lastUserMsg) {
                 await deps.appendMessage(sessionId, lastUserMsg)
             }
+
+            // Clear any prior error — a new attempt is starting.
+            // If this attempt also fails, onError will write a fresh record.
+            await deps.clearSessionError(sessionId)
         },
 
         async transformMessages(
@@ -162,6 +176,26 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
         async afterChat(ctx: AfterChatContext): Promise<void> {
             await deps.appendMessage(ctx.sessionId, ctx.responseMessage)
             await deps.touchSession(ctx.sessionId)
+            // Idempotent safety net — beforeChat already cleared, but double-clear
+            // guarantees no stale error if beforeChat's clear somehow failed silently.
+            await deps.clearSessionError(ctx.sessionId)
+        },
+
+        async onError(ctx: HookContext, error: Error): Promise<void> {
+            const sessionId = ctx.meta.get('sessionId') as string | undefined
+            if (!sessionId) {
+                // Session wasn't resolved (e.g., createSession itself threw).
+                // No session to attach the error to — frontend's useChat.error
+                // is the only surface until/unless a session exists.
+                return
+            }
+
+            const code = (error as { code?: unknown }).code
+            await deps.saveSessionError(sessionId, {
+                message: error.message,
+                name: error.name,
+                code: typeof code === 'string' ? code : undefined,
+            })
         },
     }
 }

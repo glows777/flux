@@ -95,6 +95,11 @@ model ChatSession {
   createdBy String?                    // 创建者 ID (如 Discord user ID, cron system)
   sourceId  String?                    // 来源标识 (如 Discord guildId:channelId, cron jobId)
 
+  // 最近一次未成功完成的 chat 尝试。beforeChat/afterChat 清空，onError 写入。
+  // 用于刷新后仍然展示 ErrorBanner + 重试按钮。
+  lastError   Json?    // { message: string; name: string; code?: string }
+  lastErrorAt DateTime?
+
   messages  ChatMessage[]
 
   @@index([updatedAt(sort: Desc)])                  // 全局按时间排序
