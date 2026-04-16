@@ -89,6 +89,7 @@ export function createHistoryService(deps: {
         fetchFn: async (symbol) =>
             dedupeHistoryPointsByUtcDay(await chain.execute(symbol)),
         ttl: RECENT_TTL_MS,
+        staleFallback: true,
     })
 
     const covered = withCoverage(source, deps.coverageStore)

@@ -384,6 +384,44 @@ describe('HistoryService', () => {
             expect(typeof raw[0].close).toBe('number')
         })
 
+        test('returns stale cached history when refresh fails', async () => {
+            const stalePoints = makeRecentWeekdayHistoryPoints(
+                20,
+                new Date('2026-03-30T00:00:00.000Z'),
+            )
+
+            yahoo = createMockYahoo()
+            finnhub = createMockFinnhub()
+            ;(
+                yahoo.getDailyHistory as ReturnType<typeof mock>
+            ).mockImplementation(async () => {
+                throw new Error('Yahoo blocked')
+            })
+            ;(
+                finnhub.getDailyHistory as ReturnType<typeof mock>
+            ).mockImplementation(async () => {
+                throw new Error('Finnhub forbidden')
+            })
+            historyStore = createFixedHistoryStore(
+                stalePoints,
+                new Date('2026-03-30T00:00:00.000Z'),
+            )
+            coverageStore = createCoveredHistoryStore()
+            service = createHistoryService({
+                yahoo,
+                finnhub,
+                historyStore,
+                coverageStore,
+            })
+
+            const raw = await service.getHistoryRaw('AAPL', 10)
+
+            expect(raw).toHaveLength(20)
+            expect(raw.at(-1)?.date.toISOString()).toBe(
+                '2026-03-30T00:00:00.000Z',
+            )
+        })
+
         test('returns one raw point per UTC day, keeping the latest timestamp', async () => {
             const duplicateDayPoints: HistoryPoint[] = [
                 {
