@@ -29,6 +29,7 @@ For implementation tasks such as code edits, tests, commits, pushes, PR prep, br
 
 - Package manager and runtime: `bun`
 - AI tooling in this repo: Claude Code and Codex
+- Superpowers workflow is active in this repo
 - When installing shared skills, prefer setups that work for both agents
 - UI implementation should match `.dev-docs/versions/v0.01/prd.tsx`
 - UI visual direction: dark theme (`#030303`) with emerald accent
@@ -36,10 +37,26 @@ For implementation tasks such as code edits, tests, commits, pushes, PR prep, br
 
 ## Documentation Layout
 
-- `.dev-docs/`: private working area for specs, plans, and versioned design files
+- `.dev-docs/`: Superpowers working area for specs, plans, and versioned design files
 - `.dev-docs/bug-report/`: tracked bug writeups and follow-up notes
 - `.claude/docs/`: project reference docs for architecture, APIs, and data models
 - `docs/`: public repo docs intended to be committed
+
+## Superpowers Workflow
+
+- Write Superpowers specs to `.dev-docs/specs/`
+- Write Superpowers plans to `.dev-docs/plans/`
+- Treat `.dev-docs/versions/` as the place for versioned design artifacts such as `prd.tsx`
+- Do not write new Superpowers specs or plans to `docs/superpowers/`
+
+When writing a spec or design document, focus on the "why", not just the conclusion:
+
+- explain the causal chain behind decisions
+- avoid black-box phrasing like "after analysis"
+- embed research where it affects a decision, instead of isolating it as a detached section
+- write so someone can reconstruct the reasoning later without extra context
+
+Reference: `.claude/docs/design-doc-methodology.md`
 
 ## Architecture Summary
 
@@ -90,9 +107,10 @@ Never stage these paths:
 Rules:
 
 1. Spec and plan files must live in `.dev-docs/`, not `docs/superpowers/`.
-2. Before every commit, run `git diff --cached --name-only` and verify forbidden files are not staged.
-3. Do not use `git add -A` or `git add .`; stage explicit paths only.
-4. If delegating work to another agent, include the same staging restrictions in that prompt.
+2. The default Superpowers spec/plan paths are overridden in this repo to `.dev-docs/specs/` and `.dev-docs/plans/`.
+3. Before every commit, run `git diff --cached --name-only` and verify forbidden files are not staged.
+4. Do not use `git add -A` or `git add .`; stage explicit paths only.
+5. If delegating work to another agent, include the same staging restrictions in that prompt.
 
 ## Database and Testing Rules
 
