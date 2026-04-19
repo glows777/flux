@@ -1,53 +1,46 @@
 import type {
     AfterRunContext,
     AssembledContextSnapshot,
+    ChatInput,
     ContextManifest,
-    ManifestInputSnapshot,
     ModelRequestSnapshot,
     PluginOutput,
     PluginOutputSnapshot,
     ResultSnapshot,
-    RunContext,
 } from './types'
 
-function nowIso(): string {
-    return new Date().toISOString()
-}
-
-function createRunId(): string {
-    // Deterministic uniqueness isn't required here; it's a runtime trace identifier.
-    return `run_${Math.random().toString(16).slice(2)}_${Date.now()}`
-}
-
-export function createBaseManifest(input: {
-    ctx: RunContext
-    defaults: Record<string, unknown>
-    initialSessionId?: string
+export function createBaseManifest(params: {
+    runId: string
+    input: ChatInput
     resolvedSessionId?: string
-    assembledContext: AssembledContextSnapshot
-    modelRequest: ModelRequestSnapshot
+    defaults: Record<string, unknown>
 }): ContextManifest {
-    const inputSnapshot: ManifestInputSnapshot = {
-        channel: input.ctx.channel,
-        mode: input.ctx.mode,
-        agentType: input.ctx.agentType,
-        rawMessages: input.ctx.rawMessages,
-        ...(input.initialSessionId != null
-            ? { initialSessionId: input.initialSessionId }
-            : {}),
-        ...(input.resolvedSessionId != null
-            ? { resolvedSessionId: input.resolvedSessionId }
-            : {}),
-        defaults: input.defaults,
-    }
-
     return {
-        runId: createRunId(),
-        createdAt: nowIso(),
-        input: inputSnapshot,
+        runId: params.runId,
+        createdAt: new Date().toISOString(),
+        input: {
+            channel: params.input.channel,
+            mode: params.input.mode,
+            agentType: params.input.agentType ?? 'trading-agent',
+            rawMessages: params.input.messages,
+            initialSessionId: params.input.sessionId,
+            resolvedSessionId: params.resolvedSessionId,
+            defaults: params.defaults,
+        },
         pluginOutputs: [],
-        assembledContext: input.assembledContext,
-        modelRequest: input.modelRequest,
+        assembledContext: {
+            segments: [],
+            tools: [],
+            params: { candidates: [], resolved: {} },
+            totalEstimatedInputTokens: 0,
+        },
+        modelRequest: {
+            systemText: '',
+            modelMessages: [],
+            toolNames: [],
+            resolvedParams: {},
+            providerOptions: {},
+        },
     }
 }
 

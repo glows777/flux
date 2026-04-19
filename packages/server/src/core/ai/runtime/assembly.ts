@@ -1,5 +1,5 @@
 import type { UIMessage } from 'ai'
-import { ToolConflictError } from './errors'
+import { InvalidContextSegmentError, ToolConflictError } from './errors'
 import {
     addSystemSegmentOverhead,
     estimateMessages,
@@ -7,14 +7,10 @@ import {
     estimateToolSpec,
 } from './token-estimator'
 import type {
-    AssembledContextSnapshot,
-    AssembledParamsSnapshot,
     ChatParams,
     ContextSegment,
-    ModelRequestSnapshot,
-    PluginOutputSnapshot,
+    PluginOutput,
     ToolContribution,
-    ToolDefinition,
 } from './types'
 
 const PRIORITY_RANK: Record<ContextSegment['priority'], number> = {
@@ -28,8 +24,8 @@ const KIND_RANK: Record<ContextSegment['kind'], number> = {
     'system.base': 0,
     'system.instructions': 1,
     'memory.long_lived': 2,
-    'history.recent': 3,
-    'live.runtime': 4,
+    'live.runtime': 3,
+    'history.recent': 4,
 }
 
 function sortSegments(a: ContextSegment, b: ContextSegment): number {
@@ -49,11 +45,17 @@ export function assembleSegments(input: {
     pluginSegments: ContextSegment[]
 }): {
     systemText: string
-    systemSegments: ContextSegment[]
     modelMessages: UIMessage[]
-    usedSegments: ContextSegment[]
+    systemSegments: Array<
+        ContextSegment & {
+            readonly included: true
+            readonly finalOrder: number
+            readonly estimatedTokens: number
+        }
+    >
+    totalEstimatedTokens: number
 } {
-    const systemSegments = input.pluginSegments
+    const rawSystemSegments = input.pluginSegments
         .filter((s) => s.target === 'system')
         .slice()
         .sort(sortSegments)
@@ -63,31 +65,58 @@ export function assembleSegments(input: {
         .slice()
         .sort(sortSegments)
 
+    for (const segment of messageSegments) {
+        if (segment.payload.format !== 'messages') {
+            throw new InvalidContextSegmentError(
+                segment.id,
+                'messages target requires payload.format = "messages"',
+            )
+        }
+    }
+
+    const systemSegments = rawSystemSegments.map((segment, index) => {
+        if (segment.payload.format !== 'text') {
+            throw new InvalidContextSegmentError(
+                segment.id,
+                'system target requires payload.format = "text"',
+            )
+        }
+
+        return {
+            ...segment,
+            included: true as const,
+            finalOrder: index,
+            estimatedTokens: addSystemSegmentOverhead(
+                estimateTextTokens(segment.payload.text),
+            ),
+        }
+    })
+
     const systemText = systemSegments
-        .map((s) => (s.payload.format === 'text' ? s.payload.text : ''))
+        .map((s) => s.payload.text)
         .filter((t) => t.length > 0)
         .join('\n\n')
 
-    const hasContributedMessages = messageSegments.some(
-        (s) => s.payload.format === 'messages',
-    )
-    const modelMessages = hasContributedMessages
-        ? messageSegments.flatMap((s) =>
-              s.payload.format === 'messages' ? s.payload.messages : [],
-          )
-        : input.rawMessages
+    const modelMessages =
+        messageSegments.length > 0
+            ? messageSegments.flatMap((s) => s.payload.messages)
+            : input.rawMessages
 
-    const usedSegments = hasContributedMessages
-        ? [...systemSegments, ...messageSegments]
-        : systemSegments
+    const totalEstimatedTokens =
+        systemSegments.reduce((total, s) => total + s.estimatedTokens, 0) +
+        estimateMessages(modelMessages)
 
-    return { systemText, systemSegments, modelMessages, usedSegments }
+    return { systemText, systemSegments, modelMessages, totalEstimatedTokens }
 }
 
 export function assembleTools(
     tools: ToolContribution[],
-): { toolMap: Record<string, ToolDefinition>; toolNames: string[] } {
-    const toolMap: Record<string, ToolDefinition> = {}
+): {
+    aiTools: Record<string, unknown>
+    manifestTools: Array<ToolContribution & { readonly estimatedTokens: number }>
+    totalEstimatedTokens: number
+} {
+    const aiTools: Record<string, unknown> = {}
     const ownership: Record<string, string> = {}
 
     for (const tool of tools) {
@@ -99,20 +128,42 @@ export function assembleTools(
             )
         }
         ownership[tool.name] = tool.source
-        toolMap[tool.name] = tool.definition
+        aiTools[tool.name] = tool.definition.tool
     }
 
-    return { toolMap, toolNames: Object.keys(toolMap) }
+    const manifestTools = tools.map((tool) => ({
+        ...tool,
+        estimatedTokens: estimateToolSpec(tool.manifestSpec),
+    }))
+
+    const totalEstimatedTokens = manifestTools.reduce(
+        (total, t) => total + t.estimatedTokens,
+        0,
+    )
+
+    return { aiTools, manifestTools, totalEstimatedTokens }
 }
 
 export function assembleParams(
-    defaults: Partial<ChatParams>,
-    pluginParams: Array<{ plugin: string; params: Partial<ChatParams> }>,
-): AssembledParamsSnapshot {
-    const candidates: AssembledParamsSnapshot['candidates'] = []
+    defaults: ChatParams,
+    contributions: Array<{ plugin: string; params: Partial<ChatParams> }>,
+): {
+    candidates: Array<{
+        plugin: string
+        key: keyof ChatParams
+        value: ChatParams[keyof ChatParams]
+    }>
+    resolved: Partial<ChatParams>
+} {
+    const candidates: Array<{
+        plugin: string
+        key: keyof ChatParams
+        value: ChatParams[keyof ChatParams]
+    }> = []
+
     const resolved: Partial<ChatParams> = { ...defaults }
 
-    for (const entry of pluginParams) {
+    for (const entry of contributions) {
         for (const [key, value] of Object.entries(entry.params) as Array<
             [keyof ChatParams, ChatParams[keyof ChatParams]]
         >) {
@@ -127,57 +178,49 @@ export function assembleParams(
 
 export function assembleContextRequest(input: {
     rawMessages: UIMessage[]
-    pluginOutputs: PluginOutputSnapshot[]
-    defaults: Partial<ChatParams>
-    providerOptions?: Record<string, unknown>
+    outputs: Array<{ plugin: string; output: PluginOutput }>
+    defaults: ChatParams
 }): {
-    assembledContext: AssembledContextSnapshot
-    modelRequest: ModelRequestSnapshot
-    toolMap: Record<string, ToolDefinition>
+    systemText: string
+    systemSegments: Array<
+        ContextSegment & {
+            readonly included: true
+            readonly finalOrder: number
+            readonly estimatedTokens: number
+        }
+    >
+    modelMessages: UIMessage[]
+    totalEstimatedTokens: number
+    aiTools: Record<string, unknown>
+    manifestTools: Array<ToolContribution & { readonly estimatedTokens: number }>
+    candidates: Array<{
+        plugin: string
+        key: keyof ChatParams
+        value: ChatParams[keyof ChatParams]
+    }>
+    resolved: Partial<ChatParams>
+    totalEstimatedInputTokens: number
 } {
-    const segments = input.pluginOutputs.flatMap((p) => p.output.segments ?? [])
-    const tools = input.pluginOutputs.flatMap((p) => p.output.tools ?? [])
-    const pluginParams = input.pluginOutputs.map((p) => ({
+    const segments = input.outputs.flatMap((p) => p.output.segments ?? [])
+    const tools = input.outputs.flatMap((p) => p.output.tools ?? [])
+    const contributions = input.outputs.map((p) => ({
         plugin: p.plugin,
         params: p.output.params ?? {},
     }))
 
-    const segmentAssembly = assembleSegments({
+    const segmentsAssembly = assembleSegments({
         rawMessages: input.rawMessages,
         pluginSegments: segments,
     })
-    const toolAssembly = assembleTools(tools)
-    const params = assembleParams(input.defaults, pluginParams)
+    const toolsAssembly = assembleTools(tools)
+    const paramsAssembly = assembleParams(input.defaults, contributions)
 
-    const systemTokens = addSystemSegmentOverhead(
-        segmentAssembly.systemSegments.reduce((total, s) => {
-            if (s.payload.format !== 'text') return total
-            return total + estimateTextTokens(s.payload.text)
-        }, 0),
-    )
-    const messageTokens = estimateMessages(segmentAssembly.modelMessages)
-    const toolTokens = tools.reduce(
-        (total, t) => total + estimateToolSpec(t.manifestSpec),
-        0,
-    )
-
-    const totalEstimatedInputTokens = systemTokens + messageTokens + toolTokens
-
-    const assembledContext: AssembledContextSnapshot = {
-        segments: segmentAssembly.usedSegments,
-        tools,
-        params,
-        totalEstimatedInputTokens,
+    return {
+        ...segmentsAssembly,
+        ...toolsAssembly,
+        ...paramsAssembly,
+        totalEstimatedInputTokens:
+            segmentsAssembly.totalEstimatedTokens +
+            toolsAssembly.totalEstimatedTokens,
     }
-
-    const modelRequest: ModelRequestSnapshot = {
-        systemText: segmentAssembly.systemText,
-        modelMessages: segmentAssembly.modelMessages,
-        toolNames: toolAssembly.toolNames,
-        resolvedParams: params.resolved,
-        providerOptions: input.providerOptions ?? {},
-    }
-
-    return { assembledContext, modelRequest, toolMap: toolAssembly.toolMap }
 }
-
