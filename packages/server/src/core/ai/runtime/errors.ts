@@ -21,3 +21,17 @@ export class ToolConflictError extends Error {
         this.name = 'ToolConflictError'
     }
 }
+
+export class InvalidPluginOutputError extends Error {
+    constructor(pluginName: string, reason: string) {
+        super(`Plugin "${pluginName}" produced invalid output: ${reason}`)
+        this.name = 'InvalidPluginOutputError'
+    }
+}
+
+export class InvalidContextSegmentError extends Error {
+    constructor(segmentId: string, reason: string) {
+        super(`Invalid context segment "${segmentId}": ${reason}`)
+        this.name = 'InvalidContextSegmentError'
+    }
+}
