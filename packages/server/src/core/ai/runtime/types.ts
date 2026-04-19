@@ -208,7 +208,9 @@ export interface ConsumedResult {
 }
 
 export interface ChatOutput {
-    streamResult: StreamTextResult<unknown, unknown>
+    // streamText()'s generics are constrained (TOOLS extends ToolSet, OUTPUT extends Output).
+    // We intentionally keep this surface loose during the migration.
+    streamResult: StreamTextResult<any, any>
     sessionId: string
     consumeStream(): Promise<ConsumedResult>
     finalize(responseMessage: UIMessage): Promise<void>
