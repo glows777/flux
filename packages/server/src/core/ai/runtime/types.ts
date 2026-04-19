@@ -1,7 +1,5 @@
 import type {
     LanguageModel,
-    ModelMessage,
-    ProviderOptions,
     StreamTextResult,
     Tool,
     UIMessage,
@@ -109,25 +107,21 @@ export interface ManifestInputSnapshot {
     readonly mode: RunContext['mode']
     readonly agentType: RunContext['agentType']
     readonly rawMessages: RunContext['rawMessages']
-    readonly initialSessionId: string
-    readonly resolvedSessionId: string
-    readonly defaults: Partial<ChatParams>
+    readonly initialSessionId?: string
+    readonly resolvedSessionId?: string
+    readonly defaults: Record<string, unknown>
 }
 
 export interface PluginOutputSnapshot {
     readonly plugin: string
-    readonly collectedAt: Date
-    readonly output?: PluginOutput
-    readonly error?: {
-        readonly name?: string
-        readonly message: string
-    }
+    readonly output: PluginOutput
 }
 
 export interface AssembledParamsSnapshot {
     readonly candidates: Array<{
-        readonly source: string
-        readonly params: Partial<ChatParams>
+        readonly plugin: string
+        readonly key: keyof ChatParams
+        readonly value: ChatParams[keyof ChatParams]
     }>
     readonly resolved: Partial<ChatParams>
 }
@@ -141,10 +135,10 @@ export interface AssembledContextSnapshot {
 
 export interface ModelRequestSnapshot {
     readonly systemText: string
-    readonly modelMessages: ModelMessage[]
+    readonly modelMessages: UIMessage[]
     readonly toolNames: string[]
     readonly resolvedParams: Partial<ChatParams>
-    readonly providerOptions: ProviderOptions
+    readonly providerOptions: Record<string, unknown>
 }
 
 export interface ResultSnapshot {
@@ -159,7 +153,7 @@ export interface ResultSnapshot {
 
 export interface ContextManifest {
     readonly runId: string
-    readonly createdAt: Date
+    readonly createdAt: string
     readonly input: ManifestInputSnapshot
     readonly pluginOutputs: PluginOutputSnapshot[]
     readonly assembledContext: AssembledContextSnapshot
