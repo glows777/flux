@@ -148,12 +148,22 @@ describe('skill plugin integration (real just-bash)', () => {
 
         await plugin.init()
 
-        const tools = (plugin.tools as () => Record<string, unknown>)()
-        expect(Object.keys(tools).sort()).toEqual(
+        const output = await plugin.contribute?.({
+            sessionId: 'skill-test',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        } as never)
+
+        expect(output?.tools?.map((tool) => tool.name).sort()).toEqual(
             ['bash', 'loadSkill', 'readFile', 'writeFile'].sort(),
         )
-
-        const prompt = (plugin.systemPrompt as () => string)()
-        expect(prompt).toContain('hello-world')
+        expect(
+            output?.segments?.some(
+                (segment) => segment.kind === 'system.instructions',
+            ),
+        ).toBe(true)
     })
 })

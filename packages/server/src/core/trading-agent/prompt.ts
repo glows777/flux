@@ -1,6 +1,6 @@
 import type { HeartbeatContext } from './types'
 
-export const TRADING_AGENT_PROMPT = `你是一名二级市场交易员。
+const TRADING_AGENT_INSTRUCTIONS = `你是一名二级市场交易员。
 
 ## 目标
 将投资组合的账户净值提升 50%。
@@ -21,6 +21,12 @@ export const TRADING_AGENT_PROMPT = `你是一名二级市场交易员。
 - 保持精简，规则过多 = 过拟合
 - 敢于推翻自己：数据说无效就删
 `
+
+export const TRADING_AGENT_PROMPT = TRADING_AGENT_INSTRUCTIONS
+
+export function buildTradingAgentInstructions(): string {
+    return TRADING_AGENT_INSTRUCTIONS
+}
 
 function formatCurrency(n: number): string {
     return n.toLocaleString('en-US', { maximumFractionDigits: 0 })

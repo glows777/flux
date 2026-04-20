@@ -32,7 +32,7 @@ export function autoTradingAgentPreset(
     }
 
     return [
-        // heartbeat MUST come before auto-trading-prompt (beforeChat sets ctx.meta.heartbeat)
+        // heartbeat MUST come before auto-trading-prompt (beforeRun seeds live context)
         heartbeatPlugin({
             alpacaClient: deps.alpacaClient,
             db: deps.db,

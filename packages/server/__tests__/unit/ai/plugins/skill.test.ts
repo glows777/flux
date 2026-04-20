@@ -92,13 +92,17 @@ describe('skillPlugin', () => {
         const plugin = skillPlugin({ skillsDirectory: './skills', deps })
         expect(plugin.init).toBeDefined()
         if (!plugin.init) throw new Error('Expected init hook')
-        if (typeof plugin.tools !== 'function') {
-            throw new Error('Expected tools factory')
-        }
 
         await plugin.init()
-        const tools = plugin.tools()
-        expect(Object.keys(tools)).toEqual([
+        const output = await plugin.contribute?.({
+            sessionId: 'skill-test',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        } as never)
+        expect(output?.tools?.map((tool) => tool.name)).toEqual([
             'loadSkill',
             'bash',
             'readFile',
@@ -106,41 +110,57 @@ describe('skillPlugin', () => {
         ])
     })
 
-    test('tools() returns empty before init', () => {
+    test('contribute() returns empty before init', async () => {
         const deps = createMockDeps()
         const plugin = skillPlugin({ skillsDirectory: './skills', deps })
-        if (typeof plugin.tools !== 'function') {
-            throw new Error('Expected tools factory')
-        }
 
-        const tools = plugin.tools()
-        expect(Object.keys(tools)).toHaveLength(0)
+        const output = await plugin.contribute?.({
+            sessionId: 'skill-test',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        } as never)
+        expect(output?.tools).toBeUndefined()
     })
 
-    test('systemPrompt() returns instructions after init', async () => {
+    test('contribute() returns instructions after init', async () => {
         const deps = createMockDeps()
         const plugin = skillPlugin({ skillsDirectory: './skills', deps })
         expect(plugin.init).toBeDefined()
         if (!plugin.init) throw new Error('Expected init hook')
-        if (typeof plugin.systemPrompt !== 'function') {
-            throw new Error('Expected systemPrompt factory')
-        }
 
         await plugin.init()
-        const prompt = plugin.systemPrompt()
-        expect(prompt).toContain('Available Skills')
-        expect(prompt).toContain('hello-world')
+        const output = await plugin.contribute?.({
+            sessionId: 'skill-test',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        } as never)
+        const prompt = output?.segments?.[0].payload
+        if (!prompt || prompt.format !== 'text') {
+            throw new Error('Expected text segment payload')
+        }
+        expect(prompt.text).toContain('Available Skills')
+        expect(prompt.text).toContain('hello-world')
     })
 
-    test('systemPrompt() returns empty string before init', () => {
+    test('contribute() returns no instructions before init', async () => {
         const deps = createMockDeps()
         const plugin = skillPlugin({ skillsDirectory: './skills', deps })
-        if (typeof plugin.systemPrompt !== 'function') {
-            throw new Error('Expected systemPrompt factory')
-        }
 
-        const prompt = plugin.systemPrompt()
-        expect(prompt).toBe('')
+        const output = await plugin.contribute?.({
+            sessionId: 'skill-test',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        } as never)
+        expect(output?.segments).toBeUndefined()
     })
 
     test('gracefully degrades when init fails', async () => {
@@ -150,19 +170,19 @@ describe('skillPlugin', () => {
 
         expect(plugin.init).toBeDefined()
         if (!plugin.init) throw new Error('Expected init hook')
-        if (typeof plugin.tools !== 'function') {
-            throw new Error('Expected tools factory')
-        }
-        if (typeof plugin.systemPrompt !== 'function') {
-            throw new Error('Expected systemPrompt factory')
-        }
 
         await plugin.init() // should NOT throw
 
-        const tools = plugin.tools()
-        expect(Object.keys(tools)).toHaveLength(0)
-        const prompt = plugin.systemPrompt()
-        expect(prompt).toBe('')
+        const output = await plugin.contribute?.({
+            sessionId: 'skill-test',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        } as never)
+        expect(output?.tools).toBeUndefined()
+        expect(output?.segments).toBeUndefined()
         expect(consoleSpy).toHaveBeenCalled()
         consoleSpy.mockRestore()
     })
@@ -185,19 +205,23 @@ describe('skillPlugin', () => {
         consoleSpy.mockRestore()
     })
 
-    test('each tool is wrapped in ToolDefinition format', async () => {
+    test('each tool is wrapped in ToolContribution format', async () => {
         const deps = createMockDeps()
         const plugin = skillPlugin({ skillsDirectory: './skills', deps })
         expect(plugin.init).toBeDefined()
         if (!plugin.init) throw new Error('Expected init hook')
-        if (typeof plugin.tools !== 'function') {
-            throw new Error('Expected tools factory')
-        }
 
         await plugin.init()
-        const tools = plugin.tools()
-        for (const [_name, def] of Object.entries(tools)) {
-            expect(def).toHaveProperty('tool')
+        const output = await plugin.contribute?.({
+            sessionId: 'skill-test',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        } as never)
+        for (const tool of output?.tools ?? []) {
+            expect(tool.definition).toHaveProperty('tool')
         }
     })
 })

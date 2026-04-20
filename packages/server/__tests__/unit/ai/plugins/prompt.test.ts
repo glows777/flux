@@ -1,74 +1,38 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { describe, expect, test } from 'bun:test'
 import { promptPlugin } from '../../../../src/core/ai/plugins/prompt'
-import type { HookContext } from '../../../../src/core/ai/runtime/types'
-
-const makeDeps = (
-    overrides: Record<string, unknown> = {},
-): {
-    buildGlobalSystemPrompt: ReturnType<typeof mock>
-    loadMemoryContext: ReturnType<typeof mock>
-} => ({
-    buildGlobalSystemPrompt: mock(() => ''),
-    loadMemoryContext: mock(() => Promise.resolve('')),
-    ...overrides,
-})
 
 describe('promptPlugin', () => {
     test('has name "prompt"', () => {
-        expect(promptPlugin({ deps: makeDeps() }).name).toBe('prompt')
+        expect(promptPlugin().name).toBe('prompt')
     })
 
-    test('no args defaults to building global prompt', () => {
-        const plugin = promptPlugin()
-        expect(plugin.name).toBe('prompt')
-    })
-
-    test('systemPrompt calls buildGlobalSystemPrompt with memoryContext', async () => {
-        const mockBuild = mock(() => 'global prompt')
-        const mockLoadMemory = mock(() => Promise.resolve('memory ctx'))
+    test('contribute returns separate base and memory segments', async () => {
         const plugin = promptPlugin({
-            deps: makeDeps({
-                buildGlobalSystemPrompt: mockBuild,
-                loadMemoryContext: mockLoadMemory,
-            }),
+            deps: {
+                loadMemoryContext: async () => '## User Profile\nprefers ETFs',
+                buildGlobalBasePrompt: () => '你是 Flux OS 的 AI 金融分析师。',
+                buildMemoryToolInstructions: () =>
+                    '## 记忆工具\n你的上下文在每次新对话时会重置。',
+                buildDisplayToolInstructions: () =>
+                    '## 展示工具使用规则\n- 每轮回复最多调用一个展示工具',
+                buildSearchToolInstructions: () =>
+                    '## 联网搜索\n你有两个联网工具：webSearch 和 webFetch。',
+            },
         })
-        const ctx: HookContext = {
+
+        const output = await plugin.contribute?.({
             sessionId: 's1',
             channel: 'web',
+            mode: 'conversation',
             agentType: 'trading-agent',
             rawMessages: [],
             meta: new Map(),
-        }
-        expect(plugin.systemPrompt).toBeDefined()
-        if (typeof plugin.systemPrompt !== 'function') {
-            throw new Error('Expected prompt plugin systemPrompt factory')
-        }
+        } as never)
 
-        const prompt = await plugin.systemPrompt(ctx)
-        expect(prompt).toBe('global prompt')
-        expect(mockBuild).toHaveBeenCalledWith({ memoryContext: 'memory ctx' })
-    })
-
-    test('systemPrompt loads memory context', async () => {
-        const mockLoadMemory = mock(() => Promise.resolve('mem'))
-        const plugin = promptPlugin({
-            deps: makeDeps({
-                loadMemoryContext: mockLoadMemory,
-            }),
-        })
-        const ctx: HookContext = {
-            sessionId: 's1',
-            channel: 'cron',
-            agentType: 'trading-agent',
-            rawMessages: [],
-            meta: new Map(),
-        }
-        expect(plugin.systemPrompt).toBeDefined()
-        if (typeof plugin.systemPrompt !== 'function') {
-            throw new Error('Expected prompt plugin systemPrompt factory')
-        }
-
-        await plugin.systemPrompt(ctx)
-        expect(mockLoadMemory).toHaveBeenCalled()
+        expect(output?.segments?.map((segment) => segment.kind)).toEqual([
+            'system.base',
+            'memory.long_lived',
+            'system.instructions',
+        ])
     })
 })

@@ -1,9 +1,17 @@
 import { loadMemoryContext as defaultLoadMemory } from '../../memory/loader'
-import { buildGlobalSystemPrompt as defaultBuildGlobal } from '../../prompts'
-import type { AIPlugin, HookContext } from '../../runtime/types'
+import {
+    buildDisplayToolInstructions as defaultBuildDisplayToolInstructions,
+    buildGlobalBasePrompt as defaultBuildGlobalBasePrompt,
+    buildMemoryToolInstructions as defaultBuildMemoryToolInstructions,
+    buildSearchToolInstructions as defaultBuildSearchToolInstructions,
+} from '../../prompts'
+import type { AIPlugin, ContextSegment } from '../../runtime/types'
 
 interface PromptPluginDeps {
-    buildGlobalSystemPrompt: typeof defaultBuildGlobal
+    buildGlobalBasePrompt: typeof defaultBuildGlobalBasePrompt
+    buildMemoryToolInstructions: typeof defaultBuildMemoryToolInstructions
+    buildDisplayToolInstructions: typeof defaultBuildDisplayToolInstructions
+    buildSearchToolInstructions: typeof defaultBuildSearchToolInstructions
     loadMemoryContext: typeof defaultLoadMemory
 }
 
@@ -13,7 +21,10 @@ interface PromptPluginOptions {
 
 export function promptPlugin(options?: PromptPluginOptions): AIPlugin {
     const deps: PromptPluginDeps = {
-        buildGlobalSystemPrompt: defaultBuildGlobal,
+        buildGlobalBasePrompt: defaultBuildGlobalBasePrompt,
+        buildMemoryToolInstructions: defaultBuildMemoryToolInstructions,
+        buildDisplayToolInstructions: defaultBuildDisplayToolInstructions,
+        buildSearchToolInstructions: defaultBuildSearchToolInstructions,
         loadMemoryContext: defaultLoadMemory,
         ...options?.deps,
     }
@@ -21,9 +32,55 @@ export function promptPlugin(options?: PromptPluginOptions): AIPlugin {
     return {
         name: 'prompt',
 
-        async systemPrompt(_ctx: HookContext): Promise<string> {
+        async contribute(ctx) {
             const memoryContext = await deps.loadMemoryContext()
-            return deps.buildGlobalSystemPrompt({ memoryContext })
+            const segments: ContextSegment[] = [
+                {
+                    id: 'global-base',
+                    target: 'system',
+                    kind: 'system.base',
+                    payload: {
+                        format: 'text',
+                        text: deps.buildGlobalBasePrompt({ symbol: ctx.symbol }),
+                    },
+                    source: { plugin: 'prompt' },
+                    priority: 'required',
+                    cacheability: 'stable',
+                    compactability: 'preserve',
+                },
+                {
+                    id: 'global-instructions',
+                    target: 'system',
+                    kind: 'system.instructions',
+                    payload: {
+                        format: 'text',
+                        text: [
+                            deps.buildMemoryToolInstructions(),
+                            deps.buildDisplayToolInstructions(),
+                            deps.buildSearchToolInstructions(),
+                        ].join('\n\n'),
+                    },
+                    source: { plugin: 'prompt' },
+                    priority: 'high',
+                    cacheability: 'stable',
+                    compactability: 'preserve',
+                },
+            ]
+
+            if (memoryContext) {
+                segments.splice(1, 0, {
+                    id: 'memory-context',
+                    target: 'system',
+                    kind: 'memory.long_lived',
+                    payload: { format: 'text', text: memoryContext },
+                    source: { plugin: 'prompt' },
+                    priority: 'high',
+                    cacheability: 'session',
+                    compactability: 'summarize',
+                })
+            }
+
+            return { segments }
         },
     }
 }

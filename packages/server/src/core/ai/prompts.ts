@@ -121,56 +121,59 @@ export function buildAgentSystemPrompt(
     const nameStr = name ? ` (${name})` : ''
 
     const memorySection = options?.memoryContext
-        ? `\n${options.memoryContext}\n\n## 记忆工具\n你的上下文在每次新对话时会重置。你的 core memory 是你跨对话保持连续性的唯一方式。任何重要信息必须通过 update_core_memory 或 save_lesson 保存，否则下次对话将遗失。\n\n### 记忆更新规则\n- 执行交易后 → 立即更新 portfolio_thesis（记录买入/卖出理由）\n- 用户表达新偏好或风险容忍度变化 → 更新 user_profile\n- 讨论板块或宏观观点 → 更新 market_views\n- 识别到自己的行为模式或错误 → 调用 save_lesson\n- 做交易决策前 → 先读取 lessons 中的相关教训`
+        ? `\n${options.memoryContext}\n\n${buildMemoryToolInstructions()}`
         : ''
-
-    const searchSection = `
-## 联网搜索
-
-你有两个联网工具：
-- webSearch: 搜索互联网。会自动多轮搜索、优化关键词、综合结果，返回报告和来源 URL（含相关性 score）。
-- webFetch: 读取并摘要网页内容。当搜索报告中某个来源需要更详细的信息时使用。
-
-使用规则：
-1. 已有工具能回答的问题（行情、基本面、新闻），不要联网搜索
-2. 需要最新信息、分析师观点、深度分析时，先 webSearch
-3. webSearch 返回的报告通常已足够，只在需要某篇文章的完整细节时才 webFetch
-4. webFetch 时务必提供具体的 question，以获得精准摘要
-5. 引用网络信息时注明来源 URL
-6. 可根据 sources 中的 score 判断来源可信度（score > 0.8 为高质量）`
 
     return `你是 Flux OS 的 AI 分析师。
 用户当前在查看 ${symbol}${nameStr}。
 你可以使用工具获取行情、新闻、财务数据等信息。
 不需要工具的知识类问题直接回答。
 回复使用中文，Markdown 格式。${memorySection}
-## 展示工具使用规则
-- 展示工具（display_*）仅用于渲染 UI 组件，不获取数据
-- 必须先调用数据工具（getQuote、getCompanyInfo 等）获取数据，再调用展示工具
-- 不要在没有数据支撑时调用展示工具（避免编造数据）
-- 每轮回复最多调用一个展示工具
-- 调用展示工具后，继续用文字补充分析说明${searchSection}${TRADING_SECTION}`
+${buildDisplayToolInstructions()}${buildSearchToolInstructions()}${TRADING_SECTION}`
 }
 
 /**
  * Global Chat System Prompt — 通用金融助手 + 可选股票上下文
  */
-export function buildGlobalSystemPrompt(options?: {
+export function buildGlobalBasePrompt(options?: {
     readonly symbol?: string
     readonly name?: string
-    readonly memoryContext?: string
 }): string {
-    const existingMemory = options?.memoryContext
-        ? `\n${options.memoryContext}\n\n`
-        : ''
-    const memorySection = `${existingMemory}## 记忆工具\n你的上下文在每次新对话时会重置。你的 core memory 是你跨对话保持连续性的唯一方式。任何重要信息必须通过 update_core_memory 或 save_lesson 保存，否则下次对话将遗失。\n\n### 记忆更新规则\n- 执行交易后 → 立即更新 portfolio_thesis（记录买入/卖出理由）\n- 用户表达新偏好或风险容忍度变化 → 更新 user_profile\n- 讨论板块或宏观观点 → 更新 market_views\n- 识别到自己的行为模式或错误 → 调用 save_lesson\n- 做交易决策前 → 先读取 lessons 中的相关教训`
-
     const symbolContext = options?.symbol
         ? `\n用户当前关注 ${options.symbol}${options.name ? ` (${options.name})` : ''}，优先使用该股票上下文回答。\n`
         : ''
 
-    const searchSection = `
-## 联网搜索
+    return `你是 Flux OS 的 AI 金融分析师。
+你可以使用工具获取任何股票的行情、新闻、财务数据等信息。
+用户可能会问你关于市场、投资、金融概念等各种问题。
+当用户提到具体股票时，使用 searchStock 工具查找后再调用其他数据工具。
+不需要工具的知识类问题直接回答。
+回复使用中文，Markdown 格式。${symbolContext}`
+}
+
+export function buildMemoryToolInstructions(): string {
+    return `## 记忆工具
+你的上下文在每次新对话时会重置。你的 core memory 是你跨对话保持连续性的唯一方式。任何重要信息必须通过 update_core_memory 或 save_lesson 保存，否则下次对话将遗失。
+
+### 记忆更新规则
+- 执行交易后 → 立即更新 portfolio_thesis（记录买入/卖出理由）
+- 用户表达新偏好或风险容忍度变化 → 更新 user_profile
+- 讨论板块或宏观观点 → 更新 market_views
+- 识别到自己的行为模式或错误 → 调用 save_lesson
+- 做交易决策前 → 先读取 lessons 中的相关教训`
+}
+
+export function buildDisplayToolInstructions(): string {
+    return `## 展示工具使用规则
+- 展示工具（display_*）仅用于渲染 UI 组件，不获取数据
+- 必须先调用数据工具（getQuote、getCompanyInfo 等）获取数据，再调用展示工具
+- 不要在没有数据支撑时调用展示工具（避免编造数据）
+- 每轮回复最多调用一个展示工具
+- 调用展示工具后，继续用文字补充分析说明`
+}
+
+export function buildSearchToolInstructions(): string {
+    return `## 联网搜索
 
 你有两个联网工具：
 - webSearch: 搜索互联网。会自动多轮搜索、优化关键词、综合结果，返回报告和来源 URL（含相关性 score）。
@@ -183,19 +186,26 @@ export function buildGlobalSystemPrompt(options?: {
 4. webFetch 时务必提供具体的 question，以获得精准摘要
 5. 引用网络信息时注明来源 URL
 6. 可根据 sources 中的 score 判断来源可信度（score > 0.8 为高质量）`
+}
 
-    return `你是 Flux OS 的 AI 金融分析师。
-你可以使用工具获取任何股票的行情、新闻、财务数据等信息。
-用户可能会问你关于市场、投资、金融概念等各种问题。
-当用户提到具体股票时，使用 searchStock 工具查找后再调用其他数据工具。
-不需要工具的知识类问题直接回答。
-回复使用中文，Markdown 格式。${symbolContext}${memorySection}
-## 展示工具使用规则
-- 展示工具（display_*）仅用于渲染 UI 组件，不获取数据
-- 必须先调用数据工具（getQuote、getCompanyInfo 等）获取数据，再调用展示工具
-- 不要在没有数据支撑时调用展示工具（避免编造数据）
-- 每轮回复最多调用一个展示工具
-- 调用展示工具后，继续用文字补充分析说明${searchSection}${TRADING_SECTION}`
+export function buildGlobalSystemPrompt(options?: {
+    readonly symbol?: string
+    readonly name?: string
+    readonly memoryContext?: string
+}): string {
+    const parts = [buildGlobalBasePrompt(options)]
+
+    if (options?.memoryContext) {
+        parts.push(options.memoryContext)
+    }
+
+    parts.push(
+        buildMemoryToolInstructions(),
+        buildDisplayToolInstructions(),
+        buildSearchToolInstructions(),
+    )
+
+    return parts.join('\n\n')
 }
 
 /**

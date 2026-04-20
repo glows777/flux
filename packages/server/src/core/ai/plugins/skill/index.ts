@@ -2,13 +2,32 @@ import {
     createBashTool as createBashToolDefault,
     experimental_createSkillTool as createSkillToolDefault,
 } from 'bash-tool'
-import type { AIPlugin, ToolMap } from '../../runtime/types'
+import type {
+    AIPlugin,
+    ContextSegment,
+    ToolContribution,
+    ToolDefinition,
+} from '../../runtime/types'
 import { createWhitelist } from './whitelist'
 
 type CreateSkillToolFn = typeof createSkillToolDefault
 type CreateBashToolFn = typeof createBashToolDefault
 type SkillTool = Awaited<ReturnType<CreateSkillToolFn>>['skill']
 type BashTools = Awaited<ReturnType<CreateBashToolFn>>['tools']
+
+function toToolContribution(name: string, tool: unknown): ToolContribution {
+    const definition: ToolDefinition = { tool: tool as never }
+
+    return {
+        name,
+        definition,
+        source: 'skill',
+        manifestSpec: {
+            description: (tool as { description?: string }).description,
+            inputSchemaSummary: (tool as { inputSchema?: unknown }).inputSchema,
+        },
+    }
+}
 
 export interface SkillPluginDeps {
     createSkillTool: CreateSkillToolFn
@@ -62,18 +81,39 @@ export function skillPlugin(options: SkillPluginOptions): AIPlugin {
             }
         },
 
-        systemPrompt() {
-            if (!skillInstructions) return ''
-            return skillInstructions
-        },
+        contribute() {
+            const segments: ContextSegment[] = []
 
-        tools(): ToolMap {
-            if (!skillTool || !bashTools) return {}
+            if (skillInstructions) {
+                segments.push({
+                    id: 'skill-instructions',
+                    target: 'system',
+                    kind: 'system.instructions',
+                    payload: { format: 'text', text: skillInstructions },
+                    source: { plugin: 'skill' },
+                    priority: 'high',
+                    cacheability: 'stable',
+                    compactability: 'preserve',
+                })
+            }
+
+            const tools =
+                skillTool && bashTools
+                    ? [
+                          toToolContribution('loadSkill', skillTool),
+                          toToolContribution('bash', bashTools.bash),
+                          toToolContribution('readFile', bashTools.readFile),
+                          toToolContribution('writeFile', bashTools.writeFile),
+                      ]
+                    : []
+
+            if (segments.length === 0 && tools.length === 0) {
+                return {}
+            }
+
             return {
-                loadSkill: { tool: skillTool },
-                bash: { tool: bashTools.bash },
-                readFile: { tool: bashTools.readFile },
-                writeFile: { tool: bashTools.writeFile },
+                segments: segments.length > 0 ? segments : undefined,
+                tools: tools.length > 0 ? tools : undefined,
             }
         },
     }

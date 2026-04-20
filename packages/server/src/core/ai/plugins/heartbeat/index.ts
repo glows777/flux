@@ -7,12 +7,13 @@ import {
     getMarketStatus,
     loadOrCreateBaseline,
 } from '@/core/trading-agent/loop'
+import { buildContext } from '@/core/trading-agent/prompt'
 import {
     type HeartbeatContext,
     MAX_STEPS,
     SEED_STRATEGY_CONTENT,
 } from '@/core/trading-agent/types'
-import type { AIPlugin, ChatParams, HookContext } from '../../runtime/types'
+import type { AIPlugin } from '../../runtime/types'
 
 export interface HeartbeatPluginDeps {
     readonly alpacaClient: AlpacaClient
@@ -26,7 +27,7 @@ export function heartbeatPlugin(deps: HeartbeatPluginDeps): AIPlugin {
     return {
         name: 'heartbeat',
 
-        async beforeChat(ctx: HookContext): Promise<void> {
+        async beforeRun(ctx): Promise<void> {
             // 1. Get account equity
             const account = await alpacaClient.getAccount()
             const equity = account?.equity ?? 0
@@ -98,8 +99,8 @@ export function heartbeatPlugin(deps: HeartbeatPluginDeps): AIPlugin {
                 progress,
             }
 
-            // 4. Store in meta for autoTradingPromptPlugin to read
-            ctx.meta.set('heartbeat', heartbeatCtx)
+            // 4. Store runtime state for explicit live-context contribution
+            ctx.meta.set('heartbeatContext', heartbeatCtx)
 
             // 5. Ensure seed strategy exists
             const strategyContent = await getSlotContent(
@@ -117,11 +118,34 @@ export function heartbeatPlugin(deps: HeartbeatPluginDeps): AIPlugin {
             }
         },
 
-        transformParams(_ctx: HookContext, params: ChatParams): ChatParams {
-            return { ...params, maxSteps: MAX_STEPS }
+        contribute(ctx) {
+            const heartbeatCtx = ctx.meta.get('heartbeatContext') as
+                | HeartbeatContext
+                | undefined
+
+            return {
+                segments: heartbeatCtx
+                    ? [
+                          {
+                              id: 'heartbeat-live-context',
+                              target: 'system',
+                              kind: 'live.runtime',
+                              payload: {
+                                  format: 'text',
+                                  text: buildContext(heartbeatCtx),
+                              },
+                              source: { plugin: 'heartbeat' },
+                              priority: 'high',
+                              cacheability: 'volatile',
+                              compactability: 'preserve',
+                          },
+                      ]
+                    : undefined,
+                params: { maxSteps: MAX_STEPS },
+            }
         },
 
-        async onError(_ctx: HookContext, error: Error): Promise<void> {
+        async onError(_ctx, error: Error): Promise<void> {
             await notifyError(error.message)
         },
     }

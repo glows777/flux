@@ -3,12 +3,12 @@ import {
     type HeartbeatPluginDeps,
     heartbeatPlugin,
 } from '../../../../src/core/ai/plugins/heartbeat'
-import type { HookContext } from '../../../../src/core/ai/runtime/types'
 import type { HeartbeatContext } from '../../../../src/core/trading-agent/types'
 
-const makeCtx = (): HookContext => ({
+const makeCtx = () => ({
     sessionId: 's1',
     channel: 'cron',
+    mode: 'trigger' as const,
     agentType: 'trading-agent',
     rawMessages: [],
     meta: new Map(),
@@ -89,40 +89,63 @@ describe('heartbeatPlugin', () => {
         expect(plugin.name).toBe('heartbeat')
     })
 
-    test('transformParams sets maxSteps to 70', () => {
-        const plugin = heartbeatPlugin(
-            makeDeps() as unknown as HeartbeatPluginDeps,
-        )
-        const ctx = makeCtx()
-        expect(plugin.transformParams).toBeDefined()
-        if (!plugin.transformParams) {
-            throw new Error('Expected transformParams hook')
+    test('contribute returns live.runtime segment and maxSteps override', async () => {
+        const plugin = heartbeatPlugin({
+            alpacaClient: {
+                getAccount: mock(async () => ({ equity: 100000 })),
+                getOrders: mock(async () => []),
+            } as never,
+            db: {} as never,
+        })
+
+        const ctx = {
+            sessionId: 's1',
+            channel: 'cron',
+            mode: 'trigger' as const,
+            agentType: 'auto-trading-agent' as const,
+            rawMessages: [],
+            meta: new Map([
+                [
+                    'heartbeatContext',
+                    {
+                        timestamp: new Date(),
+                        marketStatus: 'open',
+                        equity: 100000,
+                        baseline: 100000,
+                        progress: 0,
+                    },
+                ],
+            ]),
         }
 
-        const result = plugin.transformParams(ctx, { maxSteps: 20 })
-        expect((result as { maxSteps: number }).maxSteps).toBe(70)
+        const output = await plugin.contribute?.(ctx as never)
+
+        expect(output?.segments?.[0].kind).toBe('live.runtime')
+        expect(output?.params?.maxSteps).toBeDefined()
     })
 
-    test('beforeChat sets heartbeat context in meta', async () => {
+    test('beforeRun sets heartbeat context in meta', async () => {
         const deps = makeDeps()
         const plugin = heartbeatPlugin(deps as unknown as HeartbeatPluginDeps)
         const ctx = makeCtx()
-        expect(plugin.beforeChat).toBeDefined()
-        if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
+        expect(plugin.beforeRun).toBeDefined()
+        if (!plugin.beforeRun) throw new Error('Expected beforeRun hook')
 
-        await plugin.beforeChat(ctx)
-        expect(ctx.meta.has('heartbeat')).toBe(true)
-        const hbCtx = ctx.meta.get('heartbeat') as HeartbeatContext | undefined
+        await plugin.beforeRun(ctx as never)
+        expect(ctx.meta.has('heartbeatContext')).toBe(true)
+        const hbCtx = ctx.meta.get('heartbeatContext') as
+            | HeartbeatContext
+            | undefined
         if (!hbCtx) throw new Error('Expected heartbeat context')
         expect(hbCtx.equity).toBe(10000)
         expect(hbCtx.baseline).toBe(10000)
     })
 
-    test('does NOT have afterChat hook', () => {
+    test('does NOT have afterRun hook', () => {
         const plugin = heartbeatPlugin(
             makeDeps() as unknown as HeartbeatPluginDeps,
         )
-        expect(plugin.afterChat).toBeUndefined()
+        expect(plugin.afterRun).toBeUndefined()
     })
 
     test('onError calls notifyError', async () => {
@@ -155,10 +178,10 @@ describe('heartbeatPlugin', () => {
                 deps as unknown as HeartbeatPluginDeps,
             )
             const ctx = makeCtx()
-            expect(plugin.beforeChat).toBeDefined()
-            if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
+            expect(plugin.beforeRun).toBeDefined()
+            if (!plugin.beforeRun) throw new Error('Expected beforeRun hook')
 
-            await plugin.beforeChat(ctx)
+            await plugin.beforeRun(ctx as never)
 
             expect(deps.db.order.findUnique).toHaveBeenCalledWith({
                 where: { alpacaOrderId: 'order-1' },
@@ -191,10 +214,10 @@ describe('heartbeatPlugin', () => {
                 deps as unknown as HeartbeatPluginDeps,
             )
             const ctx = makeCtx()
-            expect(plugin.beforeChat).toBeDefined()
-            if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
+            expect(plugin.beforeRun).toBeDefined()
+            if (!plugin.beforeRun) throw new Error('Expected beforeRun hook')
 
-            await plugin.beforeChat(ctx)
+            await plugin.beforeRun(ctx as never)
 
             expect(deps.db.order.update).toHaveBeenCalled()
             const updateCall = (deps.db.order.update as ReturnType<typeof mock>)
@@ -221,10 +244,10 @@ describe('heartbeatPlugin', () => {
                 deps as unknown as HeartbeatPluginDeps,
             )
             const ctx = makeCtx()
-            expect(plugin.beforeChat).toBeDefined()
-            if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
+            expect(plugin.beforeRun).toBeDefined()
+            if (!plugin.beforeRun) throw new Error('Expected beforeRun hook')
 
-            await plugin.beforeChat(ctx)
+            await plugin.beforeRun(ctx as never)
 
             expect(deps.db.order.update).not.toHaveBeenCalled()
         })
@@ -241,13 +264,13 @@ describe('heartbeatPlugin', () => {
                 deps as unknown as HeartbeatPluginDeps,
             )
             const ctx = makeCtx()
-            expect(plugin.beforeChat).toBeDefined()
-            if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
+            expect(plugin.beforeRun).toBeDefined()
+            if (!plugin.beforeRun) throw new Error('Expected beforeRun hook')
 
-            await plugin.beforeChat(ctx)
+            await plugin.beforeRun(ctx as never)
 
             // heartbeat context should still be set
-            expect(ctx.meta.has('heartbeat')).toBe(true)
+            expect(ctx.meta.has('heartbeatContext')).toBe(true)
         })
     })
 })

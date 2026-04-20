@@ -1,6 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { tradingPlugin } from '../../../../src/core/ai/plugins/trading'
-import type { HookContext } from '../../../../src/core/ai/runtime/types'
 
 describe('tradingPlugin', () => {
     test('has name "trading"', () => {
@@ -10,35 +9,41 @@ describe('tradingPlugin', () => {
         ).toBe('trading')
     })
 
-    test('transformParams sets maxSteps to 50', async () => {
+    test('contribute returns maxSteps override', async () => {
         const plugin = tradingPlugin({
             deps: { createTradingTools: mock(() => ({})) },
         })
-        const ctx: HookContext = {
+        const ctx = {
             sessionId: 's1',
             channel: 'cron',
+            mode: 'trigger' as const,
             agentType: 'trading-agent',
             rawMessages: [],
             meta: new Map(),
         }
-        expect(plugin.transformParams).toBeDefined()
-        if (!plugin.transformParams) {
-            throw new Error('Expected transformParams hook')
-        }
 
-        const result = await plugin.transformParams(ctx, { maxSteps: 20 })
-        expect(result.maxSteps).toBe(50)
+        const result = await plugin.contribute?.(ctx as never)
+        expect(result?.params?.maxSteps).toBe(50)
     })
 
-    test('provides systemPrompt with TRADING_SECTION', () => {
+    test('provides trading instructions as a system segment', async () => {
         const plugin = tradingPlugin({
             deps: { createTradingTools: mock(() => ({})) },
         })
-        expect(plugin.systemPrompt).toBeDefined()
-        expect(typeof plugin.systemPrompt).toBe('string')
+
+        const output = await plugin.contribute?.({
+            sessionId: 's1',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        } as never)
+
+        expect(output?.segments?.[0].kind).toBe('system.instructions')
     })
 
-    test('provides all trading tools', () => {
+    test('provides all trading tools', async () => {
         const mockCreate = mock(() => ({
             placeOrder: {},
             cancelOrder: {},
@@ -49,8 +54,15 @@ describe('tradingPlugin', () => {
         const plugin = tradingPlugin({
             deps: { createTradingTools: mockCreate },
         })
-        const tools = plugin.tools as Record<string, unknown>
-        const names = Object.keys(tools)
+        const output = await plugin.contribute?.({
+            sessionId: 's1',
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            meta: new Map(),
+        } as never)
+        const names = output?.tools?.map((tool) => tool.name) ?? []
         expect(names).toContain('placeOrder')
         expect(names).toContain('getPortfolio')
         expect(names).toContain('getTradeHistory')
