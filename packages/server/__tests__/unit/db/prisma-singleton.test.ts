@@ -104,14 +104,14 @@ describe('P2-02: Prisma Singleton Runtime Tests', () => {
         expect(typeof prisma).toBe('object')
     })
 
-    testOrSkip('should have all model accessors defined', async () => {
+    testOrSkip('should expose representative model accessors', async () => {
         const { prisma } = await import('@/core/db')
 
-        // Verify core models are accessible
+        // Verify representative model accessors from the current schema.
         expect(prisma.watchlist).toBeDefined()
         expect(prisma.stockHistory).toBeDefined()
-        expect(prisma.stockInfo).toBeDefined()
-        expect(prisma.aIReport).toBeDefined()
+        expect(prisma.chatSession).toBeDefined()
+        expect(prisma.memoryVersion).toBeDefined()
     })
 
     testOrSkip(
