@@ -9,25 +9,13 @@ import {
 import type {
     ChatParams,
     ContextSegment,
+    ContextSegmentSnapshot,
+    MessageContextSegmentSnapshot,
     PluginOutput,
+    SystemContextSegmentSnapshot,
     ToolContribution,
+    ToolContributionSnapshot,
 } from './types'
-
-type SystemSegmentSnapshot = ContextSegment & {
-    readonly target: 'system'
-    readonly payload: { readonly format: 'text'; readonly text: string }
-    readonly included: true
-    readonly finalOrder: number
-    readonly estimatedTokens: number
-}
-
-type MessageSegmentSnapshot = ContextSegment & {
-    readonly target: 'messages'
-    readonly payload: {
-        readonly format: 'messages'
-        readonly messages: UIMessage[]
-    }
-}
 
 const PRIORITY_RANK: Record<ContextSegment['priority'], number> = {
     required: 0,
@@ -62,7 +50,8 @@ export function assembleSegments(input: {
 }): {
     systemText: string
     modelMessages: UIMessage[]
-    systemSegments: SystemSegmentSnapshot[]
+    systemSegments: SystemContextSegmentSnapshot[]
+    segments: ContextSegmentSnapshot[]
     totalEstimatedTokens: number
 } {
     const rawSystemSegments = input.pluginSegments
@@ -70,52 +59,52 @@ export function assembleSegments(input: {
         .slice()
         .sort(sortSegments)
 
-    const messageSegments: MessageSegmentSnapshot[] = input.pluginSegments
-        .filter((s) => s.target === 'messages')
-        .slice()
-        .sort(sortSegments)
-        .map((segment) => {
-            if (segment.payload.format !== 'messages') {
+    const messageSegments: MessageContextSegmentSnapshot[] =
+        input.pluginSegments
+            .filter((s) => s.target === 'messages')
+            .slice()
+            .sort(sortSegments)
+            .map((segment) => {
+                if (segment.payload.format !== 'messages') {
+                    throw new InvalidContextSegmentError(
+                        segment.id,
+                        'messages target requires payload.format = "messages"',
+                    )
+                }
+
+                return {
+                    ...segment,
+                    target: 'messages' as const,
+                    payload: {
+                        format: 'messages' as const,
+                        messages: segment.payload.messages,
+                    },
+                }
+            })
+
+    const systemSegments: SystemContextSegmentSnapshot[] =
+        rawSystemSegments.map((segment, index) => {
+            if (segment.payload.format !== 'text') {
                 throw new InvalidContextSegmentError(
                     segment.id,
-                    'messages target requires payload.format = "messages"',
+                    'system target requires payload.format = "text"',
                 )
             }
 
             return {
                 ...segment,
-                target: 'messages' as const,
+                target: 'system' as const,
                 payload: {
-                    format: 'messages' as const,
-                    messages: segment.payload.messages,
+                    format: 'text' as const,
+                    text: segment.payload.text,
                 },
+                included: true as const,
+                finalOrder: index,
+                estimatedTokens: addSystemSegmentOverhead(
+                    estimateTextTokens(segment.payload.text),
+                ),
             }
         })
-
-    const systemSegments: SystemSegmentSnapshot[] = rawSystemSegments.map(
-        (segment, index) => {
-        if (segment.payload.format !== 'text') {
-            throw new InvalidContextSegmentError(
-                segment.id,
-                'system target requires payload.format = "text"',
-            )
-        }
-
-        return {
-            ...segment,
-            target: 'system' as const,
-            payload: {
-                format: 'text' as const,
-                text: segment.payload.text,
-            },
-            included: true as const,
-            finalOrder: index,
-            estimatedTokens: addSystemSegmentOverhead(
-                estimateTextTokens(segment.payload.text),
-            ),
-        }
-        },
-    )
 
     const systemText = systemSegments
         .map((s) => s.payload.text)
@@ -131,14 +120,18 @@ export function assembleSegments(input: {
         systemSegments.reduce((total, s) => total + s.estimatedTokens, 0) +
         estimateMessages(modelMessages)
 
-    return { systemText, systemSegments, modelMessages, totalEstimatedTokens }
+    return {
+        systemText,
+        systemSegments,
+        segments: [...systemSegments, ...messageSegments],
+        modelMessages,
+        totalEstimatedTokens,
+    }
 }
 
-export function assembleTools(
-    tools: ToolContribution[],
-): {
+export function assembleTools(tools: ToolContribution[]): {
     aiTools: Record<string, unknown>
-    manifestTools: Array<ToolContribution & { readonly estimatedTokens: number }>
+    manifestTools: ToolContributionSnapshot[]
     totalEstimatedTokens: number
 } {
     const aiTools: Record<string, unknown> = {}
@@ -207,11 +200,12 @@ export function assembleContextRequest(input: {
     defaults: ChatParams
 }): {
     systemText: string
-    systemSegments: SystemSegmentSnapshot[]
+    systemSegments: SystemContextSegmentSnapshot[]
+    segments: ContextSegmentSnapshot[]
     modelMessages: UIMessage[]
     totalEstimatedTokens: number
     aiTools: Record<string, unknown>
-    manifestTools: Array<ToolContribution & { readonly estimatedTokens: number }>
+    manifestTools: ToolContributionSnapshot[]
     candidates: Array<{
         plugin: string
         key: keyof ChatParams

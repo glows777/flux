@@ -1,4 +1,4 @@
-import type { LanguageModel, UIMessage } from 'ai'
+import type { UIMessage } from 'ai'
 import { convertToModelMessages, stepCountIs, streamText } from 'ai'
 import { assembleContextRequest } from './assembly'
 import {
@@ -20,8 +20,8 @@ import type {
     ChatOutput,
     ChatParams,
     ConsumedResult,
-    RuntimeOptions,
     RunContext,
+    RuntimeOptions,
     ToolCallRecord,
 } from './types'
 import { DEFAULT_CHAT_PARAMS } from './types'
@@ -100,14 +100,9 @@ function buildProviderOptions(
 }
 
 function resolveMaxOutputTokens(
-    model: LanguageModel,
     params: Partial<ChatParams>,
 ): number | undefined {
-    const modelId = (model as { modelId?: string }).modelId ?? ''
-    const isClaude = modelId.startsWith('claude')
-    const nonClaudeDefaultMaxTokens = 131072
-
-    return params.maxTokens ?? (isClaude ? undefined : nonClaudeDefaultMaxTokens)
+    return params.maxTokens
 }
 
 export async function createAIRuntime(
@@ -158,7 +153,6 @@ export async function createAIRuntime(
             })
             const providerOptions = buildProviderOptions(assembledBase.resolved)
             const resolvedMaxOutputTokens = resolveMaxOutputTokens(
-                model,
                 assembledBase.resolved,
             )
             const assembled = {
@@ -176,9 +170,8 @@ export async function createAIRuntime(
 
             manifest = attachPluginOutputsSnapshot(manifest, collectedOutputs)
             manifest = attachAssembledContextSnapshot(manifest, {
-                segments: collectedOutputs.flatMap(
-                    ({ output }) => output.segments ?? [],
-                ),
+                segments: assembled.segments,
+                systemSegments: assembled.systemSegments,
                 tools: assembled.manifestTools,
                 params: {
                     candidates: assembled.candidates,
@@ -191,6 +184,7 @@ export async function createAIRuntime(
                 modelMessages: assembled.modelMessages,
                 toolNames: Object.keys(assembled.aiTools),
                 resolvedParams: assembled.resolved,
+                maxOutputTokens: assembled.resolvedMaxOutputTokens,
                 providerOptions: assembled.providerOptions,
             })
 

@@ -1,9 +1,4 @@
-import type {
-    LanguageModel,
-    StreamTextResult,
-    Tool,
-    UIMessage,
-} from 'ai'
+import type { LanguageModel, Tool, UIMessage } from 'ai'
 import type { GatewayMode } from '@/gateway/router'
 
 // ── Tool Definition ──
@@ -126,9 +121,34 @@ export interface AssembledParamsSnapshot {
     readonly resolved: Partial<ChatParams>
 }
 
+export interface SystemContextSegmentSnapshot extends ContextSegment {
+    readonly target: 'system'
+    readonly payload: { readonly format: 'text'; readonly text: string }
+    readonly included: true
+    readonly finalOrder: number
+    readonly estimatedTokens: number
+}
+
+export interface MessageContextSegmentSnapshot extends ContextSegment {
+    readonly target: 'messages'
+    readonly payload: {
+        readonly format: 'messages'
+        readonly messages: UIMessage[]
+    }
+}
+
+export type ContextSegmentSnapshot =
+    | SystemContextSegmentSnapshot
+    | MessageContextSegmentSnapshot
+
+export interface ToolContributionSnapshot extends ToolContribution {
+    readonly estimatedTokens: number
+}
+
 export interface AssembledContextSnapshot {
-    readonly segments: ContextSegment[]
-    readonly tools: ToolContribution[]
+    readonly segments: ContextSegmentSnapshot[]
+    readonly systemSegments: SystemContextSegmentSnapshot[]
+    readonly tools: ToolContributionSnapshot[]
     readonly params: AssembledParamsSnapshot
     readonly totalEstimatedInputTokens: number
 }
@@ -138,6 +158,7 @@ export interface ModelRequestSnapshot {
     readonly modelMessages: UIMessage[]
     readonly toolNames: string[]
     readonly resolvedParams: Partial<ChatParams>
+    readonly maxOutputTokens?: number
     readonly providerOptions: Record<string, unknown>
 }
 
@@ -210,7 +231,7 @@ export interface ConsumedResult {
 export interface ChatOutput {
     // streamText()'s generics are constrained (TOOLS extends ToolSet, OUTPUT extends Output).
     // We intentionally keep this surface loose during the migration.
-    streamResult: StreamTextResult<any, any>
+    streamResult: ReturnType<typeof import('ai').streamText>
     sessionId: string
     consumeStream(): Promise<ConsumedResult>
     finalize(responseMessage: UIMessage): Promise<void>

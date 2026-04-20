@@ -118,6 +118,105 @@ describe('createAIRuntime', () => {
         expect(output.getContextManifest().pluginOutputs).toHaveLength(1)
     })
 
+    test('chat manifest stores normalized segments and the resolved max output cap', async () => {
+        mockStreamText.mockClear()
+
+        const createAIRuntime = await loadCreateAIRuntime()
+        const runtime = await createAIRuntime({
+            model: { modelId: 'gpt-4.1' } as never,
+            defaults: { maxTokens: 2048 },
+            plugins: [
+                {
+                    name: 'low',
+                    contribute: () => ({
+                        segments: [
+                            {
+                                id: 'low',
+                                target: 'system',
+                                kind: 'system.instructions',
+                                payload: {
+                                    format: 'text',
+                                    text: 'low priority',
+                                },
+                                source: { plugin: 'low' },
+                                priority: 'low',
+                                cacheability: 'session',
+                                compactability: 'preserve',
+                            },
+                        ],
+                    }),
+                },
+                {
+                    name: 'high',
+                    contribute: () => ({
+                        segments: [
+                            {
+                                id: 'high',
+                                target: 'system',
+                                kind: 'system.base',
+                                payload: {
+                                    format: 'text',
+                                    text: 'high priority',
+                                },
+                                source: { plugin: 'high' },
+                                priority: 'high',
+                                cacheability: 'stable',
+                                compactability: 'preserve',
+                            },
+                        ],
+                    }),
+                },
+            ],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+
+        const manifest = output.getContextManifest()
+
+        expect(
+            manifest.assembledContext.systemSegments.map(
+                (segment) => segment.id,
+            ),
+        ).toEqual(['high', 'low'])
+        expect(manifest.assembledContext.systemSegments[0].finalOrder).toBe(0)
+        expect(manifest.assembledContext.systemSegments[1].finalOrder).toBe(1)
+        expect(manifest.modelRequest.maxOutputTokens).toBe(2048)
+        expect(mockStreamText).toHaveBeenCalledTimes(1)
+        expect(
+            (mockStreamText.mock.calls[0][0] as Record<string, unknown>)
+                .maxOutputTokens,
+        ).toBe(2048)
+    })
+
+    test('chat does not infer a max output cap from modelId', async () => {
+        mockStreamText.mockClear()
+
+        const createAIRuntime = await loadCreateAIRuntime()
+        const runtime = await createAIRuntime({
+            model: { modelId: 'gpt-4.1' } as never,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+
+        const manifest = output.getContextManifest()
+        const streamArgs = mockStreamText.mock.calls[0][0] as Record<
+            string,
+            unknown
+        >
+
+        expect(manifest.modelRequest.maxOutputTokens).toBeUndefined()
+        expect('maxOutputTokens' in streamArgs).toBe(false)
+    })
+
     test('dispose() calls destroy() on all plugins', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const destroyed: string[] = []

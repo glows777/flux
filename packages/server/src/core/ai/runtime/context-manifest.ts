@@ -30,6 +30,7 @@ export function createBaseManifest(params: {
         pluginOutputs: [],
         assembledContext: {
             segments: [],
+            systemSegments: [],
             tools: [],
             params: { candidates: [], resolved: {} },
             totalEstimatedInputTokens: 0,
@@ -39,6 +40,7 @@ export function createBaseManifest(params: {
             modelMessages: [],
             toolNames: [],
             resolvedParams: {},
+            maxOutputTokens: undefined,
             providerOptions: {},
         },
     }
@@ -86,4 +88,3 @@ export function attachResultSnapshot(
 
     return { ...manifest, result }
 }
-

@@ -34,6 +34,104 @@ mock.module('../../src/core/ai/session', () => ({
     clearSessionError: mockSessionClearSessionError,
 }))
 
+mock.module('../../src/core/ai/presets/trading-agent', () => ({
+    tradingAgentPreset: mock(() => [
+        {
+            name: 'prompt',
+            contribute: () => ({
+                segments: [
+                    {
+                        id: 'base',
+                        target: 'system',
+                        kind: 'system.base',
+                        payload: {
+                            format: 'text',
+                            text: 'base prompt',
+                        },
+                        source: { plugin: 'prompt' },
+                        priority: 'required',
+                        cacheability: 'stable',
+                        compactability: 'preserve',
+                    },
+                    {
+                        id: 'memory',
+                        target: 'system',
+                        kind: 'memory.long_lived',
+                        payload: {
+                            format: 'text',
+                            text: 'memory context',
+                        },
+                        source: { plugin: 'prompt' },
+                        priority: 'high',
+                        cacheability: 'session',
+                        compactability: 'summarize',
+                    },
+                ],
+            }),
+        },
+        {
+            name: 'session',
+            contribute: (ctx: { rawMessages: unknown[] }) => ({
+                segments: [
+                    {
+                        id: 'history',
+                        target: 'messages',
+                        kind: 'history.recent',
+                        payload: {
+                            format: 'messages',
+                            messages: ctx.rawMessages,
+                        },
+                        source: { plugin: 'session' },
+                        priority: 'high',
+                        cacheability: 'session',
+                        compactability: 'summarize',
+                    },
+                ],
+            }),
+        },
+        {
+            name: 'trading',
+            contribute: () => ({
+                tools: [
+                    {
+                        name: 'trade-tool',
+                        definition: { tool: {} },
+                        source: 'trading',
+                        manifestSpec: { description: 'trade tool' },
+                    },
+                ],
+                params: { maxSteps: 50 },
+            }),
+        },
+    ]),
+}))
+
+mock.module('../../src/core/ai/presets/auto-trading-agent', () => ({
+    autoTradingAgentPreset: mock(() => [
+        {
+            name: 'live',
+            contribute: () => ({
+                segments: [
+                    {
+                        id: 'live',
+                        target: 'system',
+                        kind: 'live.runtime',
+                        payload: {
+                            format: 'text',
+                            text: 'live runtime context',
+                        },
+                        source: { plugin: 'live' },
+                        priority: 'high',
+                        cacheability: 'volatile',
+                        compactability: 'preserve',
+                    },
+                ],
+                params: { maxSteps: 70 },
+            }),
+        },
+    ]),
+}))
+
 mock.module('ai', () => ({
     generateText: mockGenerateText,
     streamText: mockStreamText,
@@ -87,7 +185,9 @@ describe('ai context visibility integration', () => {
 
         mockGenerateText.mockReset()
         mockTool.mockReset()
-        mockConvertToModelMessages.mockImplementation(async (messages) => messages)
+        mockConvertToModelMessages.mockImplementation(
+            async (messages) => messages,
+        )
         mockStepCountIs.mockImplementation((_count: number) => () => false)
         mockGenerateText.mockResolvedValue({ text: 'mock summary' })
         mockTool.mockImplementation((config) => config)
@@ -109,7 +209,11 @@ describe('ai context visibility integration', () => {
             model: {} as Parameters<typeof createAIRuntime>[0]['model'],
             plugins: tradingAgentPreset({
                 toolDeps: {
-                    getQuote: async () => ({ price: 100, change: 0, volume: 1 }),
+                    getQuote: async () => ({
+                        price: 100,
+                        change: 0,
+                        volume: 1,
+                    }),
                     getInfo: async () => ({
                         name: 'Apple',
                         pe: 20,
@@ -146,12 +250,12 @@ describe('ai context visibility integration', () => {
 
         expect(manifest.pluginOutputs.length).toBeGreaterThan(0)
         expect(
-            manifest.assembledContext.segments.some(
+            manifest.assembledContext.systemSegments.some(
                 (segment) => segment.kind === 'system.base',
             ),
         ).toBe(true)
         expect(
-            manifest.assembledContext.segments.some(
+            manifest.assembledContext.systemSegments.some(
                 (segment) => segment.kind === 'memory.long_lived',
             ),
         ).toBe(true)
@@ -162,6 +266,12 @@ describe('ai context visibility integration', () => {
         ).toBe(true)
         expect(manifest.modelRequest.toolNames.length).toBeGreaterThan(0)
         expect(manifest.modelRequest.resolvedParams.maxSteps).toBe(50)
+        expect(manifest.modelRequest.maxOutputTokens).toBeUndefined()
+        expect(mockStreamText).toHaveBeenCalledTimes(1)
+        expect(
+            'maxOutputTokens' in
+                (mockStreamText.mock.calls[0][0] as Record<string, unknown>),
+        ).toBe(false)
 
         await runtime.dispose()
     })
@@ -191,7 +301,11 @@ describe('ai context visibility integration', () => {
                     },
                 } as never,
                 toolDeps: {
-                    getQuote: async () => ({ price: 100, change: 0, volume: 1 }),
+                    getQuote: async () => ({
+                        price: 100,
+                        change: 0,
+                        volume: 1,
+                    }),
                     getInfo: async () => ({
                         name: 'Apple',
                         pe: 20,
@@ -246,13 +360,14 @@ describe('ai context visibility integration', () => {
         })
 
         const manifest = output.getContextManifest()
-        const liveSegment = manifest.assembledContext.segments.find(
+        const liveSegment = manifest.assembledContext.systemSegments.find(
             (segment) => segment.kind === 'live.runtime',
         )
 
         expect(liveSegment).toBeDefined()
         expect(liveSegment?.cacheability).toBe('volatile')
         expect(manifest.modelRequest.resolvedParams.maxSteps).toBe(70)
+        expect(manifest.modelRequest.maxOutputTokens).toBeUndefined()
 
         await runtime.dispose()
     })
