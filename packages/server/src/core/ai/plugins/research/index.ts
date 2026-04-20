@@ -1,4 +1,5 @@
-import type { AIPlugin, ToolMap } from '../../runtime/types'
+import type { AIPlugin, ToolDefinition } from '../../runtime/types'
+import { createToolContributions } from '../shared/tool-contributions'
 
 type RawToolMap = Record<string, unknown>
 type CreateResearchToolsFn = (...args: unknown[]) => RawToolMap
@@ -12,9 +13,14 @@ export function researchPlugin(options?: ResearchPluginOptions): AIPlugin {
         throw new Error('researchPlugin requires deps.createResearchTools')
     }
     const rawTools = options.deps.createResearchTools()
-    const tools: ToolMap = {}
+    const tools: Record<string, ToolDefinition> = {}
     for (const [name, tool] of Object.entries(rawTools)) {
-        tools[name] = { tool }
+        tools[name] = { tool: tool as never }
     }
-    return { name: 'research', tools }
+    return {
+        name: 'research',
+        contribute() {
+            return { tools: createToolContributions('research', tools) }
+        },
+    }
 }

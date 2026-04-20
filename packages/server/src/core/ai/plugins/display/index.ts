@@ -1,4 +1,5 @@
-import type { AIPlugin, ToolMap } from '../../runtime/types'
+import type { AIPlugin, ToolDefinition } from '../../runtime/types'
+import { createToolContributions } from '../shared/tool-contributions'
 
 type RawToolMap = Record<string, unknown>
 type CreateToolsFn = (...args: unknown[]) => RawToolMap
@@ -18,9 +19,14 @@ export function displayPlugin(options?: DisplayPluginOptions): AIPlugin {
         throw new Error('displayPlugin requires deps.createTools')
     }
     const allTools = options.deps.createTools()
-    const tools: ToolMap = {}
+    const tools: Record<string, ToolDefinition> = {}
     for (const [name, tool] of Object.entries(allTools)) {
-        if (DISPLAY_TOOL_NAMES.has(name)) tools[name] = { tool }
+        if (DISPLAY_TOOL_NAMES.has(name)) tools[name] = { tool: tool as never }
     }
-    return { name: 'display', tools }
+    return {
+        name: 'display',
+        contribute() {
+            return { tools: createToolContributions('display', tools) }
+        },
+    }
 }

@@ -1,6 +1,7 @@
 import type { StoreDeps } from '../../memory/store'
 import { createHistoryTool, createMemoryTools } from '../../memory/tools'
-import type { AIPlugin, HookContext, ToolMap } from '../../runtime/types'
+import type { AIPlugin, ToolDefinition } from '../../runtime/types'
+import { createToolContributions } from '../shared/tool-contributions'
 
 interface MemoryPluginOptions {
     /** 是否包含 read_history 工具（仅 auto-trading-agent 使用）*/
@@ -9,10 +10,12 @@ interface MemoryPluginOptions {
     deps?: StoreDeps
 }
 
-function wrapTools(rawTools: Record<string, unknown>): ToolMap {
-    const map: ToolMap = {}
-    for (const [name, t] of Object.entries(rawTools)) {
-        map[name] = { tool: t }
+function wrapTools(
+    rawTools: Record<string, unknown>,
+): Record<string, ToolDefinition> {
+    const map: Record<string, ToolDefinition> = {}
+    for (const [name, tool] of Object.entries(rawTools)) {
+        map[name] = { tool: tool as never }
     }
     return map
 }
@@ -21,14 +24,19 @@ export function memoryPlugin(options?: MemoryPluginOptions): AIPlugin {
     return {
         name: 'memory',
 
-        tools(_ctx: HookContext): ToolMap {
+        contribute() {
             const base = createMemoryTools(options?.deps)
-            if (options?.includeHistory) {
-                const history = createHistoryTool(options?.deps)
-                return wrapTools({ ...base, ...history })
+            const tools = options?.includeHistory
+                ? wrapTools({
+                      ...base,
+                      ...createHistoryTool(options?.deps),
+                  })
+                : wrapTools(base)
+
+            return {
+                tools: createToolContributions('memory', tools),
             }
-            return wrapTools(base)
         },
-        // afterChat 暂不实现（background extraction 后续 cron 迭代）
+        // afterRun 暂不实现（background extraction 后续 cron 迭代）
     }
 }

@@ -1,4 +1,5 @@
-import type { AIPlugin, ToolMap } from '../../runtime/types'
+import type { AIPlugin, ToolDefinition } from '../../runtime/types'
+import { createToolContributions } from '../shared/tool-contributions'
 
 type RawToolMap = Record<string, unknown>
 type CreateToolsFn = (...args: unknown[]) => RawToolMap
@@ -17,10 +18,12 @@ interface DataPluginOptions {
     deps?: DataPluginDeps
 }
 
-function wrapToolsAsDefinitions(rawTools: RawToolMap): ToolMap {
-    const map: ToolMap = {}
+function wrapToolsAsDefinitions(
+    rawTools: RawToolMap,
+): Record<string, ToolDefinition> {
+    const map: Record<string, ToolDefinition> = {}
     for (const [name, tool] of Object.entries(rawTools)) {
-        map[name] = { tool }
+        map[name] = { tool: tool as never }
     }
     return map
 }
@@ -41,6 +44,13 @@ export function dataPlugin(options?: DataPluginOptions): AIPlugin {
 
     return {
         name: 'data',
-        tools: wrapToolsAsDefinitions(filtered),
+        contribute() {
+            return {
+                tools: createToolContributions(
+                    'data',
+                    wrapToolsAsDefinitions(filtered),
+                ),
+            }
+        },
     }
 }

@@ -1,10 +1,6 @@
 import type { UIMessage } from 'ai'
 import { prisma as defaultPrisma } from '@/core/db'
-import type {
-    AfterChatContext,
-    AIPlugin,
-    HookContext,
-} from '../../runtime/types'
+import type { AIPlugin } from '../../runtime/types'
 import {
     appendMessage as defaultAppendMessage,
     clearSessionError as defaultClearSessionError,
@@ -114,7 +110,7 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
     return {
         name: 'session',
 
-        async beforeChat(ctx: HookContext): Promise<void> {
+        async beforeRun(ctx): Promise<void> {
             let sessionId = ctx.sessionId
 
             if (ctx.mode === 'trigger') {
@@ -153,35 +149,47 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
             await deps.clearSessionError(sessionId)
         },
 
-        async transformMessages(
-            ctx: HookContext,
-            messages: UIMessage[],
-        ): Promise<UIMessage[]> {
+        async contribute(ctx) {
             // For discord/cron: load history from DB (already includes the just-appended user message)
             const sourceId = ctx.meta.get('sourceId') as string | undefined
-            if (sourceId) {
-                const sessionId = ctx.meta.get('sessionId') as string
-                if (sessionId) {
-                    const history = await deps.loadMessages(sessionId)
-                    if (history.length > limit) return history.slice(-limit)
-                    return history
-                }
-            }
+            const sessionId = (ctx.meta.get('sessionId') as string) || ctx.sessionId
 
-            // Web path: messages come from frontend (already include history)
-            if (messages.length <= limit) return messages
-            return messages.slice(-limit)
+            const messages =
+                sourceId && sessionId
+                    ? await deps.loadMessages(sessionId)
+                    : ctx.rawMessages
+
+            const recentMessages =
+                messages.length > limit ? messages.slice(-limit) : messages
+
+            return {
+                segments: [
+                    {
+                        id: 'session-history',
+                        target: 'messages',
+                        kind: 'history.recent',
+                        payload: {
+                            format: 'messages',
+                            messages: recentMessages,
+                        },
+                        source: { plugin: 'session' },
+                        priority: 'high',
+                        cacheability: 'session',
+                        compactability: 'summarize',
+                    },
+                ],
+            }
         },
 
-        async afterChat(ctx: AfterChatContext): Promise<void> {
+        async afterRun(ctx): Promise<void> {
             await deps.appendMessage(ctx.sessionId, ctx.responseMessage)
             await deps.touchSession(ctx.sessionId)
-            // Idempotent safety net — beforeChat already cleared, but double-clear
-            // guarantees no stale error if beforeChat's clear somehow failed silently.
+            // Idempotent safety net — beforeRun already cleared, but double-clear
+            // guarantees no stale error if beforeRun's clear somehow failed silently.
             await deps.clearSessionError(ctx.sessionId)
         },
 
-        async onError(ctx: HookContext, error: Error): Promise<void> {
+        async onError(ctx, error: Error): Promise<void> {
             const sessionId = ctx.meta.get('sessionId') as string | undefined
             if (!sessionId) {
                 // Session wasn't resolved (e.g., createSession itself threw).

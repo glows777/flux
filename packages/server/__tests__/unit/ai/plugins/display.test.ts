@@ -16,16 +16,21 @@ describe('displayPlugin', () => {
         ).toBe('display')
     })
 
-    test('provides only display tools', () => {
-        const mockCreate = mock(() => ({
-            getQuote: {},
-            display_rating_card: {},
-            display_comparison_table: {},
-            display_signal_badges: {},
-        }))
-        const plugin = displayPlugin({ deps: { createTools: mockCreate } })
-        const tools = plugin.tools as Record<string, unknown>
-        const names = Object.keys(tools)
+    test('contribute returns only display tools', () => {
+        const plugin = displayPlugin({
+            deps: {
+                createTools: mock(() => ({
+                    getQuote: {},
+                    display_rating_card: {},
+                    display_comparison_table: {},
+                    display_signal_badges: {},
+                })),
+            },
+        })
+
+        const output = plugin.contribute?.({} as never)
+        const names = output?.tools?.map((tool) => tool.name) ?? []
+
         expect(names).toEqual([
             'display_rating_card',
             'display_comparison_table',

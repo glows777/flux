@@ -15,13 +15,15 @@ describe('researchPlugin', () => {
         ).toBe('research')
     })
 
-    test('provides webSearch and webFetch tools', () => {
-        const mockCreate = mock(() => ({ webSearch: {}, webFetch: {} }))
+    test('contribute returns webSearch and webFetch tools', () => {
         const plugin = researchPlugin({
-            deps: { createResearchTools: mockCreate },
+            deps: { createResearchTools: mock(() => ({ webSearch: {}, webFetch: {} })) },
         })
-        const tools = plugin.tools as Record<string, unknown>
-        expect(Object.keys(tools)).toContain('webSearch')
-        expect(Object.keys(tools)).toContain('webFetch')
+
+        const output = plugin.contribute?.({} as never)
+        const names = output?.tools?.map((tool) => tool.name) ?? []
+
+        expect(names).toContain('webSearch')
+        expect(names).toContain('webFetch')
     })
 })

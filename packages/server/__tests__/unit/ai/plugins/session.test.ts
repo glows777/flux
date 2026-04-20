@@ -2,407 +2,249 @@ import { describe, expect, mock, test } from 'bun:test'
 import type { UIMessage } from 'ai'
 import { sessionPlugin } from '../../../../src/core/ai/plugins/session'
 import type {
-    AfterChatContext,
-    HookContext,
+    AfterRunContext,
+    RunContext,
 } from '../../../../src/core/ai/runtime/types'
+
+function makeUserMessage(id: string, text: string): UIMessage {
+    return {
+        id,
+        role: 'user',
+        parts: [{ type: 'text', text }],
+    } as UIMessage
+}
+
+function makeRunContext(overrides: Partial<RunContext> = {}): RunContext {
+    return {
+        sessionId: 's1',
+        channel: 'web',
+        mode: 'conversation',
+        agentType: 'trading-agent',
+        rawMessages: [],
+        meta: new Map(),
+        ...overrides,
+    }
+}
+
+function makeAfterRunContext(
+    overrides: Partial<AfterRunContext> = {},
+): AfterRunContext {
+    return {
+        ...makeRunContext(),
+        text: 'hi',
+        responseMessage: {
+            id: 'assistant-1',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'hi' }],
+        } as UIMessage,
+        toolCalls: [],
+        usage: { inputTokens: 0, outputTokens: 0 },
+        contextManifest: {
+            runId: 'run-1',
+            createdAt: new Date().toISOString(),
+            input: {
+                channel: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                rawMessages: [],
+                defaults: {},
+            },
+            pluginOutputs: [],
+            assembledContext: {
+                segments: [],
+                tools: [],
+                params: { candidates: [], resolved: {} },
+                totalEstimatedInputTokens: 0,
+            },
+            modelRequest: {
+                systemText: '',
+                modelMessages: [],
+                toolNames: [],
+                resolvedParams: {},
+                providerOptions: {},
+            },
+        },
+        ...overrides,
+    }
+}
+
+function makeDeps(overrides: Record<string, unknown> = {}) {
+    return {
+        createSession: mock(async () => 'new-session-id'),
+        loadMessages: mock(async () => []),
+        appendMessage: mock(async () => {}),
+        touchSession: mock(async () => {}),
+        resolveSession: mock(async () => 'resolved-session-id'),
+        saveSessionError: mock(async () => {}),
+        clearSessionError: mock(async () => {}),
+        ...overrides,
+    }
+}
 
 describe('sessionPlugin', () => {
     test('has name "session"', () => {
-        const plugin = sessionPlugin()
-        expect(plugin.name).toBe('session')
+        expect(sessionPlugin().name).toBe('session')
     })
 
-    test('transformMessages truncates to limit', async () => {
+    test('contribute returns recent-history message segment for web messages', async () => {
         const plugin = sessionPlugin({ truncateLimit: 3 })
-        const msgs = Array.from({ length: 5 }, (_, i) => ({
-            id: `${i}`,
-            role: 'user',
-            content: `msg ${i}`,
-            parts: [{ type: 'text', text: `msg ${i}` }],
-        })) as UIMessage[]
-        const ctx: HookContext = {
-            sessionId: 's1',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: msgs,
-            meta: new Map(),
-        }
-        expect(plugin.transformMessages).toBeDefined()
-        if (!plugin.transformMessages) {
-            throw new Error('Expected transformMessages hook')
-        }
+        const msgs = Array.from({ length: 5 }, (_, i) =>
+            makeUserMessage(`${i}`, `msg ${i}`),
+        )
 
-        const result = await plugin.transformMessages(ctx, msgs)
-        expect(result).toHaveLength(3)
-        expect(result[0].id).toBe('2')
+        const output = await plugin.contribute?.(
+            makeRunContext({ rawMessages: msgs }) as never,
+        )
+
+        const history = output?.segments?.[0]
+        expect(history?.kind).toBe('history.recent')
+        if (!history || history.payload.format !== 'messages') {
+            throw new Error('Expected history.recent messages payload')
+        }
+        expect(history.payload.messages).toHaveLength(3)
+        expect(history.payload.messages[0].id).toBe('2')
     })
 
-    test('transformMessages uses default limit 20', async () => {
-        const plugin = sessionPlugin()
-        const msgs = Array.from({ length: 25 }, (_, i) => ({
-            id: `${i}`,
-            role: 'user',
-            content: `msg ${i}`,
-            parts: [{ type: 'text', text: `msg ${i}` }],
-        })) as UIMessage[]
-        const ctx: HookContext = {
-            sessionId: 's1',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: msgs,
-            meta: new Map(),
-        }
-        expect(plugin.transformMessages).toBeDefined()
-        if (!plugin.transformMessages) {
-            throw new Error('Expected transformMessages hook')
-        }
-
-        const result = await plugin.transformMessages(ctx, msgs)
-        expect(result).toHaveLength(20)
-    })
-
-    test('afterChat persists response message', async () => {
-        const mockAppend = mock(() => Promise.resolve())
-        const mockTouch = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: {
-                appendMessage: mockAppend,
-                touchSession: mockTouch,
-                clearSessionError: mock(() => Promise.resolve()),
-            },
+    test('contribute loads db-backed history for sourceId channels', async () => {
+        const deps = makeDeps({
+            loadMessages: async () => [makeUserMessage('db-1', 'db')],
         })
-        const ctx: AfterChatContext = {
-            sessionId: 's1',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [],
-            meta: new Map(),
-            result: {
-                text: 'hi',
-                usage: { inputTokens: 0, outputTokens: 0 },
-                toolCalls: [],
-            },
-            responseMessage: {
-                id: 'msg-1',
-                role: 'assistant',
-                content: 'hi',
-                parts: [],
-            } as UIMessage,
-            toolCalls: [],
-        }
-        expect(plugin.afterChat).toBeDefined()
-        if (!plugin.afterChat) throw new Error('Expected afterChat hook')
+        const plugin = sessionPlugin({ deps })
 
-        await plugin.afterChat(ctx)
-        expect(mockAppend).toHaveBeenCalledWith('s1', ctx.responseMessage)
-        expect(mockTouch).toHaveBeenCalledWith('s1')
+        const output = await plugin.contribute?.(
+            makeRunContext({
+                channel: 'discord',
+                rawMessages: [],
+                meta: new Map([
+                    ['sourceId', 'discord:1'],
+                    ['sessionId', 's1'],
+                ]),
+            }) as never,
+        )
+
+        const history = output?.segments?.[0]
+        if (!history || history.payload.format !== 'messages') {
+            throw new Error('Expected history.recent messages payload')
+        }
+        expect(history.payload.messages[0].id).toBe('db-1')
     })
 
-    test('beforeChat creates session when sessionId is empty', async () => {
-        const mockCreate = mock(() => Promise.resolve('new-session-id'))
-        const mockAppend = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: {
-                createSession: mockCreate,
-                appendMessage: mockAppend,
-                touchSession: mock(() => Promise.resolve()),
-                clearSessionError: mock(() => Promise.resolve()),
-            },
-        })
-        const ctx: HookContext = {
+    test('beforeRun creates session when sessionId is empty', async () => {
+        const deps = makeDeps()
+        const plugin = sessionPlugin({ deps })
+        const ctx = makeRunContext({
             sessionId: '',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [
-                {
-                    id: '1',
-                    role: 'user',
-                    content: 'hello',
-                    parts: [{ type: 'text', text: 'hello' }],
-                },
-            ] as UIMessage[],
-            meta: new Map(),
-        }
-        expect(plugin.beforeChat).toBeDefined()
-        if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
+            rawMessages: [makeUserMessage('1', 'hello')],
+        })
 
-        await plugin.beforeChat(ctx)
-        expect(mockCreate).toHaveBeenCalled()
+        await plugin.beforeRun?.(ctx)
+
+        expect(deps.createSession).toHaveBeenCalled()
         expect(ctx.meta.get('sessionId')).toBe('new-session-id')
     })
 
-    test('beforeChat skips session creation when sessionId exists', async () => {
-        const mockCreate = mock(() => Promise.resolve('should-not-be-called'))
-        const mockAppend = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: {
-                createSession: mockCreate,
-                appendMessage: mockAppend,
-                touchSession: mock(() => Promise.resolve()),
-                clearSessionError: mock(() => Promise.resolve()),
-            },
-        })
-        const ctx: HookContext = {
-            sessionId: 'existing-session',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [
-                {
-                    id: '1',
-                    role: 'user',
-                    content: 'hello',
-                    parts: [{ type: 'text', text: 'hello' }],
-                },
-            ] as UIMessage[],
-            meta: new Map(),
-        }
-        expect(plugin.beforeChat).toBeDefined()
-        if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
-
-        await plugin.beforeChat(ctx)
-        expect(mockCreate).not.toHaveBeenCalled()
-        expect(ctx.meta.get('sessionId')).toBe('existing-session')
-    })
-
-    test('beforeChat persists last user message', async () => {
-        const mockAppend = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: {
-                createSession: mock(() => Promise.resolve('s1')),
-                appendMessage: mockAppend,
-                touchSession: mock(() => Promise.resolve()),
-                clearSessionError: mock(() => Promise.resolve()),
-            },
-        })
-        const userMsg = {
-            id: '1',
-            role: 'user',
-            content: 'hello',
-            parts: [{ type: 'text', text: 'hello' }],
-        } as UIMessage
-        const ctx: HookContext = {
-            sessionId: 'existing',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [userMsg],
-            meta: new Map(),
-        }
-        expect(plugin.beforeChat).toBeDefined()
-        if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
-
-        await plugin.beforeChat(ctx)
-        expect(mockAppend).toHaveBeenCalledWith('existing', userMsg)
-    })
-
-    test('trigger mode always creates new session even with sourceId', async () => {
-        const mockCreate = mock(() => Promise.resolve('trigger-session'))
-        const mockResolve = mock(() => Promise.resolve('should-not-resolve'))
-        const mockAppend = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: {
-                createSession: mockCreate,
-                resolveSession: mockResolve,
-                appendMessage: mockAppend,
-                touchSession: mock(() => Promise.resolve()),
-                clearSessionError: mock(() => Promise.resolve()),
-            },
-        })
-        const ctx: HookContext = {
+    test('beforeRun resolves sourceId sessions in conversation mode', async () => {
+        const deps = makeDeps()
+        const plugin = sessionPlugin({ deps })
+        const ctx = makeRunContext({
             sessionId: '',
+            channel: 'discord',
+            rawMessages: [makeUserMessage('1', 'hello')],
+            meta: new Map([
+                ['sourceId', 'discord:1'],
+                ['userId', 'user-1'],
+            ]),
+        })
+
+        await plugin.beforeRun?.(ctx)
+
+        expect(deps.resolveSession).toHaveBeenCalledWith({
+            channel: 'discord',
+            sourceId: 'discord:1',
+            createdBy: 'user-1',
+            symbol: undefined,
+            title: 'hello',
+        })
+        expect(ctx.meta.get('sessionId')).toBe('resolved-session-id')
+    })
+
+    test('trigger mode always creates a fresh session', async () => {
+        const deps = makeDeps()
+        const plugin = sessionPlugin({ deps })
+        const ctx = makeRunContext({
+            sessionId: 'existing-session',
             channel: 'cron',
             mode: 'trigger',
             agentType: 'auto-trading-agent',
-            rawMessages: [
-                {
-                    id: '1',
-                    role: 'user',
-                    content: 'run analysis',
-                    parts: [{ type: 'text', text: 'run analysis' }],
-                },
-            ] as UIMessage[],
+            rawMessages: [makeUserMessage('1', 'run')],
             meta: new Map([['sourceId', 'cron:job-123']]),
-        }
-        expect(plugin.beforeChat).toBeDefined()
-        if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
+        })
 
-        await plugin.beforeChat(ctx)
-        expect(mockCreate).toHaveBeenCalled()
-        expect(mockResolve).not.toHaveBeenCalled()
-        expect(ctx.meta.get('sessionId')).toBe('trigger-session')
+        await plugin.beforeRun?.(ctx)
+
+        expect(deps.createSession).toHaveBeenCalled()
+        expect(deps.resolveSession).not.toHaveBeenCalled()
+        expect(ctx.meta.get('sessionId')).toBe('new-session-id')
     })
 
-    test('trigger mode creates new session even when sessionId already set', async () => {
-        const mockCreate = mock(() => Promise.resolve('fresh-trigger-session'))
-        const mockAppend = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: {
-                createSession: mockCreate,
-                appendMessage: mockAppend,
-                touchSession: mock(() => Promise.resolve()),
-                clearSessionError: mock(() => Promise.resolve()),
-            },
+    test('beforeRun persists the last user message and clears prior error', async () => {
+        const deps = makeDeps()
+        const plugin = sessionPlugin({ deps })
+        const userMsg = makeUserMessage('2', 'latest')
+        const ctx = makeRunContext({
+            rawMessages: [makeUserMessage('1', 'first'), userMsg],
         })
-        const ctx: HookContext = {
-            sessionId: 'pre-existing',
-            channel: 'cron',
-            mode: 'trigger',
-            agentType: 'auto-trading-agent',
-            rawMessages: [
-                {
-                    id: '1',
-                    role: 'user',
-                    content: 'run',
-                    parts: [{ type: 'text', text: 'run' }],
-                },
-            ] as UIMessage[],
-            meta: new Map(),
-        }
-        expect(plugin.beforeChat).toBeDefined()
-        if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
 
-        await plugin.beforeChat(ctx)
-        expect(mockCreate).toHaveBeenCalled()
-        expect(ctx.meta.get('sessionId')).toBe('fresh-trigger-session')
+        await plugin.beforeRun?.(ctx)
+
+        expect(deps.appendMessage).toHaveBeenCalledWith('s1', userMsg)
+        expect(deps.clearSessionError).toHaveBeenCalledWith('s1')
     })
 
-    test('beforeChat clears prior session error', async () => {
-        const mockClear = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: {
-                createSession: mock(() => Promise.resolve('s1')),
-                appendMessage: mock(() => Promise.resolve()),
-                touchSession: mock(() => Promise.resolve()),
-                clearSessionError: mockClear,
-            },
-        })
-        const ctx: HookContext = {
-            sessionId: 'existing',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [
-                {
-                    id: '1',
-                    role: 'user',
-                    content: 'hi',
-                    parts: [{ type: 'text', text: 'hi' }],
-                },
-            ] as UIMessage[],
-            meta: new Map(),
-        }
-        if (!plugin.beforeChat) throw new Error('Expected beforeChat hook')
+    test('afterRun persists the assistant response, touches session, and clears error', async () => {
+        const deps = makeDeps()
+        const plugin = sessionPlugin({ deps })
+        const ctx = makeAfterRunContext()
 
-        await plugin.beforeChat(ctx)
-        expect(mockClear).toHaveBeenCalledWith('existing')
+        await plugin.afterRun?.(ctx)
+
+        expect(deps.appendMessage).toHaveBeenCalledWith(
+            's1',
+            ctx.responseMessage,
+        )
+        expect(deps.touchSession).toHaveBeenCalledWith('s1')
+        expect(deps.clearSessionError).toHaveBeenCalledWith('s1')
     })
 
-    test('afterChat clears session error (idempotent safety net)', async () => {
-        const mockClear = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: {
-                appendMessage: mock(() => Promise.resolve()),
-                touchSession: mock(() => Promise.resolve()),
-                clearSessionError: mockClear,
-            },
-        })
-        const ctx: AfterChatContext = {
-            sessionId: 's1',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [],
-            meta: new Map(),
-            result: {
-                text: 'hi',
-                usage: { inputTokens: 0, outputTokens: 0 },
-                toolCalls: [],
-            },
-            responseMessage: {
-                id: 'msg-1',
-                role: 'assistant',
-                content: 'hi',
-                parts: [],
-            } as UIMessage,
-            toolCalls: [],
-        }
-        if (!plugin.afterChat) throw new Error('Expected afterChat hook')
-
-        await plugin.afterChat(ctx)
-        expect(mockClear).toHaveBeenCalledWith('s1')
-    })
-
-    test('onError persists error with name/message/code when sessionId resolved', async () => {
-        const mockSave = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: { saveSessionError: mockSave },
-        })
-        const err = Object.assign(new Error('rate limited'), {
+    test('onError persists error with name, message, and code when sessionId resolved', async () => {
+        const deps = makeDeps()
+        const plugin = sessionPlugin({ deps })
+        const error = Object.assign(new Error('rate limited'), {
             name: 'RateLimitError',
             code: 'RATE_LIMIT',
         })
-        const ctx: HookContext = {
-            sessionId: 's1',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [],
+        const ctx = makeRunContext({
             meta: new Map([['sessionId', 's1']]),
-        }
-        if (!plugin.onError) throw new Error('Expected onError hook')
+        })
 
-        await plugin.onError(ctx, err)
-        expect(mockSave).toHaveBeenCalledWith('s1', {
+        await plugin.onError?.(ctx, error)
+
+        expect(deps.saveSessionError).toHaveBeenCalledWith('s1', {
             message: 'rate limited',
             name: 'RateLimitError',
             code: 'RATE_LIMIT',
         })
     })
 
-    test('onError no-ops when sessionId is not in meta', async () => {
-        const mockSave = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: { saveSessionError: mockSave },
-        })
-        const ctx: HookContext = {
-            sessionId: '',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [],
-            meta: new Map(),
-        }
-        if (!plugin.onError) throw new Error('Expected onError hook')
+    test('onError no-ops when no sessionId is available', async () => {
+        const deps = makeDeps()
+        const plugin = sessionPlugin({ deps })
 
-        await plugin.onError(ctx, new Error('early failure'))
-        expect(mockSave).not.toHaveBeenCalled()
-    })
+        await plugin.onError?.(
+            makeRunContext({ sessionId: '', meta: new Map() }),
+            new Error('early failure'),
+        )
 
-    test('onError omits code when error.code is not a string', async () => {
-        const mockSave = mock(() => Promise.resolve())
-        const plugin = sessionPlugin({
-            deps: { saveSessionError: mockSave },
-        })
-        const ctx: HookContext = {
-            sessionId: 's1',
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [],
-            meta: new Map([['sessionId', 's1']]),
-        }
-        if (!plugin.onError) throw new Error('Expected onError hook')
-
-        await plugin.onError(ctx, new Error('plain error'))
-        expect(mockSave).toHaveBeenCalledWith('s1', {
-            message: 'plain error',
-            name: 'Error',
-            code: undefined,
-        })
+        expect(deps.saveSessionError).not.toHaveBeenCalled()
     })
 })

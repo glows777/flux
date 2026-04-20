@@ -1,17 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import type { StoreDeps } from '../../../../src/core/ai/memory/store'
 import { memoryPlugin } from '../../../../src/core/ai/plugins/memory'
-import type { HookContext } from '../../../../src/core/ai/runtime/types'
-
-function makeCtx(): HookContext {
-    return {
-        sessionId: 's1',
-        channel: 'web',
-        agentType: 'trading-agent',
-        rawMessages: [],
-        meta: new Map(),
-    }
-}
 
 function makeMockDb() {
     return {
@@ -25,48 +14,35 @@ function makeMockDb() {
 
 describe('memoryPlugin', () => {
     test('has name "memory"', () => {
-        const plugin = memoryPlugin()
-        expect(plugin.name).toBe('memory')
+        expect(memoryPlugin().name).toBe('memory')
     })
 
-    test('provides update_core_memory and save_lesson for trading-agent', async () => {
+    test('contribute returns update_core_memory and save_lesson by default', async () => {
         const plugin = memoryPlugin({ deps: { db: makeMockDb() } })
-        expect(plugin.tools).toBeDefined()
-        if (typeof plugin.tools !== 'function') {
-            throw new Error('Expected memory plugin tools factory')
-        }
+        const output = await plugin.contribute?.({} as never)
+        const names = output?.tools?.map((tool) => tool.name) ?? []
 
-        const tools = await plugin.tools(makeCtx())
-        expect(Object.keys(tools)).toContain('update_core_memory')
-        expect(Object.keys(tools)).toContain('save_lesson')
-        expect(Object.keys(tools)).not.toContain('read_history')
-        expect(Object.keys(tools)).toHaveLength(2)
+        expect(names).toContain('update_core_memory')
+        expect(names).toContain('save_lesson')
+        expect(names).not.toContain('read_history')
+        expect(names).toHaveLength(2)
     })
 
-    test('provides read_history when includeHistory=true (auto-trading-agent)', async () => {
+    test('contribute includes read_history when includeHistory=true', async () => {
         const plugin = memoryPlugin({
             includeHistory: true,
             deps: { db: makeMockDb() },
         })
-        expect(plugin.tools).toBeDefined()
-        if (typeof plugin.tools !== 'function') {
-            throw new Error('Expected memory plugin tools factory')
-        }
+        const output = await plugin.contribute?.({} as never)
+        const names = output?.tools?.map((tool) => tool.name) ?? []
 
-        const tools = await plugin.tools(makeCtx())
-        expect(Object.keys(tools)).toContain('update_core_memory')
-        expect(Object.keys(tools)).toContain('save_lesson')
-        expect(Object.keys(tools)).toContain('read_history')
-        expect(Object.keys(tools)).toHaveLength(3)
+        expect(names).toContain('update_core_memory')
+        expect(names).toContain('save_lesson')
+        expect(names).toContain('read_history')
+        expect(names).toHaveLength(3)
     })
 
-    test('does NOT provide systemPrompt', () => {
-        const plugin = memoryPlugin()
-        expect(plugin.systemPrompt).toBeUndefined()
-    })
-
-    test('does NOT provide afterChat hook', () => {
-        const plugin = memoryPlugin()
-        expect(plugin.afterChat).toBeUndefined()
+    test('does NOT provide afterRun hook', () => {
+        expect(memoryPlugin().afterRun).toBeUndefined()
     })
 })
