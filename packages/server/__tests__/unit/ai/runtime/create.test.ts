@@ -1,11 +1,37 @@
-import { describe, expect, test } from 'bun:test'
-import { createAIRuntime } from '../../../../src/core/ai/runtime/create'
+import { describe, expect, mock, test } from 'bun:test'
 import type { AIPlugin } from '../../../../src/core/ai/runtime/types'
 
-const mockModel = {} as Parameters<typeof createAIRuntime>[0]['model']
+const mockConvertToModelMessages = mock(async (messages: unknown[]) => messages)
+const mockStepCountIs = mock((_count: number) => () => false)
+const mockStreamText = mock(() => ({
+    text: Promise.resolve('mock text'),
+    usage: Promise.resolve({ inputTokens: 10, outputTokens: 5 }),
+    steps: Promise.resolve([]),
+    toUIMessageStream: (_opts?: unknown) => new ReadableStream(),
+    toUIMessageStreamResponse: (_opts?: unknown) =>
+        new Response('data: test\n\n', {
+            headers: { 'Content-Type': 'text/event-stream' },
+        }),
+}))
+
+mock.module('ai', async () => {
+    return {
+        convertToModelMessages: mockConvertToModelMessages,
+        stepCountIs: mockStepCountIs,
+        streamText: mockStreamText,
+    }
+})
+
+async function loadCreateAIRuntime() {
+    const mod = await import('../../../../src/core/ai/runtime/create')
+    return mod.createAIRuntime
+}
+
+const mockModel = {} as never
 
 describe('createAIRuntime', () => {
     test('rejects duplicate plugin names', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
         const plugins: AIPlugin[] = [{ name: 'dup' }, { name: 'dup' }]
         expect(createAIRuntime({ model: mockModel, plugins })).rejects.toThrow(
             'Duplicate plugin name: "dup"',
@@ -13,6 +39,7 @@ describe('createAIRuntime', () => {
     })
 
     test('calls init() on all plugins in order', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
         const order: string[] = []
         const plugins: AIPlugin[] = [
             {
@@ -33,6 +60,7 @@ describe('createAIRuntime', () => {
     })
 
     test('propagates init() errors', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
         const plugins: AIPlugin[] = [
             {
                 name: 'bad',
@@ -46,30 +74,52 @@ describe('createAIRuntime', () => {
         )
     })
 
-    test('validates static tool uniqueness at creation time', async () => {
-        const plugins: AIPlugin[] = [
-            {
-                name: 'a',
-                tools: { same: { tool: {} as Record<string, never> } },
-            },
-            {
-                name: 'b',
-                tools: { same: { tool: {} as Record<string, never> } },
-            },
-        ]
-        expect(createAIRuntime({ model: mockModel, plugins })).rejects.toThrow(
-            'same',
-        )
-    })
-
-    test('returns runtime with chat, getToolDisplayMap, dispose', async () => {
+    test('returns runtime with chat and dispose', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
         const runtime = await createAIRuntime({ model: mockModel, plugins: [] })
         expect(typeof runtime.chat).toBe('function')
-        expect(typeof runtime.getToolDisplayMap).toBe('function')
         expect(typeof runtime.dispose).toBe('function')
     })
 
+    test('chat output exposes a context manifest', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            plugins: [
+                {
+                    name: 'prompt',
+                    contribute: () => ({
+                        segments: [
+                            {
+                                id: 'base',
+                                target: 'system',
+                                kind: 'system.base',
+                                payload: {
+                                    format: 'text',
+                                    text: 'base prompt',
+                                },
+                                source: { plugin: 'prompt' },
+                                priority: 'high',
+                                cacheability: 'stable',
+                                compactability: 'preserve',
+                            },
+                        ],
+                    }),
+                },
+            ],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+
+        expect(output.getContextManifest().pluginOutputs).toHaveLength(1)
+    })
+
     test('dispose() calls destroy() on all plugins', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
         const destroyed: string[] = []
         const plugins: AIPlugin[] = [
             {
@@ -91,6 +141,7 @@ describe('createAIRuntime', () => {
     })
 
     test('dispose() logs errors but does not throw', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
         const plugins: AIPlugin[] = [
             {
                 name: 'bad',
@@ -102,32 +153,5 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({ model: mockModel, plugins })
         // Should not throw
         await runtime.dispose()
-    })
-
-    test('getToolDisplayMap returns display metadata from static tools', async () => {
-        const plugins: AIPlugin[] = [
-            {
-                name: 'data',
-                tools: {
-                    getQuote: {
-                        tool: {} as Record<string, never>,
-                        display: {
-                            loadingLabel: () => '查询报价',
-                            completionSummary: () => '$150',
-                            category: 'data' as const,
-                        },
-                    },
-                    getHistory: {
-                        tool: {} as Record<string, never>,
-                        // no display
-                    },
-                },
-            },
-        ]
-        const runtime = await createAIRuntime({ model: mockModel, plugins })
-        const map = runtime.getToolDisplayMap()
-        expect(map.getQuote).toBeDefined()
-        expect(map.getQuote.category).toBe('data')
-        expect(map.getHistory).toBeUndefined()
     })
 })

@@ -29,11 +29,6 @@ async function testMinimal() {
         defaults: { thinkingBudget: 4096 },
     })
 
-    console.log(
-        '   ✅ 创建成功, display tools:',
-        Object.keys(runtime.getToolDisplayMap()).length,
-    )
-
     const output = await runtime.chat({
         sessionId: 'smoke-minimal',
         messages: [
@@ -45,9 +40,14 @@ async function testMinimal() {
             },
         ] as UIMessage[],
         channel: 'cron',
+        mode: 'conversation',
     })
 
     const result = await output.consumeStream()
+    console.log(
+        '   ✅ manifest tools:',
+        result.contextManifest.modelRequest.toolNames.length,
+    )
     console.log('   ✅ 回复:', result.text.slice(0, 150))
     console.log('   ✅ usage:', result.usage)
     await runtime.dispose()
@@ -78,9 +78,7 @@ async function testFullPreset() {
         defaults: { thinkingBudget: 4096 },
     })
 
-    const toolNames = Object.keys(runtime.getToolDisplayMap())
     console.log('   ✅ Runtime 创建成功')
-    console.log('   ✅ Display map:', toolNames.length, 'tools')
 
     // 问一个需要 tool calling 的问题
     const output = await runtime.chat({
@@ -95,6 +93,7 @@ async function testFullPreset() {
         ] as UIMessage[],
         symbol: 'AAPL',
         channel: 'cron',
+        mode: 'conversation',
     })
 
     const result = await output.consumeStream()
@@ -103,6 +102,10 @@ async function testFullPreset() {
         '   ✅ tool calls:',
         result.toolCalls.length,
         result.toolCalls.map((t) => t.toolName),
+    )
+    console.log(
+        '   ✅ manifest tools:',
+        result.contextManifest.modelRequest.toolNames.length,
     )
     console.log('   ✅ usage:', result.usage)
     await runtime.dispose()
@@ -119,11 +122,33 @@ async function testToolConflict() {
             plugins: [
                 {
                     name: 'a',
-                    tools: { getQuote: { tool: {} as Record<string, never> } },
+                    contribute: () => ({
+                        tools: [
+                            {
+                                name: 'getQuote',
+                                definition: {
+                                    tool: {} as Record<string, never>,
+                                },
+                                source: 'a',
+                                manifestSpec: { description: 'quote' },
+                            },
+                        ],
+                    }),
                 },
                 {
                     name: 'b',
-                    tools: { getQuote: { tool: {} as Record<string, never> } },
+                    contribute: () => ({
+                        tools: [
+                            {
+                                name: 'getQuote',
+                                definition: {
+                                    tool: {} as Record<string, never>,
+                                },
+                                source: 'b',
+                                manifestSpec: { description: 'quote' },
+                            },
+                        ],
+                    }),
                 },
             ],
         })

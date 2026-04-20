@@ -14,6 +14,14 @@ function createMockRuntime(): AIRuntime {
             },
             toolCalls: [],
             usage: { inputTokens: 100, outputTokens: 50 },
+            contextManifest: {
+                runId: 'run-1',
+                createdAt: new Date().toISOString(),
+                input: {} as never,
+                pluginOutputs: [],
+                assembledContext: {} as never,
+                modelRequest: {} as never,
+            },
         }),
     )
 
@@ -34,9 +42,16 @@ function createMockRuntime(): AIRuntime {
                 sessionId: 'session-1',
                 consumeStream: mockConsumeStream,
                 finalize: mock(() => Promise.resolve()),
+                getContextManifest: () => ({
+                    runId: 'run-1',
+                    createdAt: new Date().toISOString(),
+                    input: {} as never,
+                    pluginOutputs: [],
+                    assembledContext: {} as never,
+                    modelRequest: {} as never,
+                }),
             } as ChatOutput),
         ),
-        getToolDisplayMap: mock(() => ({})),
         dispose: mock(() => Promise.resolve()),
     }
 }

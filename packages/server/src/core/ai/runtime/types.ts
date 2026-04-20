@@ -219,6 +219,5 @@ export interface ChatOutput {
 
 export interface AIRuntime {
     chat(input: ChatInput): Promise<ChatOutput>
-    getToolDisplayMap(): ToolDisplayMap
     dispose(): Promise<void>
 }
