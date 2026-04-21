@@ -209,7 +209,15 @@ export const mockClearChannelSession = mock(() =>
 export const mockLoadMessages = mock(
     (): Promise<unknown[]> => Promise.resolve([]),
 )
+export const mockLoadMessageManifest = mock(
+    (): Promise<{
+        version: number
+        runId: string
+        manifest: unknown
+    } | null> => Promise.resolve(null),
+)
 export const mockAppendMessage = mock(() => Promise.resolve())
+export const mockSaveMessageManifest = mock(() => Promise.resolve())
 export const mockTruncateMessages = mock((messages: unknown[]) => messages)
 export const mockLoadSessionError = mock(
     (): Promise<{ message: string; name: string; code?: string } | null> =>

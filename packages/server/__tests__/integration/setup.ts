@@ -79,10 +79,12 @@ import {
     mockListSessions,
     mockLoadMemoryContext,
     mockLoadMessages,
+    mockLoadMessageManifest,
     // session — loadMessagesForTranscript
     mockLoadMessagesForTranscript,
     mockLoadSessionError,
     mockSaveSessionError,
+    mockSaveMessageManifest,
     mockRemoveFromWatchlist,
     mockRenameSession,
     // search mock
@@ -303,7 +305,7 @@ mock.module('@/core/ai/research', () => ({
     X_SEARCH_SYSTEM_PROMPT: 'mock prompt',
 }))
 
-mock.module('@/core/ai/session', () => ({
+    mock.module('@/core/ai/session', () => ({
     SessionError: MockSessionError,
     listSessions: mockListSessions,
     listAllSessions: mockListAllSessions,
@@ -313,8 +315,10 @@ mock.module('@/core/ai/session', () => ({
     touchSession: mockTouchSession,
     clearChannelSession: mockClearChannelSession,
     loadMessages: mockLoadMessages,
+    loadMessageManifest: mockLoadMessageManifest,
     loadMessagesForTranscript: mockLoadMessagesForTranscript,
     appendMessage: mockAppendMessage,
+    saveMessageManifest: mockSaveMessageManifest,
     truncateMessages: mockTruncateMessages,
     loadSessionError: mockLoadSessionError,
     saveSessionError: mockSaveSessionError,

@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import './setup'
 import { createHonoApp } from '@/routes/index'
 import {
     mockDeleteSession,
     mockListAllSessions,
     mockLoadMessages,
+    mockLoadMessageManifest,
     mockLoadSessionError,
     mockRenameSession,
 } from './helpers/mock-boundaries'
@@ -162,6 +164,98 @@ describe('GET /api/sessions/:id/messages', () => {
             new SessionError('Session not found', 'NOT_FOUND'),
         )
         const res = await app.request('/api/sessions/missing/messages')
+        expect(res.status).toBe(404)
+    })
+})
+
+describe('GET /api/sessions/:id/messages/:messageId/context', () => {
+    beforeEach(() => {
+        mockLoadMessageManifest.mockReset()
+    })
+
+    test('returns stored manifest data', async () => {
+        mockLoadMessageManifest.mockResolvedValueOnce({
+            version: 1,
+            runId: 'run-1',
+            manifest: {
+                runId: 'run-1',
+                createdAt: '2024-06-01T00:00:00.000Z',
+                input: {
+                    channel: 'web',
+                    mode: 'conversation',
+                    agentType: 'trading-agent',
+                    rawMessages: [],
+                    defaults: {},
+                },
+                pluginOutputs: [],
+                assembledContext: {
+                    segments: [],
+                    systemSegments: [],
+                    tools: [],
+                    params: { candidates: [], resolved: {} },
+                    totalEstimatedInputTokens: 0,
+                },
+                modelRequest: {
+                    systemText: '',
+                    modelMessages: [],
+                    toolNames: [],
+                    resolvedParams: {},
+                    providerOptions: {},
+                },
+            },
+        })
+
+        const res = await app.request(
+            '/api/sessions/ses_1/messages/msg_1/context',
+        )
+        const json = await res.json()
+
+        expect(res.status).toBe(200)
+        expect(json.success).toBe(true)
+        expect(json.data).toEqual({
+            version: 1,
+            runId: 'run-1',
+            manifest: expect.any(Object),
+        })
+        expect(json.data.manifest.runId).toBe('run-1')
+    })
+
+    test('returns null data when manifest is missing', async () => {
+        mockLoadMessageManifest.mockResolvedValueOnce(null)
+
+        const res = await app.request(
+            '/api/sessions/ses_1/messages/msg_1/context',
+        )
+        const json = await res.json()
+
+        expect(res.status).toBe(200)
+        expect(json.success).toBe(true)
+        expect(json.data).toBeNull()
+    })
+
+    test('returns 404 when session is missing', async () => {
+        const { SessionError } = await import('@/core/ai/session')
+        mockLoadMessageManifest.mockRejectedValueOnce(
+            new SessionError('Session not found', 'NOT_FOUND'),
+        )
+
+        const res = await app.request(
+            '/api/sessions/missing/messages/msg_1/context',
+        )
+
+        expect(res.status).toBe(404)
+    })
+
+    test('returns 404 when message is missing', async () => {
+        const { SessionError } = await import('@/core/ai/session')
+        mockLoadMessageManifest.mockRejectedValueOnce(
+            new SessionError('Message not found', 'NOT_FOUND'),
+        )
+
+        const res = await app.request(
+            '/api/sessions/ses_1/messages/missing/context',
+        )
+
         expect(res.status).toBe(404)
     })
 })

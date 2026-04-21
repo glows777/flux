@@ -361,7 +361,51 @@ export async function loadMessageManifest(
         },
     })
 
-    if (!row) return null
+    if (!row) {
+        const sessionStore = db.chatSession as
+            | {
+                  findUnique?: (args: {
+                      where: { id: string }
+                      select?: { id: boolean }
+                  }) => Promise<{ id: string } | null>
+              }
+            | undefined
+        const messageStore = db.chatMessage as
+            | {
+                  findUnique?: (args: {
+                      where: {
+                          sessionId_messageId: {
+                              sessionId: string
+                              messageId: string
+                          }
+                      }
+                      select?: { id: boolean }
+                  }) => Promise<{ id: string } | null>
+              }
+            | undefined
+
+        if (sessionStore?.findUnique && messageStore?.findUnique) {
+            const session = await sessionStore.findUnique({
+                where: { id: sessionId },
+                select: { id: true },
+            })
+            if (!session) {
+                throw new SessionError('Session not found', 'NOT_FOUND')
+            }
+
+            const message = await messageStore.findUnique({
+                where: {
+                    sessionId_messageId: { sessionId, messageId },
+                },
+                select: { id: true },
+            })
+            if (!message) {
+                throw new SessionError('Message not found', 'NOT_FOUND')
+            }
+        }
+
+        return null
+    }
 
     const invalidManifestError = () =>
         new SessionError(
