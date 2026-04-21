@@ -8,7 +8,12 @@
 import { Prisma, type PrismaClient } from '@prisma/client'
 import type { UIMessage } from 'ai'
 import { prisma as defaultPrisma } from '@/core/db'
-import type { ContextManifest } from './runtime'
+import { SessionError, type SessionErrorCode } from './session-errors'
+import {
+    loadMessageManifest as loadMessageManifestRecord,
+    type MessageManifestRecord,
+    saveMessageManifest as saveMessageManifestRecord,
+} from './session-manifest'
 
 // --- Types ---
 
@@ -23,105 +28,15 @@ interface TranscriptMessage {
 import { TRUNCATE_LIMIT } from './constants'
 
 const TITLE_MAX_LENGTH = 20
-const MESSAGE_MANIFEST_VERSION = 1
 
 export { TRUNCATE_LIMIT }
-
-// --- Error Handling ---
-
-export type SessionErrorCode = 'NOT_FOUND' | 'INVALID_INPUT'
-
-export class SessionError extends Error {
-    constructor(
-        message: string,
-        public readonly code: SessionErrorCode,
-    ) {
-        super(message)
-        this.name = 'SessionError'
-        Object.setPrototypeOf(this, SessionError.prototype)
-    }
-}
+export { SessionError }
+export type { MessageManifestRecord, SessionErrorCode }
 
 // --- Deps ---
 
 export interface SessionDeps {
     readonly db: PrismaClient
-}
-
-export interface MessageManifestRecord {
-    readonly version: number
-    readonly runId: string
-    readonly manifest: ContextManifest
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function hasStringKey(
-    value: Record<string, unknown>,
-    key: string,
-): boolean {
-    return typeof value[key] === 'string'
-}
-
-function hasArrayKey(value: Record<string, unknown>, key: string): boolean {
-    return Array.isArray(value[key])
-}
-
-function hasObjectKey(value: Record<string, unknown>, key: string): boolean {
-    return isPlainObject(value[key])
-}
-
-function isManifestInputShape(value: unknown): value is Record<string, unknown> {
-    if (!isPlainObject(value)) return false
-
-    return (
-        hasStringKey(value, 'channel') &&
-        hasStringKey(value, 'mode') &&
-        hasStringKey(value, 'agentType') &&
-        hasArrayKey(value, 'rawMessages') &&
-        hasObjectKey(value, 'defaults')
-    )
-}
-
-function isAssembledContextShape(
-    value: unknown,
-): value is Record<string, unknown> {
-    if (!isPlainObject(value)) return false
-
-    return (
-        hasArrayKey(value, 'segments') &&
-        hasArrayKey(value, 'systemSegments') &&
-        hasArrayKey(value, 'tools') &&
-        hasObjectKey(value, 'params') &&
-        typeof value.totalEstimatedInputTokens === 'number'
-    )
-}
-
-function isModelRequestShape(value: unknown): value is Record<string, unknown> {
-    if (!isPlainObject(value)) return false
-
-    return (
-        hasStringKey(value, 'systemText') &&
-        hasArrayKey(value, 'modelMessages') &&
-        hasArrayKey(value, 'toolNames') &&
-        hasObjectKey(value, 'resolvedParams') &&
-        hasObjectKey(value, 'providerOptions')
-    )
-}
-
-function isContextManifestShape(value: unknown): value is ContextManifest {
-    if (!isPlainObject(value)) return false
-
-    return (
-        typeof value.runId === 'string' &&
-        typeof value.createdAt === 'string' &&
-        isManifestInputShape(value.input) &&
-        Array.isArray(value.pluginOutputs) &&
-        isAssembledContextShape(value.assembledContext) &&
-        isModelRequestShape(value.modelRequest)
-    )
 }
 
 function getDefaultDeps(): SessionDeps {
@@ -318,29 +233,16 @@ export async function appendMessage(
 export async function saveMessageManifest(
     sessionId: string,
     messageId: string,
-    manifest: ContextManifest,
+    manifest: Parameters<typeof saveMessageManifestRecord>[2],
     deps?: SessionDeps,
 ): Promise<void> {
-    const { db } = deps ?? getDefaultDeps()
-    const serializedManifest = JSON.stringify(manifest)
-
-    await db.chatMessageManifest.upsert({
-        where: {
-            sessionId_messageId: { sessionId, messageId },
-        },
-        create: {
-            sessionId,
-            messageId,
-            runId: manifest.runId,
-            manifest: serializedManifest,
-            version: MESSAGE_MANIFEST_VERSION,
-        },
-        update: {
-            runId: manifest.runId,
-            manifest: serializedManifest,
-            version: MESSAGE_MANIFEST_VERSION,
-        },
-    })
+    const resolvedDeps = deps ?? getDefaultDeps()
+    return saveMessageManifestRecord(
+        sessionId,
+        messageId,
+        manifest,
+        resolvedDeps,
+    )
 }
 
 export async function loadMessageManifest(
@@ -348,87 +250,8 @@ export async function loadMessageManifest(
     messageId: string,
     deps?: SessionDeps,
 ): Promise<MessageManifestRecord | null> {
-    const { db } = deps ?? getDefaultDeps()
-
-    const row = await db.chatMessageManifest.findUnique({
-        where: {
-            sessionId_messageId: { sessionId, messageId },
-        },
-        select: {
-            version: true,
-            runId: true,
-            manifest: true,
-        },
-    })
-
-    if (!row) {
-        const sessionStore = db.chatSession as
-            | {
-                  findUnique?: (args: {
-                      where: { id: string }
-                      select?: { id: boolean }
-                  }) => Promise<{ id: string } | null>
-              }
-            | undefined
-        const messageStore = db.chatMessage as
-            | {
-                  findUnique?: (args: {
-                      where: {
-                          sessionId_messageId: {
-                              sessionId: string
-                              messageId: string
-                          }
-                      }
-                      select?: { id: boolean }
-                  }) => Promise<{ id: string } | null>
-              }
-            | undefined
-
-        if (sessionStore?.findUnique && messageStore?.findUnique) {
-            const session = await sessionStore.findUnique({
-                where: { id: sessionId },
-                select: { id: true },
-            })
-            if (!session) {
-                throw new SessionError('Session not found', 'NOT_FOUND')
-            }
-
-            const message = await messageStore.findUnique({
-                where: {
-                    sessionId_messageId: { sessionId, messageId },
-                },
-                select: { id: true },
-            })
-            if (!message) {
-                throw new SessionError('Message not found', 'NOT_FOUND')
-            }
-        }
-
-        return null
-    }
-
-    const invalidManifestError = () =>
-        new SessionError(
-            `Failed to parse manifest content for message ${messageId}`,
-            'INVALID_INPUT',
-        )
-
-    let parsedManifest: unknown
-    try {
-        parsedManifest = JSON.parse(row.manifest)
-    } catch {
-        throw invalidManifestError()
-    }
-
-    if (!isContextManifestShape(parsedManifest)) {
-        throw invalidManifestError()
-    }
-
-    return {
-        version: row.version,
-        runId: row.runId,
-        manifest: parsedManifest,
-    }
+    const resolvedDeps = deps ?? getDefaultDeps()
+    return loadMessageManifestRecord(sessionId, messageId, resolvedDeps)
 }
 
 // --- Session Error Persistence ---

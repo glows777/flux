@@ -16,8 +16,8 @@ import type {
 } from '@/lib/ai/context-visibility'
 import {
     buildContextTriggerLabel,
-    formatSerializableContent,
     formatSegmentSource,
+    formatSerializableContent,
 } from '@/lib/ai/context-visibility'
 
 export interface MessageContextPanelProps {
@@ -91,11 +91,7 @@ function JsonBlock({
 }) {
     const text = formatSerializableContent(value)
     if (!text) {
-        return (
-            <p className='text-sm text-slate-500'>
-                {emptyLabel}
-            </p>
-        )
+        return <p className='text-sm text-slate-500'>{emptyLabel}</p>
     }
 
     return (
@@ -105,9 +101,15 @@ function JsonBlock({
     )
 }
 
-function SegmentContent({ segment }: { readonly segment: MessageContextSegment }) {
+function SegmentContent({
+    segment,
+}: {
+    readonly segment: MessageContextSegment
+}) {
     if (segment.payload.format === 'text') {
-        return <JsonBlock value={segment.payload.text} emptyLabel='Empty text' />
+        return (
+            <JsonBlock value={segment.payload.text} emptyLabel='Empty text' />
+        )
     }
 
     return (
@@ -167,14 +169,19 @@ function SegmentCard({ segment }: { readonly segment: MessageContextSegment }) {
     )
 }
 
-function SummaryGrid({
-    record,
-}: {
-    readonly record: MessageContextRecord
-}) {
+function SummaryGrid({ record }: { readonly record: MessageContextRecord }) {
     const manifest = record.manifest
     const assembled = manifest.assembledContext
     const result = manifest.result
+    const providerUsage = result?.usage
+        ? `${result.usage.inputTokens ?? 0} in / ${result.usage.outputTokens ?? 0} out`
+        : 'No usage reported'
+    const hasMemory = assembled.segments.some(
+        (segment) => segment.kind === 'memory.long_lived',
+    )
+    const hasRuntime = assembled.segments.some(
+        (segment) => segment.kind === 'live.runtime',
+    )
 
     const values = [
         { label: 'Version', value: String(record.version) },
@@ -194,6 +201,12 @@ function SummaryGrid({
         {
             label: 'Input tokens',
             value: String(assembled.totalEstimatedInputTokens),
+        },
+        { label: 'Provider usage', value: providerUsage },
+        { label: 'Memory', value: hasMemory ? 'Included' : 'Not included' },
+        {
+            label: 'Runtime context',
+            value: hasRuntime ? 'Included' : 'Not included',
         },
     ]
 
@@ -215,8 +228,54 @@ function SummaryGrid({
                     Result
                 </p>
                 <p className='mt-2 text-sm text-slate-200'>
-                    {result ? 'Completed with a response snapshot.' : 'No final result snapshot yet.'}
+                    {result
+                        ? 'Completed with a response snapshot.'
+                        : 'No final result snapshot yet.'}
                 </p>
+            </div>
+        </div>
+    )
+}
+
+function ToolCard({
+    tool,
+}: {
+    readonly tool: MessageContextRecord['manifest']['assembledContext']['tools'][number]
+}) {
+    return (
+        <div className='rounded-2xl border border-white/6 bg-black/20 p-3'>
+            <div className='flex flex-wrap items-center gap-2'>
+                <p className='text-sm font-medium text-slate-100'>
+                    {tool.name}
+                </p>
+                <Badge tone='emerald'>{tool.source}</Badge>
+                {tool.estimatedTokens != null ? (
+                    <Badge>{tool.estimatedTokens} tokens</Badge>
+                ) : null}
+            </div>
+            <div className='mt-3 grid gap-3 md:grid-cols-2'>
+                <div>
+                    <p className='text-[11px] uppercase tracking-[0.16em] text-slate-500'>
+                        Description
+                    </p>
+                    <div className='mt-2'>
+                        <JsonBlock
+                            value={tool.manifestSpec.description ?? ''}
+                            emptyLabel='No description'
+                        />
+                    </div>
+                </div>
+                <div>
+                    <p className='text-[11px] uppercase tracking-[0.16em] text-slate-500'>
+                        Input schema summary
+                    </p>
+                    <div className='mt-2'>
+                        <JsonBlock
+                            value={tool.manifestSpec.inputSchemaSummary}
+                            emptyLabel='No schema summary'
+                        />
+                    </div>
+                </div>
             </div>
         </div>
     )
@@ -236,7 +295,9 @@ function UnavailableState() {
         <div className='flex items-start gap-3 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-slate-300'>
             <Sparkles size={16} className='mt-0.5 text-emerald-300' />
             <div>
-                <p className='font-medium text-slate-100'>Context unavailable</p>
+                <p className='font-medium text-slate-100'>
+                    Context unavailable
+                </p>
                 <p className='mt-1 text-slate-500'>
                     This message does not have a saved context manifest yet.
                 </p>
@@ -289,10 +350,81 @@ function ReadyState({ record }: { readonly record: MessageContextRecord }) {
                 title='Assembled Context'
                 kicker='Rendered as segmented cards so raw content stays readable.'
             >
-                <div className='space-y-3'>
-                    {manifest.assembledContext.segments.map((segment) => (
-                        <SegmentCard key={segment.id} segment={segment} />
-                    ))}
+                <div className='space-y-4'>
+                    <div className='space-y-3'>
+                        {manifest.assembledContext.segments.length > 0 ? (
+                            manifest.assembledContext.segments.map(
+                                (segment) => (
+                                    <SegmentCard
+                                        key={segment.id}
+                                        segment={segment}
+                                    />
+                                ),
+                            )
+                        ) : (
+                            <p className='text-sm text-slate-500'>
+                                No assembled segments.
+                            </p>
+                        )}
+                    </div>
+
+                    <div className='grid gap-4 xl:grid-cols-[1.3fr_0.7fr]'>
+                        <div className='space-y-3'>
+                            <div className='rounded-2xl border border-white/6 bg-black/20 p-3'>
+                                <p className='text-[11px] uppercase tracking-[0.16em] text-slate-500'>
+                                    Tools
+                                </p>
+                                <div className='mt-3 space-y-3'>
+                                    {manifest.assembledContext.tools.length >
+                                    0 ? (
+                                        manifest.assembledContext.tools.map(
+                                            (tool) => (
+                                                <ToolCard
+                                                    key={`${tool.source}-${tool.name}`}
+                                                    tool={tool}
+                                                />
+                                            ),
+                                        )
+                                    ) : (
+                                        <p className='text-sm text-slate-500'>
+                                            No assembled tools.
+                                        </p>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className='space-y-3'>
+                            <div className='rounded-2xl border border-white/6 bg-black/20 p-3'>
+                                <p className='text-[11px] uppercase tracking-[0.16em] text-slate-500'>
+                                    Parameter candidates
+                                </p>
+                                <div className='mt-2'>
+                                    <JsonBlock
+                                        value={
+                                            manifest.assembledContext.params
+                                                .candidates
+                                        }
+                                        emptyLabel='No parameter candidates'
+                                    />
+                                </div>
+                            </div>
+                            <div className='rounded-2xl border border-white/6 bg-black/20 p-3'>
+                                <p className='text-[11px] uppercase tracking-[0.16em] text-slate-500'>
+                                    Resolved parameters
+                                </p>
+                                <div className='mt-2'>
+                                    <JsonBlock
+                                        value={
+                                            manifest.assembledContext.params
+                                                .resolved
+                                        }
+                                        emptyLabel='No resolved parameters'
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </Section>
 
@@ -362,20 +494,22 @@ function ReadyState({ record }: { readonly record: MessageContextRecord }) {
                             Model messages
                         </p>
                         <div className='mt-3 space-y-2'>
-                            {manifest.modelRequest.modelMessages.map((message) => (
-                                <div
-                                    key={message.id}
-                                    className='rounded-xl border border-white/5 bg-black/20 p-3'
-                                >
-                                    <div className='flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-slate-500'>
-                                        <span>{message.role}</span>
-                                        <span>{message.id}</span>
+                            {manifest.modelRequest.modelMessages.map(
+                                (message) => (
+                                    <div
+                                        key={message.id}
+                                        className='rounded-xl border border-white/5 bg-black/20 p-3'
+                                    >
+                                        <div className='flex flex-wrap items-center justify-between gap-2 text-[11px] uppercase tracking-[0.16em] text-slate-500'>
+                                            <span>{message.role}</span>
+                                            <span>{message.id}</span>
+                                        </div>
+                                        <div className='mt-2'>
+                                            <JsonBlock value={message} />
+                                        </div>
                                     </div>
-                                    <div className='mt-2'>
-                                        <JsonBlock value={message} />
-                                    </div>
-                                </div>
-                            ))}
+                                ),
+                            )}
                         </div>
                     </div>
 
@@ -396,15 +530,32 @@ function ReadyState({ record }: { readonly record: MessageContextRecord }) {
                             </p>
                             <div className='mt-2'>
                                 <JsonBlock
-                                    value={manifest.modelRequest.providerOptions}
+                                    value={
+                                        manifest.modelRequest.providerOptions
+                                    }
                                 />
                             </div>
+                        </div>
+                    </div>
+
+                    <div className='rounded-2xl border border-white/6 bg-black/20 p-3'>
+                        <p className='text-[11px] uppercase tracking-[0.16em] text-slate-500'>
+                            Max output tokens
+                        </p>
+                        <div className='mt-2'>
+                            <JsonBlock
+                                value={manifest.modelRequest.maxOutputTokens}
+                                emptyLabel='Not set'
+                            />
                         </div>
                     </div>
                 </div>
             </Section>
 
-            <Section title='Result' kicker='The final answer and response metadata.'>
+            <Section
+                title='Result'
+                kicker='The final answer and response metadata.'
+            >
                 {manifest.result ? (
                     <div className='space-y-3'>
                         <div className='rounded-2xl border border-white/6 bg-black/20 p-3'>
@@ -421,7 +572,9 @@ function ReadyState({ record }: { readonly record: MessageContextRecord }) {
                                 Response message
                             </p>
                             <div className='mt-2'>
-                                <JsonBlock value={manifest.result.responseMessage} />
+                                <JsonBlock
+                                    value={manifest.result.responseMessage}
+                                />
                             </div>
                         </div>
 
@@ -431,22 +584,26 @@ function ReadyState({ record }: { readonly record: MessageContextRecord }) {
                             </p>
                             <div className='mt-3 space-y-2'>
                                 {manifest.result.toolCalls.length > 0 ? (
-                                    manifest.result.toolCalls.map((call, index) => (
-                                        <div
-                                            key={`${call.toolName}-${index}`}
-                                            className='rounded-xl border border-white/5 bg-black/20 p-3'
-                                        >
-                                            <div className='flex flex-wrap items-center gap-2'>
-                                                <p className='text-sm font-medium text-slate-100'>
-                                                    {call.toolName}
-                                                </p>
-                                                <Badge tone='emerald'>call</Badge>
+                                    manifest.result.toolCalls.map(
+                                        (call, index) => (
+                                            <div
+                                                key={`${call.toolName}-${index}`}
+                                                className='rounded-xl border border-white/5 bg-black/20 p-3'
+                                            >
+                                                <div className='flex flex-wrap items-center gap-2'>
+                                                    <p className='text-sm font-medium text-slate-100'>
+                                                        {call.toolName}
+                                                    </p>
+                                                    <Badge tone='emerald'>
+                                                        call
+                                                    </Badge>
+                                                </div>
+                                                <div className='mt-2'>
+                                                    <JsonBlock value={call} />
+                                                </div>
                                             </div>
-                                            <div className='mt-2'>
-                                                <JsonBlock value={call} />
-                                            </div>
-                                        </div>
-                                    ))
+                                        ),
+                                    )
                                 ) : (
                                     <p className='text-sm text-slate-500'>
                                         No tool calls.
@@ -511,11 +668,11 @@ export function MessageContextPanel({
                         </p>
                     </div>
                 </div>
-                    <div className='flex items-center gap-2 text-slate-500'>
-                        <Badge tone='emerald'>{state.status}</Badge>
-                        {isOpen ? (
-                            <ChevronDown size={16} />
-                        ) : (
+                <div className='flex items-center gap-2 text-slate-500'>
+                    <Badge tone='emerald'>{state.status}</Badge>
+                    {isOpen ? (
+                        <ChevronDown size={16} />
+                    ) : (
                         <ChevronRight size={16} />
                     )}
                 </div>
@@ -531,7 +688,9 @@ export function MessageContextPanel({
 
                     {state.status === 'loading' ? <LoadingState /> : null}
 
-                    {state.status === 'unavailable' ? <UnavailableState /> : null}
+                    {state.status === 'unavailable' ? (
+                        <UnavailableState />
+                    ) : null}
 
                     {state.status === 'error' ? (
                         <ErrorState error={state.error} onRetry={onRetry} />

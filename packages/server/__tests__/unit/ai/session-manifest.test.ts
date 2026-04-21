@@ -16,9 +16,27 @@ function createMockDb() {
     }
 }
 
+async function importActualSessionModule() {
+    const moduleUrl = new URL(
+        `../../../src/core/ai/session-manifest.ts?real=${Date.now()}-${Math.random()}`,
+        import.meta.url,
+    )
+
+    return import(moduleUrl.href)
+}
+
+async function importActualSessionErrors() {
+    const moduleUrl = new URL(
+        `../../../src/core/ai/session-errors.ts?real=${Date.now()}-${Math.random()}`,
+        import.meta.url,
+    )
+
+    return import(moduleUrl.href)
+}
+
 describe('saveMessageManifest', () => {
     it('upserts serialized row keyed by sessionId + messageId', async () => {
-        const { saveMessageManifest } = await import('@/core/ai/session')
+        const { saveMessageManifest } = await importActualSessionModule()
         const db = createMockDb()
         const deps = { db } as unknown as SessionDeps
         const manifest = {
@@ -50,7 +68,12 @@ describe('saveMessageManifest', () => {
             },
         }
 
-        await saveMessageManifest('session-1', 'message-1', manifest as never, deps)
+        await saveMessageManifest(
+            'session-1',
+            'message-1',
+            manifest as never,
+            deps,
+        )
 
         expect(db.chatMessageManifest.upsert).toHaveBeenCalledTimes(1)
         expect(db.chatMessageManifest.upsert).toHaveBeenCalledWith({
@@ -78,14 +101,12 @@ describe('saveMessageManifest', () => {
 
 describe('loadMessageManifest', () => {
     it('returns null when absent', async () => {
-        const { loadMessageManifest } = await import('@/core/ai/session')
+        const { loadMessageManifest } = await importActualSessionModule()
         const db = createMockDb()
 
-        const result = await loadMessageManifest(
-            'session-1',
-            'message-1',
-            { db } as unknown as SessionDeps,
-        )
+        const result = await loadMessageManifest('session-1', 'message-1', {
+            db,
+        } as unknown as SessionDeps)
 
         expect(result).toBeNull()
         expect(db.chatMessageManifest.findUnique).toHaveBeenCalledWith({
@@ -104,7 +125,7 @@ describe('loadMessageManifest', () => {
     })
 
     it('parses and returns the stored payload', async () => {
-        const { loadMessageManifest } = await import('@/core/ai/session')
+        const { loadMessageManifest } = await importActualSessionModule()
         const db = createMockDb()
         const manifest = {
             runId: 'run-2',
@@ -143,11 +164,9 @@ describe('loadMessageManifest', () => {
             }),
         ) as typeof db.chatMessageManifest.findUnique
 
-        const result = await loadMessageManifest(
-            'session-1',
-            'message-1',
-            { db } as unknown as SessionDeps,
-        )
+        const result = await loadMessageManifest('session-1', 'message-1', {
+            db,
+        } as unknown as SessionDeps)
 
         expect(result).toEqual({
             version: 1,
@@ -157,9 +176,8 @@ describe('loadMessageManifest', () => {
     })
 
     it('throws INVALID_INPUT when manifest JSON is malformed', async () => {
-        const { loadMessageManifest, SessionError } = await import(
-            '@/core/ai/session'
-        )
+        const { loadMessageManifest } = await importActualSessionModule()
+        const { SessionError } = await importActualSessionErrors()
         const db = createMockDb()
         db.chatMessageManifest.findUnique = mock(() =>
             Promise.resolve({
@@ -170,11 +188,9 @@ describe('loadMessageManifest', () => {
         ) as typeof db.chatMessageManifest.findUnique
 
         try {
-            await loadMessageManifest(
-                'session-1',
-                'message-1',
-                { db } as unknown as SessionDeps,
-            )
+            await loadMessageManifest('session-1', 'message-1', {
+                db,
+            } as unknown as SessionDeps)
             expect.unreachable('Should have thrown')
         } catch (error) {
             expect(error).toBeInstanceOf(SessionError)
@@ -185,9 +201,8 @@ describe('loadMessageManifest', () => {
     })
 
     it('throws INVALID_INPUT when manifest JSON has an invalid shape', async () => {
-        const { loadMessageManifest, SessionError } = await import(
-            '@/core/ai/session'
-        )
+        const { loadMessageManifest } = await importActualSessionModule()
+        const { SessionError } = await importActualSessionErrors()
         const db = createMockDb()
         db.chatMessageManifest.findUnique = mock(() =>
             Promise.resolve({
@@ -198,11 +213,9 @@ describe('loadMessageManifest', () => {
         ) as typeof db.chatMessageManifest.findUnique
 
         try {
-            await loadMessageManifest(
-                'session-1',
-                'message-1',
-                { db } as unknown as SessionDeps,
-            )
+            await loadMessageManifest('session-1', 'message-1', {
+                db,
+            } as unknown as SessionDeps)
             expect.unreachable('Should have thrown')
         } catch (error) {
             expect(error).toBeInstanceOf(SessionError)
@@ -213,9 +226,8 @@ describe('loadMessageManifest', () => {
     })
 
     it('throws INVALID_INPUT when nested manifest sections are incomplete', async () => {
-        const { loadMessageManifest, SessionError } = await import(
-            '@/core/ai/session'
-        )
+        const { loadMessageManifest } = await importActualSessionModule()
+        const { SessionError } = await importActualSessionErrors()
         const db = createMockDb()
         db.chatMessageManifest.findUnique = mock(() =>
             Promise.resolve({
@@ -237,11 +249,9 @@ describe('loadMessageManifest', () => {
         ) as typeof db.chatMessageManifest.findUnique
 
         try {
-            await loadMessageManifest(
-                'session-1',
-                'message-1',
-                { db } as unknown as SessionDeps,
-            )
+            await loadMessageManifest('session-1', 'message-1', {
+                db,
+            } as unknown as SessionDeps)
             expect.unreachable('Should have thrown')
         } catch (error) {
             expect(error).toBeInstanceOf(SessionError)

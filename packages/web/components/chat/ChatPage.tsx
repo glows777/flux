@@ -8,11 +8,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { ContextInput } from '@/components/detail/ContextInput'
+import { TRUNCATE_LIMIT } from '@/lib/ai/constants'
 import {
     fetchMessageContext,
     type MessageContextState,
 } from '@/lib/ai/context-visibility'
-import { TRUNCATE_LIMIT } from '@/lib/ai/constants'
 import { fetcher } from '@/lib/fetcher'
 import type { ChatSession } from './ChatSessionItem'
 import { ChatSessionSidebar } from './ChatSessionSidebar'
@@ -165,7 +165,10 @@ export function ChatPage() {
             }))
 
             try {
-                const record = await fetchMessageContext(targetSessionId, messageId)
+                const record = await fetchMessageContext(
+                    targetSessionId,
+                    messageId,
+                )
 
                 if (sessionIdRef.current !== targetSessionId) return
 
@@ -187,13 +190,26 @@ export function ChatPage() {
                             error instanceof Error
                                 ? error.message
                                 : 'Failed to load context',
-                        },
+                    },
                 }))
             } finally {
                 inFlightMessageContextLoadsRef.current.delete(messageId)
             }
         },
         [],
+    )
+
+    const prefetchLatestAssistantContext = useCallback(
+        (targetSessionId: string, nextMessages: readonly UIMessage[]) => {
+            const latestAssistant = [...nextMessages]
+                .reverse()
+                .find((message) => message.role === 'assistant')
+
+            if (!latestAssistant) return
+
+            void loadMessageContext(targetSessionId, latestAssistant.id)
+        },
+        [loadMessageContext],
     )
 
     // Session list (global)
@@ -290,6 +306,7 @@ export function ChatPage() {
             if (!result) return
             setMessages(result.messages)
             setPersistedError(result.error)
+            prefetchLatestAssistantContext(mostRecent.id, result.messages)
         })
 
         return () => {
@@ -298,7 +315,7 @@ export function ChatPage() {
             }
             controller.abort()
         }
-    }, [sessions, q, setMessages])
+    }, [prefetchLatestAssistantContext, sessions, q, setMessages])
 
     // ─── ?q= auto-send with ref guard ───
     const hasSentQRef = useRef(false)
@@ -401,9 +418,15 @@ export function ChatPage() {
                 if (!result) return
                 setMessages(result.messages)
                 setPersistedError(result.error)
+                prefetchLatestAssistantContext(id, result.messages)
             })
         },
-        [cancelInitialRestore, clearMessageState, setMessages],
+        [
+            cancelInitialRestore,
+            clearMessageState,
+            prefetchLatestAssistantContext,
+            setMessages,
+        ],
     )
 
     const handleDeleteSession = useCallback(
@@ -414,7 +437,9 @@ export function ChatPage() {
                 })
                 if (res.ok) {
                     const adjacentSessionId =
-                        sessions != null ? getAdjacentSessionId(sessions, id) : null
+                        sessions != null
+                            ? getAdjacentSessionId(sessions, id)
+                            : null
 
                     mutateSessions()
 
@@ -435,7 +460,13 @@ export function ChatPage() {
                 // Deletion failure is non-fatal
             }
         },
-        [clearMessageState, handleSwitchSession, mutateSessions, sessions],
+        [
+            cancelInitialRestore,
+            clearMessageState,
+            handleSwitchSession,
+            mutateSessions,
+            sessions,
+        ],
     )
 
     const handleRenameSession = useCallback(
@@ -525,10 +556,11 @@ export function ChatPage() {
                                     )
                                 } else if (msg.role === 'assistant') {
                                     const isLast = index === messages.length - 1
-                                    const contextState =
-                                        messageContextStates[msg.id] ?? {
-                                            status: 'idle',
-                                        }
+                                    const contextState = messageContextStates[
+                                        msg.id
+                                    ] ?? {
+                                        status: 'idle',
+                                    }
                                     const isContextOpen =
                                         openMessageContexts[msg.id] ?? false
                                     messageNode = (
@@ -542,16 +574,19 @@ export function ChatPage() {
                                                 state={contextState}
                                                 isOpen={isContextOpen}
                                                 onToggle={() => {
-                                                    const nextIsOpen =
-                                                        !(
-                                                            openMessageContextsRef
-                                                                .current[msg.id] ?? false
-                                                        )
+                                                    const nextIsOpen = !(
+                                                        openMessageContextsRef
+                                                            .current[msg.id] ??
+                                                        false
+                                                    )
 
-                                                    setOpenMessageContexts((prev) => ({
-                                                        ...prev,
-                                                        [msg.id]: nextIsOpen,
-                                                    }))
+                                                    setOpenMessageContexts(
+                                                        (prev) => ({
+                                                            ...prev,
+                                                            [msg.id]:
+                                                                nextIsOpen,
+                                                        }),
+                                                    )
 
                                                     const activeSessionId =
                                                         sessionIdRef.current
@@ -570,10 +605,12 @@ export function ChatPage() {
                                                         sessionIdRef.current
                                                     if (!activeSessionId) return
 
-                                                    setOpenMessageContexts((prev) => ({
-                                                        ...prev,
-                                                        [msg.id]: true,
-                                                    }))
+                                                    setOpenMessageContexts(
+                                                        (prev) => ({
+                                                            ...prev,
+                                                            [msg.id]: true,
+                                                        }),
+                                                    )
                                                     void loadMessageContext(
                                                         activeSessionId,
                                                         msg.id,

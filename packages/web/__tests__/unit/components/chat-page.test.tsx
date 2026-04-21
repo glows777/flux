@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+    cleanup,
+    fireEvent,
+    render,
+    screen,
+    waitFor,
+} from '@testing-library/react'
 import type { UIMessage } from 'ai'
-import { useEffect, useState, type ReactNode } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import type { ChatSession } from '@/components/chat/ChatSessionItem'
 
 const defaultSessions: ChatSession[] = [
@@ -36,7 +42,7 @@ const mockSendMessage = mock(() => {})
 const mockRegenerate = mock(() => {})
 
 let chatMessages: UIMessage[] = []
-let chatError: Error | undefined = undefined
+let chatError: Error | undefined
 let messageContextResponses: Record<
     string,
     {
@@ -108,7 +114,9 @@ mock.module('@/components/chat/ChatSessionSidebar', () => ({
         onDeleteSession: (id: string) => void
     }) => (
         <div>
-            <div data-testid='current-session'>{currentSessionId ?? 'none'}</div>
+            <div data-testid='current-session'>
+                {currentSessionId ?? 'none'}
+            </div>
             <button type='button' onClick={onNewSession}>
                 new-session
             </button>
@@ -133,7 +141,11 @@ mock.module('@/components/chat/ChatSessionSidebar', () => ({
 }))
 
 mock.module('@/components/chat/ChatWelcome', () => ({
-    ChatWelcome: ({ onSuggestionClick }: { onSuggestionClick: (text: string) => void }) => (
+    ChatWelcome: ({
+        onSuggestionClick,
+    }: {
+        onSuggestionClick: (text: string) => void
+    }) => (
         <button type='button' onClick={() => onSuggestionClick('hello')}>
             welcome
         </button>
@@ -156,11 +168,7 @@ mock.module('@/components/chat/messages/ErrorBanner', () => ({
     }) => (
         <div data-testid='error-banner'>
             <span data-testid='error-message'>{error.message}</span>
-            <button
-                type='button'
-                data-testid='retry-button'
-                onClick={onReload}
-            >
+            <button type='button' data-testid='retry-button' onClick={onReload}>
                 retry
             </button>
         </div>
@@ -199,7 +207,10 @@ const fetchMock = mock((input: string | URL, init?: RequestInit) => {
                                 id: 'message-2',
                                 role: 'user',
                                 parts: [
-                                    { type: 'text', text: 'hello from session 2' },
+                                    {
+                                        type: 'text',
+                                        text: 'hello from session 2',
+                                    },
                                 ],
                             },
                         ],
@@ -219,7 +230,9 @@ const fetchMock = mock((input: string | URL, init?: RequestInit) => {
                             {
                                 id: 'message-3',
                                 role: 'user',
-                                parts: [{ type: 'text', text: 'what is NVDA?' }],
+                                parts: [
+                                    { type: 'text', text: 'what is NVDA?' },
+                                ],
                             },
                         ],
                         error: {
@@ -350,7 +363,10 @@ describe('ChatPage', () => {
             json: () => Promise<unknown>
         }>()
 
-        fetchMock.mockImplementation(((input: string | URL, init?: RequestInit) => {
+        fetchMock.mockImplementation(((
+            input: string | URL,
+            init?: RequestInit,
+        ) => {
             const url = String(input)
 
             if (url === '/api/sessions/session-1/messages') {
@@ -394,7 +410,10 @@ describe('ChatPage', () => {
                 })
             }
 
-            if (url === '/api/sessions/session-1' && init?.method === 'DELETE') {
+            if (
+                url === '/api/sessions/session-1' &&
+                init?.method === 'DELETE'
+            ) {
                 return Promise.resolve({ ok: true })
             }
 
@@ -466,7 +485,10 @@ describe('ChatPage', () => {
             json: () => Promise<unknown>
         }>()
 
-        fetchMock.mockImplementation(((input: string | URL, init?: RequestInit) => {
+        fetchMock.mockImplementation(((
+            input: string | URL,
+            init?: RequestInit,
+        ) => {
             const url = String(input)
 
             if (url === '/api/sessions/session-1/messages') {
@@ -486,7 +508,10 @@ describe('ChatPage', () => {
                 return session2Deferred.promise
             }
 
-            if (url === '/api/sessions/session-1' && init?.method === 'DELETE') {
+            if (
+                url === '/api/sessions/session-1' &&
+                init?.method === 'DELETE'
+            ) {
                 return Promise.resolve({ ok: true })
             }
 
@@ -634,6 +659,200 @@ describe('ChatPage', () => {
         )
     })
 
+    it('prefetches the latest assistant context during auto-restore', async () => {
+        chatMessages = [
+            {
+                id: 'message-user-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-1',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'first reply' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-2',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'latest reply' }],
+            } as UIMessage,
+        ]
+
+        messageContextResponses[
+            '/api/sessions/session-1/messages/message-assistant-2/context'
+        ] = {
+            body: buildMessageContextResponse('run-latest'),
+        }
+
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: chatMessages,
+                                error: null,
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'session-1',
+            ),
+        )
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) =>
+                        String(input) ===
+                        '/api/sessions/session-1/messages/message-assistant-2/context',
+                ),
+            ).toBe(true),
+        )
+
+        expect(
+            fetchMock.mock.calls.some(
+                ([input]) =>
+                    String(input) ===
+                    '/api/sessions/session-1/messages/message-assistant-1/context',
+            ),
+        ).toBe(false)
+    })
+
+    it('prefetches the latest assistant context when switching sessions', async () => {
+        messageContextResponses[
+            '/api/sessions/session-2/messages/message-assistant-2/context'
+        ] = {
+            body: buildMessageContextResponse('run-session-2'),
+        }
+
+        fetchMock.mockImplementation(((
+            input: string | URL,
+            init?: RequestInit,
+        ) => {
+            const url = String(input)
+
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: [],
+                                error: null,
+                            },
+                        }),
+                })
+            }
+
+            if (url === '/api/sessions/session-2/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: [
+                                    {
+                                        id: 'message-user-2',
+                                        role: 'user',
+                                        parts: [
+                                            {
+                                                type: 'text',
+                                                text: 'hello from session 2',
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        id: 'message-assistant-1',
+                                        role: 'assistant',
+                                        parts: [
+                                            {
+                                                type: 'text',
+                                                text: 'older reply',
+                                            },
+                                        ],
+                                    },
+                                    {
+                                        id: 'message-assistant-2',
+                                        role: 'assistant',
+                                        parts: [
+                                            {
+                                                type: 'text',
+                                                text: 'latest reply',
+                                            },
+                                        ],
+                                    },
+                                ],
+                                error: null,
+                            },
+                        }),
+                })
+            }
+
+            if (
+                url === '/api/sessions/session-1' &&
+                init?.method === 'DELETE'
+            ) {
+                return Promise.resolve({ ok: true })
+            }
+
+            const contextResponse = messageContextResponses[url]
+            if (contextResponse) {
+                const status = contextResponse.status ?? 200
+                return Promise.resolve({
+                    ok: status >= 200 && status < 300,
+                    status,
+                    json: () => Promise.resolve(contextResponse.body),
+                })
+            }
+
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'session-1',
+            ),
+        )
+
+        fireEvent.click(screen.getByText('switch-session-2'))
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'session-2',
+            ),
+        )
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) =>
+                        String(input) ===
+                        '/api/sessions/session-2/messages/message-assistant-2/context',
+                ),
+            ).toBe(true),
+        )
+
+        expect(
+            fetchMock.mock.calls.some(
+                ([input]) =>
+                    String(input) ===
+                    '/api/sessions/session-2/messages/message-assistant-1/context',
+            ),
+        ).toBe(false)
+    })
+
     it('fetches message context once across collapse and re-expand', async () => {
         chatMessages = [
             {
@@ -679,10 +898,6 @@ describe('ChatPage', () => {
             ),
         )
 
-        fireEvent.click(
-            screen.getByRole('button', { name: /open context/i }),
-        )
-
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.some(
@@ -696,7 +911,7 @@ describe('ChatPage', () => {
         const readyButton = screen.getByRole('button', {
             name: /context ready/i,
         })
-        expect(readyButton.getAttribute('aria-expanded')).toBe('true')
+        expect(readyButton.getAttribute('aria-expanded')).toBe('false')
         expect(
             fetchMock.mock.calls.filter(
                 ([input]) =>
@@ -707,16 +922,22 @@ describe('ChatPage', () => {
 
         fireEvent.click(readyButton)
         expect(
-            screen.getByRole('button', { name: /context ready/i }).getAttribute(
-                'aria-expanded',
-            ),
-        ).toBe('false')
+            screen
+                .getByRole('button', { name: /context ready/i })
+                .getAttribute('aria-expanded'),
+        ).toBe('true')
 
         fireEvent.click(screen.getByRole('button', { name: /context ready/i }))
         expect(
-            screen.getByRole('button', { name: /context ready/i }).getAttribute(
-                'aria-expanded',
-            ),
+            screen
+                .getByRole('button', { name: /context ready/i })
+                .getAttribute('aria-expanded'),
+        ).toBe('false')
+        fireEvent.click(screen.getByRole('button', { name: /context ready/i }))
+        expect(
+            screen
+                .getByRole('button', { name: /context ready/i })
+                .getAttribute('aria-expanded'),
         ).toBe('true')
         expect(
             fetchMock.mock.calls.filter(
@@ -782,11 +1003,16 @@ describe('ChatPage', () => {
             ),
         )
 
-        const openButtons = screen.getAllByRole('button', {
-            name: /open context/i,
-        })
-        fireEvent.click(openButtons[0]!)
-        fireEvent.click(openButtons[1]!)
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.filter(([input]) =>
+                    String(input).includes('/context'),
+                ),
+            ).toHaveLength(1),
+        )
+
+        fireEvent.click(screen.getByRole('button', { name: /open context/i }))
+        fireEvent.click(screen.getByRole('button', { name: /context ready/i }))
 
         await waitFor(() =>
             expect(
@@ -838,7 +1064,10 @@ describe('ChatPage', () => {
         const sessionSwitchDeferred = createDeferred<{
             json: () => Promise<unknown>
         }>()
-        fetchMock.mockImplementation(((input: string | URL, init?: RequestInit) => {
+        fetchMock.mockImplementation(((
+            input: string | URL,
+            init?: RequestInit,
+        ) => {
             const url = String(input)
 
             if (url === '/api/sessions/session-1/messages') {
@@ -858,7 +1087,10 @@ describe('ChatPage', () => {
                 return sessionSwitchDeferred.promise
             }
 
-            if (url === '/api/sessions/session-1' && init?.method === 'DELETE') {
+            if (
+                url === '/api/sessions/session-1' &&
+                init?.method === 'DELETE'
+            ) {
                 return Promise.resolve({ ok: true })
             }
 
@@ -942,7 +1174,10 @@ describe('ChatPage', () => {
             json: () => Promise<unknown>
         }>()
 
-        fetchMock.mockImplementation(((input: string | URL, init?: RequestInit) => {
+        fetchMock.mockImplementation(((
+            input: string | URL,
+            init?: RequestInit,
+        ) => {
             const url = String(input)
 
             if (url === '/api/sessions/session-1/messages') {
@@ -965,7 +1200,10 @@ describe('ChatPage', () => {
                 return contextDeferred.promise
             }
 
-            if (url === '/api/sessions/session-1' && init?.method === 'DELETE') {
+            if (
+                url === '/api/sessions/session-1' &&
+                init?.method === 'DELETE'
+            ) {
                 return Promise.resolve({ ok: true })
             }
 
@@ -1015,7 +1253,10 @@ describe('ChatPage', () => {
             json: () => Promise<unknown>
         }>()
 
-        fetchMock.mockImplementation(((input: string | URL, init?: RequestInit) => {
+        fetchMock.mockImplementation(((
+            input: string | URL,
+            init?: RequestInit,
+        ) => {
             const url = String(input)
 
             if (url === '/api/sessions/session-1/messages') {
@@ -1046,7 +1287,10 @@ describe('ChatPage', () => {
                 })
             }
 
-            if (url === '/api/sessions/session-1' && init?.method === 'DELETE') {
+            if (
+                url === '/api/sessions/session-1' &&
+                init?.method === 'DELETE'
+            ) {
                 return Promise.resolve({ ok: true })
             }
 
@@ -1113,20 +1357,30 @@ describe('ChatPage', () => {
     })
 
     it('ignores a late auto-restore response after deleting the only active session', async () => {
-        sessions = [defaultSessions[0]!]
+        const firstSession = defaultSessions[0]
+        if (!firstSession) {
+            throw new Error('Expected default session fixture')
+        }
+        sessions = [firstSession]
 
         const initialRestoreDeferred = createDeferred<{
             json: () => Promise<unknown>
         }>()
 
-        fetchMock.mockImplementation(((input: string | URL, init?: RequestInit) => {
+        fetchMock.mockImplementation(((
+            input: string | URL,
+            init?: RequestInit,
+        ) => {
             const url = String(input)
 
             if (url === '/api/sessions/session-1/messages') {
                 return initialRestoreDeferred.promise
             }
 
-            if (url === '/api/sessions/session-1' && init?.method === 'DELETE') {
+            if (
+                url === '/api/sessions/session-1' &&
+                init?.method === 'DELETE'
+            ) {
                 return Promise.resolve({ ok: true })
             }
 

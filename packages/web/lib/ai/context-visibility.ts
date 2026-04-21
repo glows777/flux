@@ -127,14 +127,18 @@ function isUIMessageArray(value: unknown): value is readonly UIMessage[] {
     return Array.isArray(value) && value.every(isUIMessage)
 }
 
-function isSegmentPayload(value: unknown): value is MessageContextSegmentPayload {
+function isSegmentPayload(
+    value: unknown,
+): value is MessageContextSegmentPayload {
     if (!isObject(value) || typeof value.format !== 'string') return false
     if (value.format === 'text') return typeof value.text === 'string'
     if (value.format === 'messages') return isUIMessageArray(value.messages)
     return false
 }
 
-function isMessageContextSegment(value: unknown): value is MessageContextSegment {
+function isMessageContextSegment(
+    value: unknown,
+): value is MessageContextSegment {
     return (
         isObject(value) &&
         typeof value.id === 'string' &&
@@ -199,8 +203,8 @@ function extractErrorMessage(payload: unknown): string | null {
         typeof payload.error === 'string'
             ? payload.error
             : typeof payload.message === 'string'
-                ? payload.message
-                : null
+              ? payload.message
+              : null
 
     return message && message.length > 0 ? message : null
 }
@@ -215,6 +219,23 @@ export function formatSerializableContent(value: unknown): string {
     return stringifyJson(value)
 }
 
+function pluralize(count: number, singular: string, plural = `${singular}s`) {
+    return count === 1 ? singular : plural
+}
+
+function formatTokenEstimate(tokens: number): string {
+    if (tokens >= 1000) {
+        const value =
+            tokens >= 10000 ? Math.round(tokens / 1000) : tokens / 1000
+        return `${value.toLocaleString('en-US', {
+            minimumFractionDigits: Number.isInteger(value) ? 0 : 1,
+            maximumFractionDigits: 1,
+        })}k`
+    }
+
+    return tokens.toLocaleString('en-US')
+}
+
 export function buildContextTriggerLabel(state: MessageContextState): string {
     switch (state.status) {
         case 'idle':
@@ -225,8 +246,16 @@ export function buildContextTriggerLabel(state: MessageContextState): string {
             return 'Context unavailable'
         case 'error':
             return 'Context error'
-        case 'ready':
-            return 'Context ready'
+        case 'ready': {
+            const assembled = state.record.manifest.assembledContext
+            return `Context ready · ${assembled.segments.length} ${pluralize(
+                assembled.segments.length,
+                'segment',
+            )} · ${assembled.tools.length} ${pluralize(
+                assembled.tools.length,
+                'tool',
+            )} · ~${formatTokenEstimate(assembled.totalEstimatedInputTokens)} in`
+        }
     }
 }
 

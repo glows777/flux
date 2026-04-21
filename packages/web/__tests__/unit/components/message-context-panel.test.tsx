@@ -100,6 +100,7 @@ function buildReadyState(): MessageContextState {
                 modelMessages: [message],
                 toolNames: ['webSearch'],
                 resolvedParams: { maxSteps: 20 },
+                maxOutputTokens: 512,
                 providerOptions: { openai: { reasoning: 'medium' } },
             },
             result: {
@@ -141,11 +142,21 @@ describe('MessageContextPanel', () => {
             />,
         )
 
-        const summarySection = getByRole('heading', { name: 'Summary' }).closest('section')
-        const assembledSection = getByRole('heading', { name: 'Assembled Context' }).closest('section')
-        const pluginSection = getByRole('heading', { name: 'Plugin Outputs' }).closest('section')
-        const modelSection = getByRole('heading', { name: 'Model Request' }).closest('section')
-        const resultSection = getByRole('heading', { name: 'Result' }).closest('section')
+        const summarySection = getByRole('heading', {
+            name: 'Summary',
+        }).closest('section')
+        const assembledSection = getByRole('heading', {
+            name: 'Assembled Context',
+        }).closest('section')
+        const pluginSection = getByRole('heading', {
+            name: 'Plugin Outputs',
+        }).closest('section')
+        const modelSection = getByRole('heading', {
+            name: 'Model Request',
+        }).closest('section')
+        const resultSection = getByRole('heading', { name: 'Result' }).closest(
+            'section',
+        )
 
         expect(summarySection).toBeTruthy()
         expect(assembledSection).toBeTruthy()
@@ -153,13 +164,44 @@ describe('MessageContextPanel', () => {
         expect(modelSection).toBeTruthy()
         expect(resultSection).toBeTruthy()
 
-        expect(within(assembledSection as HTMLElement).getByText('Base prompt text')).toBeTruthy()
-        expect(within(assembledSection as HTMLElement).getByText(/Raw message content/)).toBeTruthy()
         expect(
-            within(resultSection as HTMLElement).queryAllByText('Final answer').length,
+            getByRole('button', {
+                name: /context .*2 segments.*1 tool.*~54 in/i,
+            }),
+        ).toBeTruthy()
+        expect(
+            within(assembledSection as HTMLElement).getByText(
+                'Base prompt text',
+            ),
+        ).toBeTruthy()
+        expect(
+            within(assembledSection as HTMLElement).getByText(
+                /Raw message content/,
+            ),
+        ).toBeTruthy()
+        expect(
+            within(assembledSection as HTMLElement).getByText('webSearch'),
+        ).toBeTruthy()
+        expect(
+            within(assembledSection as HTMLElement).getByText('Search the web'),
+        ).toBeTruthy()
+        expect(
+            within(assembledSection as HTMLElement).getAllByText(/maxSteps/)
+                .length,
+        ).toBeGreaterThan(0)
+        expect(
+            within(modelSection as HTMLElement).getByText('512'),
+        ).toBeTruthy()
+        expect(
+            within(resultSection as HTMLElement).queryAllByText('Final answer')
+                .length,
         ).toBeGreaterThan(0)
 
-        fireEvent.click(getByRole('button', { name: /context ready/i }))
+        fireEvent.click(
+            getByRole('button', {
+                name: /context .*2 segments.*1 tool.*~54 in/i,
+            }),
+        )
         expect(onToggle).toHaveBeenCalledTimes(1)
     })
 
