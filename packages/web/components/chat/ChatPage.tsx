@@ -259,6 +259,12 @@ export function ChatPage() {
         initialRestoreAbortRef.current = null
     }, [])
 
+    const cancelSwitchSessionLoad = useCallback(() => {
+        switchSessionRequestIdRef.current += 1
+        switchAbortRef.current?.abort()
+        switchAbortRef.current = null
+    }, [])
+
     const isLoading = status === 'submitted' || status === 'streaming'
 
     // ─── Auto-restore most recent session ───
@@ -306,6 +312,7 @@ export function ChatPage() {
 
         // Create new session + send
         cancelInitialRestore()
+        cancelSwitchSessionLoad()
         setSessionId(null)
         setChatId(undefined)
         clearMessageState()
@@ -322,6 +329,7 @@ export function ChatPage() {
         router.replace(newUrl)
     }, [
         cancelInitialRestore,
+        cancelSwitchSessionLoad,
         clearMessageState,
         q,
         symbol,
@@ -358,11 +366,12 @@ export function ChatPage() {
 
     const handleNewSession = useCallback(() => {
         cancelInitialRestore()
+        cancelSwitchSessionLoad()
         setSessionId(null)
         setChatId(undefined)
         clearMessageState()
         setPersistedError(null)
-    }, [cancelInitialRestore, clearMessageState])
+    }, [cancelInitialRestore, cancelSwitchSessionLoad, clearMessageState])
 
     const handleRetry = useCallback(() => {
         setPersistedError(null)
@@ -372,12 +381,15 @@ export function ChatPage() {
     }, [regenerate, symbol])
 
     const switchAbortRef = useRef<AbortController | null>(null)
+    const switchSessionRequestIdRef = useRef(0)
 
     const handleSwitchSession = useCallback(
         (id: string) => {
             cancelInitialRestore()
             switchAbortRef.current?.abort()
             const controller = new AbortController()
+            const requestId = switchSessionRequestIdRef.current + 1
+            switchSessionRequestIdRef.current = requestId
             switchAbortRef.current = controller
 
             clearMessageState()
@@ -385,6 +397,7 @@ export function ChatPage() {
             setChatId(id)
             setPersistedError(null)
             loadSessionMessages(id, controller.signal).then((result) => {
+                if (switchSessionRequestIdRef.current !== requestId) return
                 if (!result) return
                 setMessages(result.messages)
                 setPersistedError(result.error)
@@ -412,6 +425,7 @@ export function ChatPage() {
                         return
                     }
 
+                    cancelInitialRestore()
                     setSessionId(null)
                     setChatId(undefined)
                     clearMessageState()

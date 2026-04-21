@@ -209,4 +209,29 @@ describe('MessageContextPanel', () => {
             global.fetch = originalFetch
         }
     })
+
+    it('surfaces a 404 payload error instead of treating it as unavailable', async () => {
+        const fetchMock = mock(() =>
+            Promise.resolve({
+                ok: false,
+                status: 404,
+                json: () =>
+                    Promise.resolve({
+                        success: false,
+                        error: 'Message not found',
+                    }),
+            }),
+        )
+
+        const originalFetch = global.fetch
+        global.fetch = fetchMock as typeof fetch
+
+        try {
+            await expect(
+                fetchMessageContext('session-1', 'message-1'),
+            ).rejects.toThrow('Message not found')
+        } finally {
+            global.fetch = originalFetch
+        }
+    })
 })

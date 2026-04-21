@@ -192,6 +192,19 @@ function stringifyJson(value: unknown): string {
     }
 }
 
+function extractErrorMessage(payload: unknown): string | null {
+    if (!isObject(payload)) return null
+
+    const message =
+        typeof payload.error === 'string'
+            ? payload.error
+            : typeof payload.message === 'string'
+                ? payload.message
+                : null
+
+    return message && message.length > 0 ? message : null
+}
+
 export function formatSegmentSource(
     source: MessageContextSegment['source'],
 ): string {
@@ -228,10 +241,6 @@ export async function fetchMessageContext(
         },
     )
 
-    if (response.status === 404) {
-        return null
-    }
-
     let payload: unknown = null
     try {
         payload = await response.json()
@@ -243,12 +252,9 @@ export async function fetchMessageContext(
     }
 
     if (!response.ok) {
-        if (
-            isObject(payload) &&
-            typeof payload.error === 'string' &&
-            payload.error.length > 0
-        ) {
-            throw new Error(payload.error)
+        const errorMessage = extractErrorMessage(payload)
+        if (errorMessage) {
+            throw new Error(errorMessage)
         }
         throw new Error(`API error: ${response.status}`)
     }

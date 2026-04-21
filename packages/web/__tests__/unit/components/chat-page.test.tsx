@@ -4,7 +4,7 @@ import type { UIMessage } from 'ai'
 import { useEffect, useState, type ReactNode } from 'react'
 import type { ChatSession } from '@/components/chat/ChatSessionItem'
 
-const sessions: ChatSession[] = [
+const defaultSessions: ChatSession[] = [
     {
         id: 'session-1',
         symbol: 'AAPL',
@@ -27,6 +27,8 @@ const sessions: ChatSession[] = [
         updatedAt: '2026-04-14T12:00:00.000Z',
     },
 ]
+
+let sessions: ChatSession[] = defaultSessions
 
 const mockMutateSessions = mock(() => Promise.resolve(sessions))
 const mockSetMessages = mock(() => {})
@@ -95,16 +97,21 @@ mock.module('@/components/chat/ChatSessionSidebar', () => ({
     ChatSessionSidebar: ({
         sessions,
         currentSessionId,
+        onNewSession,
         onSwitchSession,
         onDeleteSession,
     }: {
         sessions: readonly ChatSession[]
         currentSessionId: string | null
+        onNewSession: () => void
         onSwitchSession: (id: string) => void
         onDeleteSession: (id: string) => void
     }) => (
         <div>
             <div data-testid='current-session'>{currentSessionId ?? 'none'}</div>
+            <button type='button' onClick={onNewSession}>
+                new-session
+            </button>
             {sessions.map((session) => (
                 <div key={session.id}>
                     <button
@@ -296,6 +303,7 @@ function createDeferred<T>() {
 describe('ChatPage', () => {
     beforeEach(() => {
         cleanup()
+        sessions = defaultSessions
         chatMessages = []
         chatError = undefined
         messageContextResponses = {}
@@ -335,6 +343,212 @@ describe('ChatPage', () => {
                 expect.anything(),
             ),
         )
+    })
+
+    it('ignores a late manual switch response after switching again', async () => {
+        const session2Deferred = createDeferred<{
+            json: () => Promise<unknown>
+        }>()
+
+        fetchMock.mockImplementation(((input: string | URL, init?: RequestInit) => {
+            const url = String(input)
+
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: [],
+                                error: null,
+                            },
+                        }),
+                })
+            }
+
+            if (url === '/api/sessions/session-2/messages') {
+                return session2Deferred.promise
+            }
+
+            if (url === '/api/sessions/session-3/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: [
+                                    {
+                                        id: 'message-3',
+                                        role: 'user',
+                                        parts: [
+                                            {
+                                                type: 'text',
+                                                text: 'hello from session 3',
+                                            },
+                                        ],
+                                    },
+                                ],
+                                error: null,
+                            },
+                        }),
+                })
+            }
+
+            if (url === '/api/sessions/session-1' && init?.method === 'DELETE') {
+                return Promise.resolve({ ok: true })
+            }
+
+            const contextResponse = messageContextResponses[url]
+            if (contextResponse) {
+                const status = contextResponse.status ?? 200
+                return Promise.resolve({
+                    ok: status >= 200 && status < 300,
+                    status,
+                    json: () => Promise.resolve(contextResponse.body),
+                })
+            }
+
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'session-1',
+            ),
+        )
+
+        fireEvent.click(screen.getByText('switch-session-2'))
+        fireEvent.click(screen.getByText('switch-session-3'))
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'session-3',
+            ),
+        )
+        await screen.findByText('hello from session 3')
+
+        session2Deferred.resolve({
+            json: () =>
+                Promise.resolve({
+                    success: true,
+                    data: {
+                        messages: [
+                            {
+                                id: 'message-2',
+                                role: 'user',
+                                parts: [
+                                    {
+                                        type: 'text',
+                                        text: 'stale session 2 payload',
+                                    },
+                                ],
+                            },
+                        ],
+                        error: {
+                            message: 'late stale error',
+                            name: 'StaleError',
+                        },
+                    },
+                }),
+        })
+
+        await waitFor(() =>
+            expect(screen.getByText('hello from session 3')).toBeDefined(),
+        )
+        expect(screen.queryByText('stale session 2 payload')).toBeNull()
+        expect(screen.queryByTestId('error-banner')).toBeNull()
+    })
+
+    it('ignores a late switch response after starting a new session', async () => {
+        const session2Deferred = createDeferred<{
+            json: () => Promise<unknown>
+        }>()
+
+        fetchMock.mockImplementation(((input: string | URL, init?: RequestInit) => {
+            const url = String(input)
+
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: [],
+                                error: null,
+                            },
+                        }),
+                })
+            }
+
+            if (url === '/api/sessions/session-2/messages') {
+                return session2Deferred.promise
+            }
+
+            if (url === '/api/sessions/session-1' && init?.method === 'DELETE') {
+                return Promise.resolve({ ok: true })
+            }
+
+            const contextResponse = messageContextResponses[url]
+            if (contextResponse) {
+                const status = contextResponse.status ?? 200
+                return Promise.resolve({
+                    ok: status >= 200 && status < 300,
+                    status,
+                    json: () => Promise.resolve(contextResponse.body),
+                })
+            }
+
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'session-1',
+            ),
+        )
+
+        fireEvent.click(screen.getByText('switch-session-2'))
+        fireEvent.click(screen.getByText('new-session'))
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'none',
+            ),
+        )
+
+        session2Deferred.resolve({
+            json: () =>
+                Promise.resolve({
+                    success: true,
+                    data: {
+                        messages: [
+                            {
+                                id: 'message-2',
+                                role: 'user',
+                                parts: [
+                                    {
+                                        type: 'text',
+                                        text: 'stale session 2 payload',
+                                    },
+                                ],
+                            },
+                        ],
+                        error: null,
+                    },
+                }),
+        })
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'none',
+            ),
+        )
+        expect(screen.queryByText('stale session 2 payload')).toBeNull()
+        expect(screen.queryByTestId('error-banner')).toBeNull()
     })
 
     it('retry forwards sessionId in regenerate body (Fix 1 regression guard)', async () => {
@@ -895,6 +1109,85 @@ describe('ChatPage', () => {
             expect(screen.getByText('hello from session 2')).toBeDefined(),
         )
         expect(screen.queryByText('stale session 1 payload')).toBeNull()
+        expect(screen.queryByTestId('error-banner')).toBeNull()
+    })
+
+    it('ignores a late auto-restore response after deleting the only active session', async () => {
+        sessions = [defaultSessions[0]!]
+
+        const initialRestoreDeferred = createDeferred<{
+            json: () => Promise<unknown>
+        }>()
+
+        fetchMock.mockImplementation(((input: string | URL, init?: RequestInit) => {
+            const url = String(input)
+
+            if (url === '/api/sessions/session-1/messages') {
+                return initialRestoreDeferred.promise
+            }
+
+            if (url === '/api/sessions/session-1' && init?.method === 'DELETE') {
+                return Promise.resolve({ ok: true })
+            }
+
+            const contextResponse = messageContextResponses[url]
+            if (contextResponse) {
+                const status = contextResponse.status ?? 200
+                return Promise.resolve({
+                    ok: status >= 200 && status < 300,
+                    status,
+                    json: () => Promise.resolve(contextResponse.body),
+                })
+            }
+
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'session-1',
+            ),
+        )
+
+        fireEvent.click(screen.getByText('delete-session-1'))
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'none',
+            ),
+        )
+        expect(screen.getByText('welcome')).toBeDefined()
+
+        initialRestoreDeferred.resolve({
+            json: () =>
+                Promise.resolve({
+                    success: true,
+                    data: {
+                        messages: [
+                            {
+                                id: 'message-stale-1',
+                                role: 'user',
+                                parts: [
+                                    {
+                                        type: 'text',
+                                        text: 'deleted session payload',
+                                    },
+                                ],
+                            },
+                        ],
+                        error: null,
+                    },
+                }),
+        })
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'none',
+            ),
+        )
+        expect(screen.queryByText('deleted session payload')).toBeNull()
         expect(screen.queryByTestId('error-banner')).toBeNull()
     })
 })
