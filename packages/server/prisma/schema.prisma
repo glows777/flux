@@ -101,6 +101,7 @@ model ChatSession {
   lastErrorAt DateTime?
 
   messages  ChatMessage[]
+  manifests ChatMessageManifest[]
 
   @@index([updatedAt(sort: Desc)])                  // 全局按时间排序
   @@index([symbol, updatedAt(sort: Desc)])          // 按 symbol 过滤 (兼容)
@@ -119,6 +120,23 @@ model ChatMessage {
 
   @@unique([sessionId, messageId])          // 防重复写入 (nullable unique 允许历史行)
   @@index([sessionId, createdAt])           // 按序加载
+}
+
+// ChatMessageManifest (AI 对话消息的上下文 manifest)
+model ChatMessageManifest {
+  id        String   @id @default(cuid())
+  sessionId String
+  messageId String
+  runId     String   @unique
+  manifest  String   @db.Text
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, messageId])
+  @@index([sessionId, createdAt])
 }
 
 // CronJob (定时任务配置)

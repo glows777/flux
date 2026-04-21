@@ -8,6 +8,7 @@
 import { Prisma, type PrismaClient } from '@prisma/client'
 import type { UIMessage } from 'ai'
 import { prisma as defaultPrisma } from '@/core/db'
+import type { ContextManifest } from './runtime'
 
 // --- Types ---
 
@@ -22,6 +23,7 @@ interface TranscriptMessage {
 import { TRUNCATE_LIMIT } from './constants'
 
 const TITLE_MAX_LENGTH = 20
+const MESSAGE_MANIFEST_VERSION = 1
 
 export { TRUNCATE_LIMIT }
 
@@ -44,6 +46,82 @@ export class SessionError extends Error {
 
 export interface SessionDeps {
     readonly db: PrismaClient
+}
+
+export interface MessageManifestRecord {
+    readonly version: number
+    readonly runId: string
+    readonly manifest: ContextManifest
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasStringKey(
+    value: Record<string, unknown>,
+    key: string,
+): boolean {
+    return typeof value[key] === 'string'
+}
+
+function hasArrayKey(value: Record<string, unknown>, key: string): boolean {
+    return Array.isArray(value[key])
+}
+
+function hasObjectKey(value: Record<string, unknown>, key: string): boolean {
+    return isPlainObject(value[key])
+}
+
+function isManifestInputShape(value: unknown): value is Record<string, unknown> {
+    if (!isPlainObject(value)) return false
+
+    return (
+        hasStringKey(value, 'channel') &&
+        hasStringKey(value, 'mode') &&
+        hasStringKey(value, 'agentType') &&
+        hasArrayKey(value, 'rawMessages') &&
+        hasObjectKey(value, 'defaults')
+    )
+}
+
+function isAssembledContextShape(
+    value: unknown,
+): value is Record<string, unknown> {
+    if (!isPlainObject(value)) return false
+
+    return (
+        hasArrayKey(value, 'segments') &&
+        hasArrayKey(value, 'systemSegments') &&
+        hasArrayKey(value, 'tools') &&
+        hasObjectKey(value, 'params') &&
+        typeof value.totalEstimatedInputTokens === 'number'
+    )
+}
+
+function isModelRequestShape(value: unknown): value is Record<string, unknown> {
+    if (!isPlainObject(value)) return false
+
+    return (
+        hasStringKey(value, 'systemText') &&
+        hasArrayKey(value, 'modelMessages') &&
+        hasArrayKey(value, 'toolNames') &&
+        hasObjectKey(value, 'resolvedParams') &&
+        hasObjectKey(value, 'providerOptions')
+    )
+}
+
+function isContextManifestShape(value: unknown): value is ContextManifest {
+    if (!isPlainObject(value)) return false
+
+    return (
+        typeof value.runId === 'string' &&
+        typeof value.createdAt === 'string' &&
+        isManifestInputShape(value.input) &&
+        Array.isArray(value.pluginOutputs) &&
+        isAssembledContextShape(value.assembledContext) &&
+        isModelRequestShape(value.modelRequest)
+    )
 }
 
 function getDefaultDeps(): SessionDeps {
@@ -235,6 +313,78 @@ export async function appendMessage(
             content: JSON.stringify(message),
         },
     })
+}
+
+export async function saveMessageManifest(
+    sessionId: string,
+    messageId: string,
+    manifest: ContextManifest,
+    deps?: SessionDeps,
+): Promise<void> {
+    const { db } = deps ?? getDefaultDeps()
+    const serializedManifest = JSON.stringify(manifest)
+
+    await db.chatMessageManifest.upsert({
+        where: {
+            sessionId_messageId: { sessionId, messageId },
+        },
+        create: {
+            sessionId,
+            messageId,
+            runId: manifest.runId,
+            manifest: serializedManifest,
+            version: MESSAGE_MANIFEST_VERSION,
+        },
+        update: {
+            runId: manifest.runId,
+            manifest: serializedManifest,
+            version: MESSAGE_MANIFEST_VERSION,
+        },
+    })
+}
+
+export async function loadMessageManifest(
+    sessionId: string,
+    messageId: string,
+    deps?: SessionDeps,
+): Promise<MessageManifestRecord | null> {
+    const { db } = deps ?? getDefaultDeps()
+
+    const row = await db.chatMessageManifest.findUnique({
+        where: {
+            sessionId_messageId: { sessionId, messageId },
+        },
+        select: {
+            version: true,
+            runId: true,
+            manifest: true,
+        },
+    })
+
+    if (!row) return null
+
+    const invalidManifestError = () =>
+        new SessionError(
+            `Failed to parse manifest content for message ${messageId}`,
+            'INVALID_INPUT',
+        )
+
+    let parsedManifest: unknown
+    try {
+        parsedManifest = JSON.parse(row.manifest)
+    } catch {
+        throw invalidManifestError()
+    }
+
+    if (!isContextManifestShape(parsedManifest)) {
+        throw invalidManifestError()
+    }
+
+    return {
+        version: row.version,
+        runId: row.runId,
+        manifest: parsedManifest,
+    }
 }
 
 // --- Session Error Persistence ---
