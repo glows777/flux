@@ -1,8 +1,9 @@
 import { describe, expect, it, mock } from 'bun:test'
 
-mock.module('@/core/db', () => ({
-    prisma: {},
-}))
+if (!process.env.DATABASE_URL) {
+    process.env.DATABASE_URL =
+        'postgresql://test:test@localhost:5433/flux_test?schema=public'
+}
 
 import type { SessionDeps } from '@/core/ai/session'
 
