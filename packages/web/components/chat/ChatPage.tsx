@@ -8,6 +8,10 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import useSWR from 'swr'
 import { ContextInput } from '@/components/detail/ContextInput'
+import {
+    fetchMessageContext,
+    type MessageContextState,
+} from '@/lib/ai/context-visibility'
 import { TRUNCATE_LIMIT } from '@/lib/ai/constants'
 import { fetcher } from '@/lib/fetcher'
 import type { ChatSession } from './ChatSessionItem'
@@ -15,6 +19,7 @@ import { ChatSessionSidebar } from './ChatSessionSidebar'
 import { ChatWelcome } from './ChatWelcome'
 import { AssistantMessage } from './messages/AssistantMessage'
 import { ErrorBanner } from './messages/ErrorBanner'
+import { MessageContextPanel } from './messages/MessageContextPanel'
 import { TruncationNotice } from './messages/TruncationNotice'
 import { UserMessage } from './messages/UserMessage'
 
@@ -81,6 +86,12 @@ export function ChatPage() {
     const [chatId, setChatId] = useState<string | undefined>(undefined)
     const [persistedError, setPersistedError] =
         useState<PersistedSessionError | null>(null)
+    const [messageContextStates, setMessageContextStates] = useState<
+        Record<string, MessageContextState>
+    >({})
+    const [openMessageContexts, setOpenMessageContexts] = useState<
+        Record<string, boolean>
+    >({})
 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [sidebarMounted, setSidebarMounted] = useState(false)
@@ -106,6 +117,84 @@ export function ChatPage() {
     // [C2 fix] Ref to avoid stale closure in onFinish
     const sessionIdRef = useRef(sessionId)
     sessionIdRef.current = sessionId
+    const messageContextStatesRef = useRef(messageContextStates)
+    const openMessageContextsRef = useRef(openMessageContexts)
+    const inFlightMessageContextLoadsRef = useRef<Set<string>>(new Set())
+    const initialRestoreAbortRef = useRef<AbortController | null>(null)
+    const initialRestoreRequestIdRef = useRef(0)
+
+    useEffect(() => {
+        messageContextStatesRef.current = messageContextStates
+    }, [messageContextStates])
+
+    useEffect(() => {
+        openMessageContextsRef.current = openMessageContexts
+    }, [openMessageContexts])
+
+    const resetMessageContextState = useCallback(() => {
+        inFlightMessageContextLoadsRef.current.clear()
+        messageContextStatesRef.current = {}
+        openMessageContextsRef.current = {}
+        setMessageContextStates({})
+        setOpenMessageContexts({})
+    }, [])
+
+    const loadMessageContext = useCallback(
+        async (
+            targetSessionId: string,
+            messageId: string,
+            options?: { force?: boolean },
+        ) => {
+            const cachedState = messageContextStatesRef.current[messageId]
+            if (
+                !options?.force &&
+                cachedState != null &&
+                cachedState.status !== 'idle'
+            ) {
+                return
+            }
+            if (inFlightMessageContextLoadsRef.current.has(messageId)) {
+                return
+            }
+
+            inFlightMessageContextLoadsRef.current.add(messageId)
+
+            setMessageContextStates((prev) => ({
+                ...prev,
+                [messageId]: { status: 'loading' },
+            }))
+
+            try {
+                const record = await fetchMessageContext(targetSessionId, messageId)
+
+                if (sessionIdRef.current !== targetSessionId) return
+
+                setMessageContextStates((prev) => ({
+                    ...prev,
+                    [messageId]:
+                        record == null
+                            ? { status: 'unavailable' }
+                            : { status: 'ready', record },
+                }))
+            } catch (error) {
+                if (sessionIdRef.current !== targetSessionId) return
+
+                setMessageContextStates((prev) => ({
+                    ...prev,
+                    [messageId]: {
+                        status: 'error',
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : 'Failed to load context',
+                        },
+                }))
+            } finally {
+                inFlightMessageContextLoadsRef.current.delete(messageId)
+            }
+        },
+        [],
+    )
 
     // Session list (global)
     const {
@@ -132,16 +221,43 @@ export function ChatPage() {
             messages: [],
             transport,
             onFinish: ({ message }) => {
+                const nextSessionId =
+                    sessionIdRef.current ?? message.metadata?.sessionId ?? null
+
                 if (!sessionIdRef.current && message.metadata?.sessionId) {
+                    sessionIdRef.current = message.metadata.sessionId
                     setSessionId(message.metadata.sessionId)
                     // Don't setChatId here — changing useChat's `id` mid-conversation
                     // causes it to switch to an empty internal store, losing all messages.
                     // sessionIdRef handles server communication; chatId only changes on session switch.
                     initializedRef.current = true
                 }
+
+                if (message.role === 'assistant') {
+                    setOpenMessageContexts((prev) => ({
+                        ...prev,
+                        [message.id]: true,
+                    }))
+
+                    if (nextSessionId) {
+                        void loadMessageContext(nextSessionId, message.id)
+                    }
+                }
+
                 mutateSessions()
             },
         })
+
+    const clearMessageState = useCallback(() => {
+        resetMessageContextState()
+        setMessages([])
+    }, [resetMessageContextState, setMessages])
+
+    const cancelInitialRestore = useCallback(() => {
+        initialRestoreRequestIdRef.current += 1
+        initialRestoreAbortRef.current?.abort()
+        initialRestoreAbortRef.current = null
+    }, [])
 
     const isLoading = status === 'submitted' || status === 'streaming'
 
@@ -156,17 +272,26 @@ export function ChatPage() {
         initializedRef.current = true
         const mostRecent = sessions[0]
         const controller = new AbortController()
+        const requestId = initialRestoreRequestIdRef.current + 1
+        initialRestoreRequestIdRef.current = requestId
+        initialRestoreAbortRef.current = controller
 
         setSessionId(mostRecent.id)
         setChatId(mostRecent.id)
 
         loadSessionMessages(mostRecent.id, controller.signal).then((result) => {
+            if (initialRestoreRequestIdRef.current !== requestId) return
             if (!result) return
             setMessages(result.messages)
             setPersistedError(result.error)
         })
 
-        return () => controller.abort()
+        return () => {
+            if (initialRestoreAbortRef.current === controller) {
+                initialRestoreAbortRef.current = null
+            }
+            controller.abort()
+        }
     }, [sessions, q, setMessages])
 
     // ─── ?q= auto-send with ref guard ───
@@ -180,9 +305,10 @@ export function ChatPage() {
         const truncatedQ = q.slice(0, MAX_Q_LENGTH)
 
         // Create new session + send
+        cancelInitialRestore()
         setSessionId(null)
         setChatId(undefined)
-        setMessages([])
+        clearMessageState()
         setPersistedError(null)
 
         sendMessage({ text: truncatedQ }, { body: { sessionId: null, symbol } })
@@ -194,7 +320,15 @@ export function ChatPage() {
             ? `/chat?${params.toString()}`
             : '/chat'
         router.replace(newUrl)
-    }, [q, symbol, searchParams, router, sendMessage, setMessages])
+    }, [
+        cancelInitialRestore,
+        clearMessageState,
+        q,
+        symbol,
+        searchParams,
+        router,
+        sendMessage,
+    ])
 
     // ─── Chat actions ───
 
@@ -223,11 +357,12 @@ export function ChatPage() {
     )
 
     const handleNewSession = useCallback(() => {
+        cancelInitialRestore()
         setSessionId(null)
         setChatId(undefined)
-        setMessages([])
+        clearMessageState()
         setPersistedError(null)
-    }, [setMessages])
+    }, [cancelInitialRestore, clearMessageState])
 
     const handleRetry = useCallback(() => {
         setPersistedError(null)
@@ -240,10 +375,12 @@ export function ChatPage() {
 
     const handleSwitchSession = useCallback(
         (id: string) => {
+            cancelInitialRestore()
             switchAbortRef.current?.abort()
             const controller = new AbortController()
             switchAbortRef.current = controller
 
+            clearMessageState()
             setSessionId(id)
             setChatId(id)
             setPersistedError(null)
@@ -253,7 +390,7 @@ export function ChatPage() {
                 setPersistedError(result.error)
             })
         },
-        [setMessages],
+        [cancelInitialRestore, clearMessageState, setMessages],
     )
 
     const handleDeleteSession = useCallback(
@@ -277,14 +414,14 @@ export function ChatPage() {
 
                     setSessionId(null)
                     setChatId(undefined)
-                    setMessages([])
+                    clearMessageState()
                     setPersistedError(null)
                 }
             } catch {
                 // Deletion failure is non-fatal
             }
         },
-        [handleSwitchSession, mutateSessions, sessions, setMessages],
+        [clearMessageState, handleSwitchSession, mutateSessions, sessions],
     )
 
     const handleRenameSession = useCallback(
@@ -374,13 +511,63 @@ export function ChatPage() {
                                     )
                                 } else if (msg.role === 'assistant') {
                                     const isLast = index === messages.length - 1
+                                    const contextState =
+                                        messageContextStates[msg.id] ?? {
+                                            status: 'idle',
+                                        }
+                                    const isContextOpen =
+                                        openMessageContexts[msg.id] ?? false
                                     messageNode = (
-                                        <AssistantMessage
-                                            key={msg.id}
-                                            message={msg}
-                                            isLast={isLast}
-                                            isLoading={isLoading}
-                                        />
+                                        <div key={msg.id} className='space-y-3'>
+                                            <AssistantMessage
+                                                message={msg}
+                                                isLast={isLast}
+                                                isLoading={isLoading}
+                                            />
+                                            <MessageContextPanel
+                                                state={contextState}
+                                                isOpen={isContextOpen}
+                                                onToggle={() => {
+                                                    const nextIsOpen =
+                                                        !(
+                                                            openMessageContextsRef
+                                                                .current[msg.id] ?? false
+                                                        )
+
+                                                    setOpenMessageContexts((prev) => ({
+                                                        ...prev,
+                                                        [msg.id]: nextIsOpen,
+                                                    }))
+
+                                                    const activeSessionId =
+                                                        sessionIdRef.current
+                                                    if (
+                                                        nextIsOpen &&
+                                                        activeSessionId
+                                                    ) {
+                                                        void loadMessageContext(
+                                                            activeSessionId,
+                                                            msg.id,
+                                                        )
+                                                    }
+                                                }}
+                                                onRetry={() => {
+                                                    const activeSessionId =
+                                                        sessionIdRef.current
+                                                    if (!activeSessionId) return
+
+                                                    setOpenMessageContexts((prev) => ({
+                                                        ...prev,
+                                                        [msg.id]: true,
+                                                    }))
+                                                    void loadMessageContext(
+                                                        activeSessionId,
+                                                        msg.id,
+                                                        { force: true },
+                                                    )
+                                                }}
+                                            />
+                                        </div>
                                     )
                                 }
 
