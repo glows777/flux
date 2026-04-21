@@ -291,4 +291,4 @@ v0.03           v0.04                          v0.05
 | v0.03 P2 | ✅ 完成 | Dashboard 持仓管理 (Portfolio CRUD + 统计卡片 + 风险评分) |
 | v0.04 | ✅ 完成 | Agentic AI (多轮对话 + Tool Calling + 会话管理)，合并原 v0.04+v0.05 |
 | v0.05 | ✅ 完成 | Thinking + 结构化输出 + 模型路由 |
-| v0.07 | 🚧 进行中 | Detail 页面 UI/UX 打磨 (涨跌幅同步、可拖拽面板、研报结构化等) |
+| v0.07 | 🚧 进行中 | Detail 页面 UI/UX 打磨 + Chat Context Visibility Inspector |
