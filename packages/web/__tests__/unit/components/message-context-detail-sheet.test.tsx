@@ -151,6 +151,9 @@ describe('MessageContextDetailSheet', () => {
         )
 
         expect(screen.getByText('Context details')).toBeDefined()
+        expect(
+            screen.getByRole('dialog', { name: 'Context details' }),
+        ).toBeDefined()
         const headings = screen
             .getAllByRole('heading', { level: 2 })
             .map((node) => node.textContent)
@@ -199,10 +202,15 @@ describe('MessageContextDetailSheet', () => {
             />,
         )
 
+        const toggle = screen.getByRole('button', { name: 'Open raw inspect' })
+        expect(toggle.getAttribute('aria-expanded')).toBe('false')
         expect(screen.queryByText('System text')).toBeNull()
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Open raw inspect' }),
-        )
+        fireEvent.click(toggle)
+        expect(
+            screen
+                .getByRole('button', { name: 'Close raw inspect' })
+                .getAttribute('aria-expanded'),
+        ).toBe('true')
         expect(screen.getByText('System text')).toBeDefined()
         expect(screen.getByText('Result snapshot')).toBeDefined()
     })
@@ -221,6 +229,21 @@ describe('MessageContextDetailSheet', () => {
         fireEvent.click(
             screen.getByRole('button', { name: 'Close context details' }),
         )
+        expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('closes the sheet when escape is pressed', () => {
+        const onClose = mock(() => {})
+        render(
+            <MessageContextDetailSheet
+                state={readyState}
+                isOpen={true}
+                messageId='assistant-1'
+                onClose={onClose}
+            />,
+        )
+
+        fireEvent.keyDown(window, { key: 'Escape' })
         expect(onClose).toHaveBeenCalledTimes(1)
     })
 })

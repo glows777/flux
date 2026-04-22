@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronRight, RefreshCcw, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import type {
     MessageContextSegment,
     MessageContextState,
@@ -97,10 +97,27 @@ export function MessageContextDetailSheet({
     onRetry,
 }: MessageContextDetailSheetProps) {
     const [isRawOpen, setIsRawOpen] = useState(false)
+    const titleId = useId()
+    const rawInspectId = useId()
 
     useEffect(() => {
         setIsRawOpen(false)
     }, [messageId, isOpen])
+
+    useEffect(() => {
+        if (!isOpen) {
+            return
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose()
+            }
+        }
+
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [isOpen, onClose])
 
     if (!isOpen || messageId == null) {
         return null
@@ -112,15 +129,24 @@ export function MessageContextDetailSheet({
         <>
             <button
                 type='button'
+                aria-label='Close context details overlay'
                 onClick={onClose}
-                className='fixed inset-0 z-30 hidden bg-black/60 md:hidden'
+                className='fixed inset-0 z-30 bg-black/60 md:hidden'
             />
 
-            <aside className='fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto border-t border-white/10 bg-[#050505] p-4 text-slate-200 shadow-[-1px_0_0_rgba(255,255,255,0.05)] md:static md:inset-auto md:w-[clamp(420px,36vw,480px)] md:border-l md:border-t-0'>
+            <aside
+                role='dialog'
+                aria-modal='true'
+                aria-labelledby={titleId}
+                className='fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto border-t border-white/10 bg-[#050505] p-4 text-slate-200 shadow-[-1px_0_0_rgba(255,255,255,0.05)] md:static md:inset-auto md:w-[clamp(420px,36vw,480px)] md:border-l md:border-t-0'
+            >
                 <div className='sticky top-0 z-10 -mx-4 -mt-4 border-b border-white/8 bg-[#050505]/95 px-4 py-4 backdrop-blur'>
                     <div className='flex items-start justify-between gap-3'>
                         <div className='min-w-0'>
-                            <p className='text-sm font-medium text-slate-50'>
+                            <p
+                                id={titleId}
+                                className='text-sm font-medium text-slate-50'
+                            >
                                 Context details
                             </p>
                             <p className='mt-1 break-all text-xs text-slate-500'>
@@ -294,6 +320,8 @@ export function MessageContextDetailSheet({
                                         setIsRawOpen((current) => !current)
                                     }
                                     className='inline-flex items-center gap-1 text-xs font-medium text-slate-300'
+                                    aria-expanded={isRawOpen}
+                                    aria-controls={rawInspectId}
                                     aria-label={
                                         isRawOpen
                                             ? 'Close raw inspect'
@@ -311,7 +339,10 @@ export function MessageContextDetailSheet({
                                 </button>
                             </div>
                             {isRawOpen ? (
-                                <div className='mt-3 space-y-3'>
+                                <div
+                                    id={rawInspectId}
+                                    className='mt-3 space-y-3'
+                                >
                                     <div>
                                         <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
                                             System text
