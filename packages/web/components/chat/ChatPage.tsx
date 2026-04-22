@@ -258,6 +258,20 @@ export function ChatPage() {
             },
         })
 
+    useEffect(() => {
+        if (activeContextMessageId == null) return
+
+        const activeAssistantExists = messages.some(
+            (message) =>
+                message.role === 'assistant' &&
+                message.id === activeContextMessageId,
+        )
+
+        if (!activeAssistantExists) {
+            setActiveContextMessageId(null)
+        }
+    }, [activeContextMessageId, messages])
+
     const clearMessageState = useCallback(() => {
         resetMessageContextState()
         setMessages([])

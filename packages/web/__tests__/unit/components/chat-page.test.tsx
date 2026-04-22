@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import {
     cleanup,
+    act,
     fireEvent,
     render,
     screen,
@@ -43,6 +44,7 @@ const mockRegenerate = mock(() => {})
 
 let chatMessages: UIMessage[] = []
 let chatError: Error | undefined
+let chatMessagesSetter: ((next: UIMessage[]) => void) | null = null
 let messageContextResponses: Record<
     string,
     {
@@ -80,6 +82,7 @@ mock.module('swr', () => ({
 mock.module('@ai-sdk/react', () => ({
     useChat: () => {
         const [messagesState, setMessagesState] = useState(chatMessages)
+        chatMessagesSetter = setMessagesState
         useEffect(() => {
             setMessagesState(chatMessages)
         }, [])
@@ -1175,6 +1178,91 @@ describe('ChatPage', () => {
                     '/api/sessions/session-1/messages/message-assistant-2/context',
             ),
         ).toBe(true)
+    })
+
+    it('closes the shared sheet when the active assistant message is removed', async () => {
+        chatMessages = [
+            {
+                id: 'message-user-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-1',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'hi there' }],
+            } as UIMessage,
+        ]
+
+        messageContextResponses[
+            '/api/sessions/session-1/messages/message-assistant-1/context'
+        ] = {
+            body: buildMessageContextResponse('run-1'),
+        }
+
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: chatMessages,
+                                error: null,
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(screen.getByTestId('current-session').textContent).toBe(
+                'session-1',
+            ),
+        )
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) =>
+                        String(input) ===
+                        '/api/sessions/session-1/messages/message-assistant-1/context',
+                ),
+            ).toBe(true),
+        )
+
+        fireEvent.click(
+            await screen.findByRole('button', { name: /view context/i }),
+        )
+
+        await screen.findByRole('dialog', { name: /context details/i })
+        expect(
+            screen.getByRole('button', { name: /viewing/i }),
+        ).toBeDefined()
+
+        await waitFor(() =>
+            expect(chatMessagesSetter).not.toBeNull(),
+        )
+        await act(async () => {
+            chatMessagesSetter?.([
+                {
+                    id: 'message-user-1',
+                    role: 'user',
+                    parts: [{ type: 'text', text: 'hello' }],
+                } as UIMessage,
+            ])
+        })
+
+        await waitFor(() =>
+            expect(
+                screen.queryByRole('dialog', { name: /context details/i }),
+            ).toBeNull(),
+        )
+        expect(screen.queryByRole('button', { name: /viewing/i })).toBeNull()
     })
 
     it('clears old assistant rows immediately when switching sessions', async () => {
