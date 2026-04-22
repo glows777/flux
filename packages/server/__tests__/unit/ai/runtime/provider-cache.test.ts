@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test'
 import type { ModelMessage } from 'ai'
-import {
-    buildProviderCacheRequest,
-    normalizeProviderCacheResult,
-} from '../../../../src/core/ai/runtime/provider-cache'
 import type {
     CachePlanSnapshot,
     SystemContextSegmentSnapshot,
 } from '../../../../src/core/ai/runtime/types'
+
+async function loadProviderCacheModule() {
+    return import(
+        '../../../../src/core/ai/runtime/provider-cache.ts?provider-cache-test'
+    )
+}
 
 const cachePlan: CachePlanSnapshot = {
     provider: 'anthropic',
@@ -99,7 +101,8 @@ const systemSegments: SystemContextSegmentSnapshot[] = [
 ]
 
 describe('buildProviderCacheRequest', () => {
-    test('rewrites Anthropic system layers into separate cached system messages', () => {
+    test('rewrites Anthropic system layers into separate cached system messages', async () => {
+        const { buildProviderCacheRequest } = await loadProviderCacheModule()
         const request = buildProviderCacheRequest({
             provider: 'anthropic',
             cachePlan,
@@ -149,7 +152,8 @@ describe('buildProviderCacheRequest', () => {
         })
     })
 
-    test('leaves unsupported providers in standard system-plus-messages form', () => {
+    test('leaves unsupported providers in standard system-plus-messages form', async () => {
+        const { buildProviderCacheRequest } = await loadProviderCacheModule()
         const request = buildProviderCacheRequest({
             provider: 'openai',
             cachePlan: {
@@ -187,7 +191,8 @@ describe('buildProviderCacheRequest', () => {
         })
     })
 
-    test('leaves ineligible Anthropic requests in standard system-plus-messages form', () => {
+    test('leaves ineligible Anthropic requests in standard system-plus-messages form', async () => {
+        const { buildProviderCacheRequest } = await loadProviderCacheModule()
         const request = buildProviderCacheRequest({
             provider: 'anthropic',
             cachePlan: {
@@ -226,7 +231,8 @@ describe('buildProviderCacheRequest', () => {
 })
 
 describe('normalizeProviderCacheResult', () => {
-    test('maps total usage cache fields into CacheResultSnapshot', () => {
+    test('maps total usage cache fields into CacheResultSnapshot', async () => {
+        const { normalizeProviderCacheResult } = await loadProviderCacheModule()
         const result = normalizeProviderCacheResult({
             cachePlan,
             totalUsage: {

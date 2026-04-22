@@ -195,7 +195,32 @@ describe('ai context visibility integration', () => {
             text: Promise.resolve('mock stream text'),
             usage: Promise.resolve({ inputTokens: 100, outputTokens: 50 }),
             steps: Promise.resolve([]),
-            toUIMessageStream: () => new ReadableStream(),
+            toUIMessageStream: (opts?: {
+                onFinish?: (payload: {
+                    responseMessage: {
+                        id: string
+                        role: 'assistant'
+                        parts: Array<{ type: 'text'; text: string }>
+                    }
+                }) => void
+            }) =>
+                new ReadableStream({
+                    start(controller) {
+                        opts?.onFinish?.({
+                            responseMessage: {
+                                id: 'assistant-1',
+                                role: 'assistant',
+                                parts: [
+                                    {
+                                        type: 'text',
+                                        text: 'mock stream text',
+                                    },
+                                ],
+                            },
+                        })
+                        controller.close()
+                    },
+                }),
             toUIMessageStreamResponse: (_opts?: unknown) =>
                 new Response('mock stream', {
                     headers: { 'Content-Type': 'text/event-stream' },
@@ -203,10 +228,13 @@ describe('ai context visibility integration', () => {
         }))
     })
 
-    test('trading-agent manifest includes base prompt, memory, history, tools, and resolved params', async () => {
+    test('trading-agent manifest includes base prompt, memory, history, tools, resolved params, and cache metadata', async () => {
         const { createAIRuntime, tradingAgentPreset } = await loadModules()
         const runtime = await createAIRuntime({
-            model: {} as Parameters<typeof createAIRuntime>[0]['model'],
+            model: {
+                provider: 'anthropic',
+                modelId: 'claude-sonnet-4-6',
+            } as Parameters<typeof createAIRuntime>[0]['model'],
             plugins: tradingAgentPreset({
                 toolDeps: {
                     getQuote: async () => ({
@@ -245,8 +273,9 @@ describe('ai context visibility integration', () => {
             channel: 'web',
             mode: 'conversation',
         })
+        const consumed = await output.consumeStream()
 
-        const manifest = output.getContextManifest()
+        const manifest = consumed.contextManifest
 
         expect(manifest.pluginOutputs.length).toBeGreaterThan(0)
         expect(
@@ -267,6 +296,17 @@ describe('ai context visibility integration', () => {
         expect(manifest.modelRequest.toolNames.length).toBeGreaterThan(0)
         expect(manifest.modelRequest.resolvedParams.maxSteps).toBe(50)
         expect(manifest.modelRequest.maxOutputTokens).toBeUndefined()
+        expect(manifest.cachePlan?.stableCoreSegmentIds).toContain('base')
+        expect(manifest.cachePlan?.cacheableSessionSegmentIds).toContain('memory')
+        expect(manifest.cachePlan?.breakpoints).toEqual([
+            { layer: 'stableCore', segmentId: 'base' },
+            { layer: 'cacheableSession', segmentId: 'memory' },
+        ])
+        expect(manifest.result?.cacheResult).toMatchObject({
+            cacheObserved: false,
+            rolloutGateStatus: 'enabled',
+            circuitBreakerState: 'closed',
+        })
         expect(mockStreamText).toHaveBeenCalledTimes(1)
         expect(
             'maxOutputTokens' in

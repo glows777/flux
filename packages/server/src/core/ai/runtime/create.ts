@@ -45,6 +45,16 @@ interface StepWithToolCalls {
 
 type ProviderKind = 'anthropic' | 'openai' | 'unknown'
 
+const CACHE_FAILURE_THRESHOLD = 3
+
+interface CacheRolloutState {
+    plannerFailures: number
+    adapterFailures: number
+    disabled: boolean
+}
+
+const cacheRolloutStates = new Map<string, CacheRolloutState>()
+
 function createRunId(): string {
     if (
         typeof crypto !== 'undefined' &&
@@ -153,10 +163,39 @@ async function resolveOptionalStreamValue<T>(
     return (await Promise.resolve(value)) as T
 }
 
-function resolveRolloutGateStatus(
-    cachePlan: ReturnType<typeof buildCachePlan> | undefined,
-): 'observe-only' | 'enabled' {
-    return cachePlan ? 'enabled' : 'observe-only'
+function getCacheRolloutKey(params: {
+    provider: ProviderKind
+    channel: RunContext['channel']
+    mode: RunContext['mode']
+    agentType: RunContext['agentType']
+}): string {
+    return [
+        params.provider,
+        params.channel,
+        params.mode,
+        params.agentType,
+    ].join(':')
+}
+
+function getOrCreateCacheRolloutState(key: string): CacheRolloutState {
+    const existingState = cacheRolloutStates.get(key)
+    if (existingState) return existingState
+
+    const newState: CacheRolloutState = {
+        plannerFailures: 0,
+        adapterFailures: 0,
+        disabled: false,
+    }
+    cacheRolloutStates.set(key, newState)
+    return newState
+}
+
+function resolveRolloutGateStatus(params: {
+    rolloutState: CacheRolloutState
+    cachePlan: ReturnType<typeof buildCachePlan> | undefined
+}): 'observe-only' | 'enabled' | 'disabled' {
+    if (params.rolloutState.disabled) return 'disabled'
+    return params.cachePlan ? 'enabled' : 'observe-only'
 }
 
 export async function createAIRuntime(
@@ -206,6 +245,14 @@ export async function createAIRuntime(
                 defaults: baseParams,
             })
             const provider = inferProvider(model)
+            const rolloutState = getOrCreateCacheRolloutState(
+                getCacheRolloutKey({
+                    provider,
+                    channel: runCtx.channel,
+                    mode: runCtx.mode,
+                    agentType: runCtx.agentType,
+                }),
+            )
             const providerOptions = buildProviderOptions(assembledBase.resolved)
             const resolvedMaxOutputTokens = resolveMaxOutputTokens(
                 assembledBase.resolved,
@@ -230,19 +277,32 @@ export async function createAIRuntime(
                 | ReturnType<typeof buildCachePlan>
                 | undefined
 
-            try {
-                cachePlan = buildCachePlan({
-                    provider,
-                    modelId: resolveModelId(model),
-                    assembledContext: assembledSnapshot,
-                    providerChangeFlags: {},
-                })
-            } catch (error) {
-                cacheDisabledReason = 'cache_plan_failed'
-                console.warn(
-                    '[ai-runtime][cache planning] failed; continuing without provider cache plan',
-                    error,
-                )
+            if (rolloutState.disabled) {
+                cacheDisabledReason = 'circuit_breaker_open'
+            } else {
+                try {
+                    cachePlan = buildCachePlan({
+                        provider,
+                        modelId: resolveModelId(model),
+                        assembledContext: assembledSnapshot,
+                        providerChangeFlags: {},
+                    })
+                } catch (error) {
+                    rolloutState.plannerFailures += 1
+                    if (
+                        rolloutState.plannerFailures >=
+                        CACHE_FAILURE_THRESHOLD
+                    ) {
+                        rolloutState.disabled = true
+                        cacheDisabledReason = 'circuit_breaker_open'
+                    } else {
+                        cacheDisabledReason = 'cache_plan_failed'
+                    }
+                    console.warn(
+                        '[ai-runtime][cache planning] failed; continuing without provider cache plan',
+                        error,
+                    )
+                }
             }
 
             let manifest = createBaseManifest({
@@ -261,19 +321,41 @@ export async function createAIRuntime(
             const convertedMessages = await convertToModelMessages(
                 assembled.modelMessages,
             )
-            const providerCacheRequest = cachePlan
-                ? buildProviderCacheRequest({
-                      provider,
-                      cachePlan,
-                      systemSegments: assembled.systemSegments,
-                      modelMessages: convertedMessages,
-                      providerOptions: assembled.providerOptions,
-                  })
-                : {
-                      system: assembled.systemText || undefined,
-                      messages: convertedMessages,
-                      providerOptions: assembled.providerOptions,
-                  }
+            const fallbackProviderCacheRequest = {
+                system: assembled.systemText || undefined,
+                messages: convertedMessages,
+                providerOptions: assembled.providerOptions,
+            }
+            let providerCacheRequest = fallbackProviderCacheRequest
+
+            if (cachePlan && !cacheDisabledReason) {
+                try {
+                    providerCacheRequest = buildProviderCacheRequest({
+                        provider,
+                        cachePlan,
+                        systemSegments: assembled.systemSegments,
+                        modelMessages: convertedMessages,
+                        providerOptions: assembled.providerOptions,
+                    })
+                    rolloutState.plannerFailures = 0
+                    rolloutState.adapterFailures = 0
+                } catch (error) {
+                    rolloutState.adapterFailures += 1
+                    if (
+                        rolloutState.adapterFailures >=
+                        CACHE_FAILURE_THRESHOLD
+                    ) {
+                        rolloutState.disabled = true
+                        cacheDisabledReason = 'circuit_breaker_open'
+                    } else {
+                        cacheDisabledReason = 'cache_adapter_failed'
+                    }
+                    console.warn(
+                        '[ai-runtime][cache adapter] failed; continuing without provider cache request',
+                        error,
+                    )
+                }
+            }
 
             manifest = attachModelRequestSnapshot(manifest, {
                 systemText: (providerCacheRequest.system ?? '') as never,
@@ -354,7 +436,13 @@ export async function createAIRuntime(
                     totalUsage,
                     providerMetadata,
                 } = await resolveFinalizedData()
-                const rolloutGateStatus = resolveRolloutGateStatus(cachePlan)
+                const rolloutGateStatus = resolveRolloutGateStatus({
+                    rolloutState,
+                    cachePlan,
+                })
+                const circuitBreakerState = rolloutState.disabled
+                    ? 'open'
+                    : 'closed'
                 manifest = attachResultSnapshot(manifest, {
                     text,
                     responseMessage,
@@ -369,7 +457,7 @@ export async function createAIRuntime(
                             totalUsage,
                             providerMetadata,
                             rolloutGateStatus,
-                            circuitBreakerState: 'closed',
+                            circuitBreakerState,
                             cacheDisabledReason,
                         }),
                     )
@@ -383,7 +471,7 @@ export async function createAIRuntime(
                         cacheDisabledReason:
                             'cache_result_normalization_failed',
                         rolloutGateStatus,
-                        circuitBreakerState: 'closed',
+                        circuitBreakerState,
                     })
                 }
 

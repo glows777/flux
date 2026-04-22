@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import {
+    afterAll,
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    mock,
+    test,
+} from 'bun:test'
 import type { AIPlugin, CachePlanSnapshot } from '../../../../src/core/ai/runtime/types'
 
 const mockConvertToModelMessages = mock(async (messages: unknown[]) => messages)
@@ -182,6 +190,10 @@ beforeEach(() => {
 afterEach(() => {
     console.warn = originalConsoleWarn
     console.error = originalConsoleError
+})
+
+afterAll(() => {
+    mock.restore()
 })
 
 describe('createAIRuntime', () => {
@@ -647,6 +659,131 @@ describe('createAIRuntime', () => {
         expect(String(mockConsoleWarn.mock.calls[0]?.[0] ?? '')).toContain(
             'cache planning',
         )
+    })
+
+    test('opens the cache rollout guard after repeated planner failures', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+
+        mockBuildCachePlan.mockImplementation(() => {
+            throw new Error('cache plan failed')
+        })
+
+        const runtime = await createAIRuntime({
+            model: {
+                provider: 'anthropic',
+                modelId: 'claude-sonnet-4-6',
+            } as never,
+            plugins: [],
+        })
+
+        await runtime.chat({
+            messages: [],
+            channel: 'discord',
+            mode: 'conversation',
+        })
+        await runtime.chat({
+            messages: [],
+            channel: 'discord',
+            mode: 'conversation',
+        })
+        await runtime.chat({
+            messages: [],
+            channel: 'discord',
+            mode: 'conversation',
+        })
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'discord',
+            mode: 'conversation',
+        })
+        const consumed = await output.consumeStream()
+
+        expect(consumed.contextManifest.result?.cacheResult).toMatchObject({
+            cacheObserved: false,
+            cacheDisabledReason: 'circuit_breaker_open',
+            rolloutGateStatus: 'disabled',
+            circuitBreakerState: 'open',
+        })
+        expect(mockBuildCachePlan).toHaveBeenCalledTimes(3)
+        expect(mockBuildProviderCacheRequest).not.toHaveBeenCalled()
+        expect(mockStreamText).toHaveBeenCalledTimes(4)
+    })
+
+    test('keeps chat alive and opens the rollout guard after repeated cache adapter failures', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const cachePlan = createCachePlanFixture()
+
+        mockBuildCachePlan.mockImplementation(() => cachePlan)
+        mockBuildProviderCacheRequest.mockImplementation(() => {
+            throw new Error('adapter blew up')
+        })
+
+        const runtime = await createAIRuntime({
+            model: {
+                provider: 'anthropic',
+                modelId: 'claude-sonnet-4-6',
+            } as never,
+            plugins: [
+                {
+                    name: 'prompt',
+                    contribute: () => ({
+                        segments: [
+                            {
+                                id: 'base',
+                                target: 'system',
+                                kind: 'system.base',
+                                payload: {
+                                    format: 'text',
+                                    text: 'base prompt',
+                                },
+                                source: { plugin: 'prompt' },
+                                priority: 'required',
+                                cacheability: 'stable',
+                                compactability: 'preserve',
+                            },
+                        ],
+                    }),
+                },
+            ],
+        })
+
+        await runtime.chat({
+            messages: [],
+            channel: 'cron',
+            mode: 'trigger',
+            agentType: 'auto-trading-agent',
+        })
+        await runtime.chat({
+            messages: [],
+            channel: 'cron',
+            mode: 'trigger',
+            agentType: 'auto-trading-agent',
+        })
+        await runtime.chat({
+            messages: [],
+            channel: 'cron',
+            mode: 'trigger',
+            agentType: 'auto-trading-agent',
+        })
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'cron',
+            mode: 'trigger',
+            agentType: 'auto-trading-agent',
+        })
+        const consumed = await output.consumeStream()
+
+        expect(consumed.text).toBe('mock text')
+        expect(consumed.contextManifest.cachePlan).toBeUndefined()
+        expect(consumed.contextManifest.result?.cacheResult).toMatchObject({
+            cacheObserved: false,
+            cacheDisabledReason: 'circuit_breaker_open',
+            rolloutGateStatus: 'disabled',
+            circuitBreakerState: 'open',
+        })
+        expect(mockBuildCachePlan).toHaveBeenCalledTimes(3)
+        expect(mockBuildProviderCacheRequest).toHaveBeenCalledTimes(3)
+        expect(mockStreamText).toHaveBeenCalledTimes(4)
     })
 
     test('consumeStream falls back when cache result normalization throws', async () => {
