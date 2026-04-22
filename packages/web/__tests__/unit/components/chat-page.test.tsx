@@ -659,7 +659,7 @@ describe('ChatPage', () => {
         )
     })
 
-    it('prefetches the latest assistant context during auto-restore', async () => {
+    it('prefetches the latest assistant context during auto-restore without auto-opening the detail sheet', async () => {
         chatMessages = [
             {
                 id: 'message-user-1',
@@ -726,6 +726,9 @@ describe('ChatPage', () => {
                     '/api/sessions/session-1/messages/message-assistant-1/context',
             ),
         ).toBe(false)
+        expect(
+            screen.queryByRole('dialog', { name: /context details/i }),
+        ).toBeNull()
     })
 
     it('prefetches the latest assistant context when switching sessions', async () => {
@@ -853,7 +856,7 @@ describe('ChatPage', () => {
         ).toBe(false)
     })
 
-    it('fetches message context once across collapse and re-expand', async () => {
+    it('opens one shared sheet and reuses cached context across close and reopen', async () => {
         chatMessages = [
             {
                 id: 'message-user-1',
@@ -909,9 +912,9 @@ describe('ChatPage', () => {
         )
 
         const readyButton = screen.getByRole('button', {
-            name: /context ready/i,
+            name: /view context/i,
         })
-        expect(readyButton.getAttribute('aria-expanded')).toBe('false')
+        expect(readyButton.getAttribute('aria-pressed')).toBe('false')
         expect(
             fetchMock.mock.calls.filter(
                 ([input]) =>
@@ -922,23 +925,37 @@ describe('ChatPage', () => {
 
         fireEvent.click(readyButton)
         expect(
+            await screen.findByRole('dialog', { name: /context details/i }),
+        ).toBeDefined()
+        expect(
             screen
-                .getByRole('button', { name: /context ready/i })
-                .getAttribute('aria-expanded'),
+                .getByRole('button', { name: /viewing/i })
+                .getAttribute('aria-pressed'),
         ).toBe('true')
 
-        fireEvent.click(screen.getByRole('button', { name: /context ready/i }))
+        fireEvent.click(
+            screen.getByRole('button', { name: /^close context details$/i }),
+        )
+        await waitFor(() =>
+            expect(
+                screen.queryByRole('dialog', { name: /context details/i }),
+            ).toBeNull(),
+        )
         expect(
             screen
-                .getByRole('button', { name: /context ready/i })
-                .getAttribute('aria-expanded'),
+                .getByRole('button', { name: /view context/i })
+                .getAttribute('aria-pressed'),
         ).toBe('false')
-        fireEvent.click(screen.getByRole('button', { name: /context ready/i }))
+        fireEvent.click(screen.getByRole('button', { name: /view context/i }))
         expect(
-            screen
-                .getByRole('button', { name: /context ready/i })
-                .getAttribute('aria-expanded'),
-        ).toBe('true')
+            await screen.findByRole('dialog', { name: /context details/i }),
+        ).toBeDefined()
+        expect(
+            screen.getByText(
+                (_, element) =>
+                    element?.textContent === 'Message message-assistant-1',
+            ),
+        ).toBeDefined()
         expect(
             fetchMock.mock.calls.filter(
                 ([input]) =>
@@ -948,7 +965,7 @@ describe('ChatPage', () => {
         ).toHaveLength(1)
     })
 
-    it('keeps multiple assistant context panels open at the same time', async () => {
+    it('opens one shared sheet and switches the active assistant message', async () => {
         chatMessages = [
             {
                 id: 'message-user-1',
@@ -1011,8 +1028,25 @@ describe('ChatPage', () => {
             ).toHaveLength(1),
         )
 
-        fireEvent.click(screen.getByRole('button', { name: /open context/i }))
-        fireEvent.click(screen.getByRole('button', { name: /context ready/i }))
+        const readyButtons = screen
+            .getAllByRole('button')
+            .filter((button) => button.hasAttribute('aria-pressed'))
+        expect(readyButtons).toHaveLength(2)
+
+        fireEvent.click(readyButtons[0] as HTMLElement)
+
+        expect(
+            await screen.findByRole('dialog', { name: /context details/i }),
+        ).toBeDefined()
+        expect(
+            screen.getByText((_, element) =>
+                element?.textContent === 'Message message-assistant-1',
+            ),
+        ).toBeDefined()
+        expect(readyButtons[0]?.getAttribute('aria-pressed')).toBe('true')
+        expect(readyButtons[1]?.getAttribute('aria-pressed')).toBe('false')
+
+        fireEvent.click(readyButtons[1] as HTMLElement)
 
         await waitFor(() =>
             expect(
@@ -1021,16 +1055,34 @@ describe('ChatPage', () => {
                 ),
             ).toHaveLength(2),
         )
-
-        const readyButtons = screen.getAllByRole('button', {
-            name: /context ready/i,
-        })
-        expect(readyButtons).toHaveLength(2)
+        await waitFor(() =>
+            expect(
+                screen.getByText((_, element) =>
+                    element?.textContent === 'Message message-assistant-2',
+                ),
+            ).toBeDefined(),
+        )
         expect(
-            readyButtons.every(
-                (button) => button.getAttribute('aria-expanded') === 'true',
+            screen.queryByText(
+                (_, element) =>
+                    element?.textContent === 'Message message-assistant-1',
             ),
-        ).toBe(true)
+        ).toBeNull()
+        expect(
+            screen.getAllByRole('dialog', { name: /context details/i }),
+        ).toHaveLength(1)
+        expect(
+            screen
+                .getAllByRole('button')
+                .filter((button) => button.hasAttribute('aria-pressed'))[0]
+                ?.getAttribute('aria-pressed'),
+        ).toBe('false')
+        expect(
+            screen
+                .getAllByRole('button')
+                .filter((button) => button.hasAttribute('aria-pressed'))[1]
+                ?.getAttribute('aria-pressed'),
+        ).toBe('true')
         expect(
             fetchMock.mock.calls.some(
                 ([input]) =>
@@ -1109,10 +1161,18 @@ describe('ChatPage', () => {
 
         render(<ChatPage />)
 
+        messageContextResponses[
+            '/api/sessions/session-1/messages/message-assistant-1/context'
+        ] = {
+            body: buildMessageContextResponse('run-stale'),
+        }
+
         const initialButton = await screen.findByRole('button', {
-            name: /open context/i,
+            name: /view context/i,
         })
         expect(initialButton).toBeDefined()
+        fireEvent.click(initialButton)
+        await screen.findByRole('dialog', { name: /context details/i })
 
         fireEvent.click(screen.getByText('switch-session-2'))
 
@@ -1123,10 +1183,13 @@ describe('ChatPage', () => {
         )
 
         expect(
-            screen.queryByRole('button', { name: /open context/i }),
+            screen.queryByRole('button', { name: /view context/i }),
         ).toBeNull()
         expect(
-            screen.queryByRole('button', { name: /context ready/i }),
+            screen.queryByRole('button', { name: /context selected/i }),
+        ).toBeNull()
+        expect(
+            screen.queryByRole('dialog', { name: /context details/i }),
         ).toBeNull()
 
         sessionSwitchDeferred.resolve({
@@ -1223,7 +1286,7 @@ describe('ChatPage', () => {
         render(<ChatPage />)
 
         const openButton = await screen.findByRole('button', {
-            name: /open context/i,
+            name: /view context/i,
         })
 
         fireEvent.click(openButton)
@@ -1245,7 +1308,10 @@ describe('ChatPage', () => {
             json: () => Promise.resolve(buildMessageContextResponse('run-1')),
         })
 
-        await screen.findByRole('button', { name: /context ready/i })
+        await screen.findByRole('button', { name: /viewing/i })
+        expect(
+            screen.getByRole('dialog', { name: /context details/i }),
+        ).toBeDefined()
     })
 
     it('ignores a late auto-restore response after switching sessions', async () => {

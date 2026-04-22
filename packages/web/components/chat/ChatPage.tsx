@@ -19,7 +19,8 @@ import { ChatSessionSidebar } from './ChatSessionSidebar'
 import { ChatWelcome } from './ChatWelcome'
 import { AssistantMessage } from './messages/AssistantMessage'
 import { ErrorBanner } from './messages/ErrorBanner'
-import { MessageContextPanel } from './messages/MessageContextPanel'
+import { MessageContextDetailSheet } from './messages/MessageContextDetailSheet'
+import { MessageContextSummaryStrip } from './messages/MessageContextSummaryStrip'
 import { TruncationNotice } from './messages/TruncationNotice'
 import { UserMessage } from './messages/UserMessage'
 
@@ -89,9 +90,9 @@ export function ChatPage() {
     const [messageContextStates, setMessageContextStates] = useState<
         Record<string, MessageContextState>
     >({})
-    const [openMessageContexts, setOpenMessageContexts] = useState<
-        Record<string, boolean>
-    >({})
+    const [activeContextMessageId, setActiveContextMessageId] = useState<
+        string | null
+    >(null)
 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
     const [sidebarMounted, setSidebarMounted] = useState(false)
@@ -118,7 +119,7 @@ export function ChatPage() {
     const sessionIdRef = useRef(sessionId)
     sessionIdRef.current = sessionId
     const messageContextStatesRef = useRef(messageContextStates)
-    const openMessageContextsRef = useRef(openMessageContexts)
+    const activeContextMessageIdRef = useRef(activeContextMessageId)
     const inFlightMessageContextLoadsRef = useRef<Set<string>>(new Set())
     const initialRestoreAbortRef = useRef<AbortController | null>(null)
     const initialRestoreRequestIdRef = useRef(0)
@@ -128,15 +129,15 @@ export function ChatPage() {
     }, [messageContextStates])
 
     useEffect(() => {
-        openMessageContextsRef.current = openMessageContexts
-    }, [openMessageContexts])
+        activeContextMessageIdRef.current = activeContextMessageId
+    }, [activeContextMessageId])
 
     const resetMessageContextState = useCallback(() => {
         inFlightMessageContextLoadsRef.current.clear()
         messageContextStatesRef.current = {}
-        openMessageContextsRef.current = {}
+        activeContextMessageIdRef.current = null
         setMessageContextStates({})
-        setOpenMessageContexts({})
+        setActiveContextMessageId(null)
     }, [])
 
     const loadMessageContext = useCallback(
@@ -249,15 +250,8 @@ export function ChatPage() {
                     initializedRef.current = true
                 }
 
-                if (message.role === 'assistant') {
-                    setOpenMessageContexts((prev) => ({
-                        ...prev,
-                        [message.id]: true,
-                    }))
-
-                    if (nextSessionId) {
-                        void loadMessageContext(nextSessionId, message.id)
-                    }
+                if (message.role === 'assistant' && nextSessionId) {
+                    void loadMessageContext(nextSessionId, message.id)
                 }
 
                 mutateSessions()
@@ -492,6 +486,12 @@ export function ChatPage() {
     })
 
     const placeholder = symbol ? `询问关于 ${symbol} 的问题...` : '发送消息...'
+    const activeContextState =
+        activeContextMessageId == null
+            ? { status: 'idle' as const }
+            : (messageContextStates[activeContextMessageId] ?? {
+                  status: 'idle' as const,
+              })
 
     return (
         <div className='flex h-full flex-1 min-w-0'>
@@ -562,7 +562,7 @@ export function ChatPage() {
                                         status: 'idle',
                                     }
                                     const isContextOpen =
-                                        openMessageContexts[msg.id] ?? false
+                                        activeContextMessageId === msg.id
                                     messageNode = (
                                         <div key={msg.id} className='space-y-3'>
                                             <AssistantMessage
@@ -570,30 +570,16 @@ export function ChatPage() {
                                                 isLast={isLast}
                                                 isLoading={isLoading}
                                             />
-                                            <MessageContextPanel
+                                            <MessageContextSummaryStrip
                                                 state={contextState}
-                                                isOpen={isContextOpen}
-                                                onToggle={() => {
-                                                    const nextIsOpen = !(
-                                                        openMessageContextsRef
-                                                            .current[msg.id] ??
-                                                        false
+                                                isSelected={isContextOpen}
+                                                onOpen={() => {
+                                                    setActiveContextMessageId(
+                                                        msg.id,
                                                     )
-
-                                                    setOpenMessageContexts(
-                                                        (prev) => ({
-                                                            ...prev,
-                                                            [msg.id]:
-                                                                nextIsOpen,
-                                                        }),
-                                                    )
-
                                                     const activeSessionId =
                                                         sessionIdRef.current
-                                                    if (
-                                                        nextIsOpen &&
-                                                        activeSessionId
-                                                    ) {
+                                                    if (activeSessionId) {
                                                         void loadMessageContext(
                                                             activeSessionId,
                                                             msg.id,
@@ -605,11 +591,8 @@ export function ChatPage() {
                                                         sessionIdRef.current
                                                     if (!activeSessionId) return
 
-                                                    setOpenMessageContexts(
-                                                        (prev) => ({
-                                                            ...prev,
-                                                            [msg.id]: true,
-                                                        }),
+                                                    setActiveContextMessageId(
+                                                        msg.id,
                                                     )
                                                     void loadMessageContext(
                                                         activeSessionId,
@@ -656,6 +639,22 @@ export function ChatPage() {
                         </div>
                     )}
                 </div>
+
+                <MessageContextDetailSheet
+                    state={activeContextState}
+                    isOpen={activeContextMessageId != null}
+                    messageId={activeContextMessageId}
+                    onClose={() => setActiveContextMessageId(null)}
+                    onRetry={() => {
+                        const activeSessionId = sessionIdRef.current
+                        const messageId = activeContextMessageIdRef.current
+                        if (!activeSessionId || !messageId) return
+
+                        void loadMessageContext(activeSessionId, messageId, {
+                            force: true,
+                        })
+                    }}
+                />
 
                 {/* Input */}
                 <div className='max-w-5xl w-[85%] mx-auto'>
