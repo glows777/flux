@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import type {
     MessageContextRecord,
+    MessageContextSegment,
     MessageContextState,
 } from '@/lib/ai/context-visibility'
 import {
@@ -19,7 +20,29 @@ function buildReadyState({
     toolCount?: number
     totalEstimatedInputTokens?: number
 } = {}): MessageContextState {
-    const segments = [
+    return {
+        status: 'ready',
+        record: buildReadyRecord({
+            includeMemory,
+            includeRuntime,
+            toolCount,
+            totalEstimatedInputTokens,
+        }),
+    }
+}
+
+function buildReadyRecord({
+    includeMemory = true,
+    includeRuntime = true,
+    toolCount = 2,
+    totalEstimatedInputTokens = 1240,
+}: {
+    includeMemory?: boolean
+    includeRuntime?: boolean
+    toolCount?: number
+    totalEstimatedInputTokens?: number
+} = {}): MessageContextRecord {
+    const segments: MessageContextSegment[] = [
         {
             id: 'recent-1',
             target: 'messages' as const,
@@ -87,7 +110,7 @@ function buildReadyState({
         })
     }
 
-    const record: MessageContextRecord = {
+    return {
         version: 1,
         runId: 'run-92',
         manifest: {
@@ -129,8 +152,6 @@ function buildReadyState({
             },
         },
     }
-
-    return { status: 'ready', record }
 }
 
 describe('buildMessageContextSummaryModel', () => {
@@ -185,8 +206,8 @@ describe('buildMessageContextSummaryModel', () => {
 
 describe('buildSegmentGroups', () => {
     it('groups segments by source type with system last', () => {
-        const readyState = buildReadyState()
-        const groups = buildSegmentGroups(readyState.record)
+        const readyRecord = buildReadyRecord()
+        const groups = buildSegmentGroups(readyRecord)
 
         expect(groups.map((group) => group.key)).toEqual([
             'recent',
@@ -196,5 +217,8 @@ describe('buildSegmentGroups', () => {
         ])
         expect(groups[0]?.title).toBe('Recent conversation')
         expect(groups[3]?.collapsedByDefault).toBe(true)
+        expect(groups[3]?.description).toBe(
+            'Stable system prompts and instructions.',
+        )
     })
 })
