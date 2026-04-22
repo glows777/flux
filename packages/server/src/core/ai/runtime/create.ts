@@ -1,7 +1,10 @@
-import type { UIMessage } from 'ai'
+import type { LanguageModelUsage, ProviderMetadata, UIMessage } from 'ai'
 import { convertToModelMessages, stepCountIs, streamText } from 'ai'
 import { assembleContextRequest } from './assembly'
+import { buildCachePlan } from './cache-plan'
 import {
+    attachCachePlanSnapshot,
+    attachCacheResultSnapshot,
     attachAssembledContextSnapshot,
     attachModelRequestSnapshot,
     attachPluginOutputsSnapshot,
@@ -14,6 +17,10 @@ import {
     runBeforeRunHooks,
     runOnErrorHooks,
 } from './execute'
+import {
+    buildProviderCacheRequest,
+    normalizeProviderCacheResult,
+} from './provider-cache'
 import type {
     AIRuntime,
     ChatInput,
@@ -35,6 +42,8 @@ interface StepWithToolCalls {
         readonly result?: unknown
     }>
 }
+
+type ProviderKind = 'anthropic' | 'openai' | 'unknown'
 
 function createRunId(): string {
     if (
@@ -105,6 +114,45 @@ function resolveMaxOutputTokens(
     return params.maxTokens
 }
 
+function inferProvider(model: RuntimeOptions['model']): ProviderKind {
+    const candidateKeys = ['provider', 'providerId', 'providerName', 'modelId']
+    const modelRecord = model as Record<string, unknown>
+
+    for (const key of candidateKeys) {
+        const value = modelRecord[key]
+        if (typeof value !== 'string') continue
+
+        const normalized = value.toLowerCase()
+        if (normalized.includes('anthropic') || normalized.includes('claude')) {
+            return 'anthropic'
+        }
+
+        if (
+            normalized.includes('openai') ||
+            normalized.startsWith('gpt') ||
+            normalized.startsWith('o1') ||
+            normalized.startsWith('o3') ||
+            normalized.startsWith('o4')
+        ) {
+            return 'openai'
+        }
+    }
+
+    return 'unknown'
+}
+
+function resolveModelId(model: RuntimeOptions['model']): string | undefined {
+    const modelId = (model as Record<string, unknown>).modelId
+    return typeof modelId === 'string' ? modelId : undefined
+}
+
+async function resolveOptionalStreamValue<T>(
+    value: unknown,
+): Promise<T | undefined> {
+    if (value == null) return undefined
+    return (await Promise.resolve(value)) as T
+}
+
 export async function createAIRuntime(
     options: RuntimeOptions,
 ): Promise<AIRuntime> {
@@ -151,6 +199,7 @@ export async function createAIRuntime(
                 outputs: collectedOutputs,
                 defaults: baseParams,
             })
+            const provider = inferProvider(model)
             const providerOptions = buildProviderOptions(assembledBase.resolved)
             const resolvedMaxOutputTokens = resolveMaxOutputTokens(
                 assembledBase.resolved,
@@ -159,6 +208,31 @@ export async function createAIRuntime(
                 ...assembledBase,
                 providerOptions,
                 resolvedMaxOutputTokens,
+            }
+            const assembledSnapshot = {
+                segments: assembled.segments,
+                systemSegments: assembled.systemSegments,
+                tools: assembled.manifestTools,
+                params: {
+                    candidates: assembled.candidates,
+                    resolved: assembled.resolved,
+                },
+                totalEstimatedInputTokens: assembled.totalEstimatedInputTokens,
+            }
+            let cacheDisabledReason: string | undefined
+            let cachePlan:
+                | ReturnType<typeof buildCachePlan>
+                | undefined
+
+            try {
+                cachePlan = buildCachePlan({
+                    provider,
+                    modelId: resolveModelId(model),
+                    assembledContext: assembledSnapshot,
+                    providerChangeFlags: {},
+                })
+            } catch {
+                cacheDisabledReason = 'cache_plan_failed'
             }
 
             let manifest = createBaseManifest({
@@ -169,16 +243,7 @@ export async function createAIRuntime(
             })
 
             manifest = attachPluginOutputsSnapshot(manifest, collectedOutputs)
-            manifest = attachAssembledContextSnapshot(manifest, {
-                segments: assembled.segments,
-                systemSegments: assembled.systemSegments,
-                tools: assembled.manifestTools,
-                params: {
-                    candidates: assembled.candidates,
-                    resolved: assembled.resolved,
-                },
-                totalEstimatedInputTokens: assembled.totalEstimatedInputTokens,
-            })
+            manifest = attachAssembledContextSnapshot(manifest, assembledSnapshot)
             manifest = attachModelRequestSnapshot(manifest, {
                 systemText: assembled.systemText,
                 modelMessages: assembled.modelMessages,
@@ -187,11 +252,31 @@ export async function createAIRuntime(
                 maxOutputTokens: assembled.resolvedMaxOutputTokens,
                 providerOptions: assembled.providerOptions,
             })
+            if (cachePlan) {
+                manifest = attachCachePlanSnapshot(manifest, cachePlan)
+            }
+
+            const convertedMessages = await convertToModelMessages(
+                assembled.modelMessages,
+            )
+            const providerCacheRequest = cachePlan
+                ? buildProviderCacheRequest({
+                      provider,
+                      cachePlan,
+                      systemSegments: assembled.systemSegments,
+                      modelMessages: convertedMessages,
+                      providerOptions: assembled.providerOptions,
+                  })
+                : {
+                      system: assembled.systemText || undefined,
+                      messages: convertedMessages,
+                      providerOptions: assembled.providerOptions,
+                  }
 
             const streamResult = streamText({
                 model,
-                system: assembled.systemText || undefined,
-                messages: await convertToModelMessages(assembled.modelMessages),
+                system: providerCacheRequest.system,
+                messages: providerCacheRequest.messages,
                 tools: assembled.aiTools as never,
                 stopWhen: stepCountIs(
                     assembled.resolved.maxSteps ?? baseParams.maxSteps,
@@ -200,8 +285,8 @@ export async function createAIRuntime(
                 ...(assembled.resolvedMaxOutputTokens != null
                     ? { maxOutputTokens: assembled.resolvedMaxOutputTokens }
                     : {}),
-                ...(Object.keys(assembled.providerOptions).length > 0
-                    ? { providerOptions: assembled.providerOptions }
+                ...(Object.keys(providerCacheRequest.providerOptions).length > 0
+                    ? { providerOptions: providerCacheRequest.providerOptions }
                     : {}),
             } as never) as unknown as ChatOutput['streamResult']
 
@@ -211,16 +296,26 @@ export async function createAIRuntime(
                       text: string
                       usage: ConsumedResult['usage']
                       toolCalls: ToolCallRecord[]
+                      totalUsage?: LanguageModelUsage
+                      providerMetadata?: ProviderMetadata
                   }
                 | undefined
 
             async function resolveFinalizedData() {
                 if (finalizedData) return finalizedData
 
-                const [text, usage, steps] = await Promise.all([
+                const rawStreamResult = streamResult as Record<string, unknown>
+                const [text, usage, steps, totalUsage, providerMetadata] =
+                    await Promise.all([
                     streamResult.text,
                     streamResult.usage,
                     streamResult.steps,
+                    resolveOptionalStreamValue<LanguageModelUsage>(
+                        rawStreamResult.totalUsage,
+                    ),
+                    resolveOptionalStreamValue<ProviderMetadata>(
+                        rawStreamResult.providerMetadata,
+                    ),
                 ])
 
                 finalizedData = {
@@ -230,6 +325,8 @@ export async function createAIRuntime(
                         outputTokens: usage.outputTokens,
                     },
                     toolCalls: extractToolCalls(steps),
+                    totalUsage,
+                    providerMetadata,
                 }
 
                 return finalizedData
@@ -239,13 +336,30 @@ export async function createAIRuntime(
                 if (finalized) return
                 finalized = true
 
-                const { text, usage, toolCalls } = await resolveFinalizedData()
+                const {
+                    text,
+                    usage,
+                    toolCalls,
+                    totalUsage,
+                    providerMetadata,
+                } = await resolveFinalizedData()
                 manifest = attachResultSnapshot(manifest, {
                     text,
                     responseMessage,
                     toolCalls,
                     usage,
                 })
+                manifest = attachCacheResultSnapshot(
+                    manifest,
+                    normalizeProviderCacheResult({
+                        cachePlan,
+                        totalUsage,
+                        providerMetadata,
+                        rolloutGateStatus: 'enabled',
+                        circuitBreakerState: 'closed',
+                        cacheDisabledReason,
+                    }),
+                )
 
                 await runAfterRunHooks(plugins, {
                     ...runCtx,
