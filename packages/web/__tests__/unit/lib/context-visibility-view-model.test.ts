@@ -148,9 +148,28 @@ describe('buildMessageContextSummaryModel', () => {
         expect(model.statusTone).toBe('neutral')
     })
 
-    it('prioritizes the missing-memory warning', () => {
+    it('does not warn for a legitimate ready state without memory', () => {
         const model = buildMessageContextSummaryModel(
             buildReadyState({ includeMemory: false, toolCount: 0 }),
+        )
+
+        expect(model.chips.map((chip) => chip.label)).toEqual([
+            'Recent',
+            'Runtime',
+            '0 tools',
+        ])
+        expect(model.statsLine).toBe('3 segments · ~1.2k input')
+        expect(model.actionLabel).toBe('View context')
+        expect(model.statusTone).toBe('neutral')
+    })
+
+    it('warns when memory is absent and the context is large', () => {
+        const model = buildMessageContextSummaryModel(
+            buildReadyState({
+                includeMemory: false,
+                toolCount: 0,
+                totalEstimatedInputTokens: 2400,
+            }),
         )
 
         expect(model.chips.map((chip) => chip.label)).toEqual([

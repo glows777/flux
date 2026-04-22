@@ -294,6 +294,7 @@ export function buildMessageContextSummaryModel(
             const hasMemory = hasSegmentKind(record, 'memory.long_lived')
             const hasRecent = hasSegmentKind(record, 'history.recent')
             const hasRuntime = hasSegmentKind(record, 'live.runtime')
+            const isLargeContext = assembled.totalEstimatedInputTokens >= 2000
             const chips: MessageContextSummaryChip[] = []
 
             if (hasMemory) chips.push({ label: 'Memory', tone: 'emerald' })
@@ -305,7 +306,7 @@ export function buildMessageContextSummaryModel(
                 tone: assembled.tools.length > 0 ? 'neutral' : 'warning',
             })
 
-            if (!hasMemory) {
+            if (!hasMemory && isLargeContext) {
                 chips.push({ label: 'Large', tone: 'warning' })
                 return {
                     chips,
