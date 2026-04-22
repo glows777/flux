@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { buildCachePlan } from '../../../../src/core/ai/runtime/cache-plan'
 import type {
     CachePlanSnapshot,
+    ContextSegmentSnapshot,
     SystemContextSegmentSnapshot,
     ToolContributionSnapshot,
 } from '../../../../src/core/ai/runtime/types'
@@ -107,33 +108,42 @@ const tools: ToolContributionSnapshot[] = [
     },
 ]
 
+const historySegment: ContextSegmentSnapshot = {
+    id: 'session-history',
+    target: 'messages',
+    kind: 'history.recent',
+    payload: { format: 'messages', messages: [] },
+    source: { plugin: 'session' },
+    priority: 'high',
+    cacheability: 'session',
+    compactability: 'summarize',
+}
+
 function createPlan(
-    overrides: Partial<Parameters<typeof buildCachePlan>[0]> = {},
+    overrides: Partial<{
+        provider: 'anthropic' | 'openai' | 'unknown'
+        providerChangeFlags: Record<string, boolean>
+        previousPlan: CachePlanSnapshot
+        segments: ContextSegmentSnapshot[]
+        systemSegments: SystemContextSegmentSnapshot[]
+        tools: ToolContributionSnapshot[]
+        totalEstimatedInputTokens: number
+    }> = {},
 ): CachePlanSnapshot {
+    const system = overrides.systemSegments ?? systemSegments
+
     return buildCachePlan({
-        provider: 'anthropic',
+        provider: overrides.provider ?? 'anthropic',
         modelId: 'claude-sonnet-4-6',
         assembledContext: {
-            segments: [
-                ...systemSegments,
-                {
-                    id: 'session-history',
-                    target: 'messages',
-                    kind: 'history.recent',
-                    payload: { format: 'messages', messages: [] },
-                    source: { plugin: 'session' },
-                    priority: 'high',
-                    cacheability: 'session',
-                    compactability: 'summarize',
-                },
-            ],
-            systemSegments,
-            tools,
+            segments: overrides.segments ?? [...system, historySegment],
+            systemSegments: system,
+            tools: overrides.tools ?? tools,
             params: { candidates: [], resolved: {} },
-            totalEstimatedInputTokens: 1420,
+            totalEstimatedInputTokens: overrides.totalEstimatedInputTokens ?? 1420,
         },
-        providerChangeFlags: {},
-        ...overrides,
+        providerChangeFlags: overrides.providerChangeFlags ?? {},
+        previousPlan: overrides.previousPlan,
     })
 }
 
@@ -218,6 +228,153 @@ describe('buildCachePlan', () => {
         )
         expect(current.candidateInvalidationReasons).not.toContain(
             'memory_changed',
+        )
+    })
+
+    test('disables cache expectations for non-anthropic providers', () => {
+        const plan = createPlan({ provider: 'openai' })
+
+        expect(plan.eligibility.providerSupportsPromptCache).toBe(false)
+        expect(plan.eligibility.cacheExpected).toBe(false)
+        expect(plan.eligibility.cacheExpectationReason).toBe(
+            'provider_not_supported',
+        )
+    })
+
+    test('marks low-prefix requests below the Anthropic threshold', () => {
+        const lowPrefixBase: SystemContextSegmentSnapshot = {
+            id: 'small-base',
+            target: 'system',
+            kind: 'system.base',
+            payload: { format: 'text', text: 'small base' },
+            source: { plugin: 'prompt' },
+            priority: 'required',
+            cacheability: 'stable',
+            compactability: 'preserve',
+            included: true,
+            finalOrder: 0,
+            estimatedTokens: 100,
+        }
+
+        const plan = createPlan({
+            systemSegments: [lowPrefixBase],
+            segments: [lowPrefixBase],
+            tools: [],
+            totalEstimatedInputTokens: 100,
+        })
+
+        expect(plan.eligibility.prefixAboveThreshold).toBe(false)
+        expect(plan.eligibility.cacheExpected).toBe(false)
+        expect(plan.eligibility.cacheExpectationReason).toBe(
+            'below_cache_threshold',
+        )
+    })
+
+    test('keeps volatile memory out of cacheableSession', () => {
+        const base: SystemContextSegmentSnapshot = {
+            id: 'small-base',
+            target: 'system',
+            kind: 'system.base',
+            payload: { format: 'text', text: 'small base' },
+            source: { plugin: 'prompt' },
+            priority: 'required',
+            cacheability: 'stable',
+            compactability: 'preserve',
+            included: true,
+            finalOrder: 0,
+            estimatedTokens: 600,
+        }
+        const volatileMemory: ContextSegmentSnapshot = {
+            id: 'memory-volatile',
+            target: 'system',
+            kind: 'memory.long_lived',
+            payload: { format: 'text', text: 'volatile memory' },
+            source: { plugin: 'prompt' },
+            priority: 'high',
+            cacheability: 'volatile',
+            compactability: 'summarize',
+            included: true,
+            finalOrder: 1,
+            estimatedTokens: 100,
+        }
+
+        const plan = createPlan({
+            systemSegments: [base],
+            segments: [base, volatileMemory],
+            tools: [],
+            totalEstimatedInputTokens: 700,
+        })
+
+        expect(plan.stableCoreSegmentIds).toEqual(['small-base'])
+        expect(plan.cacheableSessionSegmentIds).not.toContain('memory-volatile')
+        expect(plan.dynamicTailSegmentIds).toContain('memory-volatile')
+    })
+
+    test('treats live-context-only changes as live_context_changed', () => {
+        const base: SystemContextSegmentSnapshot = {
+            id: 'small-base',
+            target: 'system',
+            kind: 'system.base',
+            payload: { format: 'text', text: 'small base' },
+            source: { plugin: 'prompt' },
+            priority: 'required',
+            cacheability: 'stable',
+            compactability: 'preserve',
+            included: true,
+            finalOrder: 0,
+            estimatedTokens: 600,
+        }
+
+        const previous = createPlan({
+            systemSegments: [base],
+            segments: [
+                base,
+                {
+                    id: 'live-context',
+                    target: 'system',
+                    kind: 'live.runtime',
+                    payload: { format: 'text', text: 'live one' },
+                    source: { plugin: 'heartbeat' },
+                    priority: 'high',
+                    cacheability: 'volatile',
+                    compactability: 'preserve',
+                    included: true,
+                    finalOrder: 1,
+                    estimatedTokens: 100,
+                },
+            ],
+            tools: [],
+            totalEstimatedInputTokens: 700,
+        })
+
+        const current = createPlan({
+            systemSegments: [base],
+            segments: [
+                base,
+                {
+                    id: 'live-context',
+                    target: 'system',
+                    kind: 'live.runtime',
+                    payload: { format: 'text', text: 'live two' },
+                    source: { plugin: 'heartbeat' },
+                    priority: 'high',
+                    cacheability: 'volatile',
+                    compactability: 'preserve',
+                    included: true,
+                    finalOrder: 1,
+                    estimatedTokens: 100,
+                },
+            ],
+            tools: [],
+            totalEstimatedInputTokens: 700,
+            previousPlan: previous,
+        })
+
+        expect(current.candidateInvalidationReasons).toContain(
+            'live_context_changed',
+        )
+        expect(current.candidateInvalidationReasons).not.toContain(
+            'history_grew',
         )
     })
 })

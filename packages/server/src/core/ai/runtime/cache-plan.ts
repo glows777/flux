@@ -63,12 +63,16 @@ function classifySegments(segments: ContextSegmentSnapshot[]) {
     const stableCore = segments.filter(
         (segment) =>
             segment.target === 'system' &&
+            segment.cacheability === 'stable' &&
             (segment.kind === 'system.base' ||
                 segment.kind === 'system.instructions'),
     )
 
     const cacheableSession = segments.filter(
-        (segment) => segment.kind === 'memory.long_lived',
+        (segment) =>
+            segment.cacheability === 'session' &&
+            (segment.kind === 'memory.long_lived' ||
+                segment.target === 'system'),
     )
 
     const dynamicTail = segments.filter(
@@ -78,6 +82,18 @@ function classifySegments(segments: ContextSegmentSnapshot[]) {
     )
 
     return { stableCore, cacheableSession, dynamicTail }
+}
+
+function classifyDynamicTail(segments: ContextSegmentSnapshot[]) {
+    return {
+        historyTail: segments.filter((segment) => segment.kind === 'history.recent'),
+        liveTail: segments.filter((segment) => segment.kind === 'live.runtime'),
+        otherTail: segments.filter(
+            (segment) =>
+                segment.kind !== 'history.recent' &&
+                segment.kind !== 'live.runtime',
+        ),
+    }
 }
 
 function hashTools(tools: ToolContributionSnapshot[]): string {
@@ -114,6 +130,8 @@ export function buildCachePlan(input: {
     const { stableCore, cacheableSession, dynamicTail } = classifySegments(
         input.assembledContext.segments,
     )
+    const { historyTail, liveTail, otherTail } =
+        classifyDynamicTail(dynamicTail)
     const effectivePrefix = [...stableCore, ...cacheableSession]
     const breakpoints = [
         ...(stableCore.length > 0
@@ -171,7 +189,21 @@ export function buildCachePlan(input: {
         }
 
         if (previous.hashes.dynamicTailHash !== hashes.dynamicTailHash) {
-            uniquePush(candidateInvalidationReasons, 'history_grew')
+            if (
+                historyTail.length > 0 &&
+                liveTail.length === 0 &&
+                otherTail.length === 0
+            ) {
+                uniquePush(candidateInvalidationReasons, 'history_grew')
+            } else if (
+                liveTail.length > 0 &&
+                historyTail.length === 0 &&
+                otherTail.length === 0
+            ) {
+                uniquePush(candidateInvalidationReasons, 'live_context_changed')
+            } else {
+                uniquePush(candidateInvalidationReasons, 'dynamic_tail_changed')
+            }
         }
     }
 
