@@ -82,14 +82,36 @@ function pickAnthropicCacheUsage(
         return undefined
     }
 
-    const cacheUsageEntries = Object.entries(anthropicMetadata).filter(
-        ([key]) => key.startsWith('cache_'),
+    const result: Record<string, unknown> = {}
+
+    if ('cacheCreationInputTokens' in anthropicMetadata) {
+        const cacheCreationInputTokens =
+            anthropicMetadata.cacheCreationInputTokens
+        if (cacheCreationInputTokens != null) {
+            result.cacheCreationInputTokens = cacheCreationInputTokens
+        }
+    }
+
+    const usage =
+        'usage' in anthropicMetadata &&
+        anthropicMetadata.usage != null &&
+        typeof anthropicMetadata.usage === 'object' &&
+        !Array.isArray(anthropicMetadata.usage)
+            ? (anthropicMetadata.usage as Record<string, unknown>)
+            : undefined
+
+    const cacheUsageEntries = Object.entries(usage ?? {}).filter(
+        ([key]) => key === 'cache_creation_input_tokens' || key === 'cache_read_input_tokens',
     )
 
-    if (cacheUsageEntries.length === 0) return undefined
+    if (cacheUsageEntries.length > 0) {
+        result.usage = Object.fromEntries(cacheUsageEntries)
+    }
+
+    if (Object.keys(result).length === 0) return undefined
 
     return {
-        anthropic: Object.fromEntries(cacheUsageEntries),
+        anthropic: result,
     }
 }
 

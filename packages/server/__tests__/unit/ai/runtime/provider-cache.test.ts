@@ -240,9 +240,16 @@ describe('normalizeProviderCacheResult', () => {
             } as never,
             providerMetadata: {
                 anthropic: {
-                    cache_creation_input_tokens: 300,
-                    cache_read_input_tokens: 1200,
+                    cacheCreationInputTokens: 300,
+                    usage: {
+                        cache_creation_input_tokens: 300,
+                        cache_read_input_tokens: 1200,
+                        input_tokens: 1600,
+                    },
                     some_unrelated_field: 'ignore me',
+                    contextManagement: {
+                        appliedEdits: [],
+                    },
                 },
                 openai: {
                     requestId: 'req-123',
@@ -263,8 +270,11 @@ describe('normalizeProviderCacheResult', () => {
         })
         expect(result.providerRawCacheUsage).toEqual({
             anthropic: {
-                cache_creation_input_tokens: 300,
-                cache_read_input_tokens: 1200,
+                cacheCreationInputTokens: 300,
+                usage: {
+                    cache_creation_input_tokens: 300,
+                    cache_read_input_tokens: 1200,
+                },
             },
         })
     })
