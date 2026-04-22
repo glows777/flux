@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { AIPlugin, CachePlanSnapshot } from '../../../../src/core/ai/runtime/types'
 
 const mockConvertToModelMessages = mock(async (messages: unknown[]) => messages)
@@ -128,6 +128,10 @@ async function loadCreateAIRuntime() {
 }
 
 const mockModel = {} as never
+let originalConsoleWarn: typeof console.warn
+let originalConsoleError: typeof console.error
+let mockConsoleWarn: ReturnType<typeof mock>
+let mockConsoleError: ReturnType<typeof mock>
 
 beforeEach(() => {
     mockConvertToModelMessages.mockClear()
@@ -166,6 +170,18 @@ beforeEach(() => {
             circuitBreakerState: input.circuitBreakerState,
         }),
     )
+
+    originalConsoleWarn = console.warn
+    originalConsoleError = console.error
+    mockConsoleWarn = mock(() => {})
+    mockConsoleError = mock(() => {})
+    console.warn = mockConsoleWarn as typeof console.warn
+    console.error = mockConsoleError as typeof console.error
+})
+
+afterEach(() => {
+    console.warn = originalConsoleWarn
+    console.error = originalConsoleError
 })
 
 describe('createAIRuntime', () => {
@@ -456,11 +472,16 @@ describe('createAIRuntime', () => {
             ],
         })
 
-        await runtime.chat({
+        const output = await runtime.chat({
             messages: [{ id: 'u1', role: 'user', parts: [{ type: 'text', text: 'hello' }] }],
             channel: 'web',
             mode: 'conversation',
         })
+        const manifest = output.getContextManifest()
+        const streamArgs = mockStreamText.mock.calls[0]![0] as Record<
+            string,
+            unknown
+        >
 
         expect(mockBuildProviderCacheRequest).toHaveBeenCalledTimes(1)
         expect(mockBuildProviderCacheRequest.mock.calls[0]![0]).toMatchObject({
@@ -474,7 +495,7 @@ describe('createAIRuntime', () => {
                 parts: [{ type: 'text', text: 'hello' }],
             },
         ])
-        expect(mockStreamText.mock.calls[0]![0]).toMatchObject({
+        expect(streamArgs).toMatchObject({
             system: undefined,
             messages: rewrittenMessages,
             providerOptions: {
@@ -483,6 +504,11 @@ describe('createAIRuntime', () => {
                 },
             },
         })
+        expect(manifest.modelRequest.systemText).toBe(streamArgs.system)
+        expect(manifest.modelRequest.modelMessages).toEqual(streamArgs.messages)
+        expect(manifest.modelRequest.providerOptions).toEqual(
+            streamArgs.providerOptions,
+        )
     })
 
     test('consumeStream normalizes cache usage into manifest.result.cacheResult', async () => {
@@ -550,7 +576,7 @@ describe('createAIRuntime', () => {
         const normalizedCacheResult = {
             cacheObserved: false,
             cacheDisabledReason: 'cache_plan_failed',
-            rolloutGateStatus: 'enabled' as const,
+            rolloutGateStatus: 'observe-only' as const,
             circuitBreakerState: 'closed' as const,
         }
 
@@ -610,9 +636,50 @@ describe('createAIRuntime', () => {
         expect(manifest.result?.cacheResult?.cacheDisabledReason).toBe(
             'cache_plan_failed',
         )
+        expect(manifest.result?.cacheResult?.rolloutGateStatus).toBe(
+            'observe-only',
+        )
         expect(mockStreamText.mock.calls[0]![0]).toMatchObject({
             system: 'base prompt',
         })
+        expect(mockConsoleWarn).toHaveBeenCalledTimes(1)
+        expect(String(mockConsoleWarn.mock.calls[0]?.[0] ?? '')).toContain(
+            'cache planning',
+        )
+    })
+
+    test('consumeStream falls back when cache result normalization throws', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const cachePlan = createCachePlanFixture()
+
+        mockBuildCachePlan.mockImplementationOnce(() => cachePlan)
+        mockNormalizeProviderCacheResult.mockImplementationOnce(() => {
+            throw new Error('normalize blew up')
+        })
+
+        const runtime = await createAIRuntime({
+            model: { modelId: 'claude-3-7-sonnet' } as never,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const consumed = await output.consumeStream()
+
+        expect(consumed.text).toBe('mock text')
+        expect(consumed.contextManifest.result?.cacheResult).toEqual({
+            cacheObserved: false,
+            cacheDisabledReason: 'cache_result_normalization_failed',
+            rolloutGateStatus: 'enabled',
+            circuitBreakerState: 'closed',
+        })
+        expect(mockConsoleError).toHaveBeenCalledTimes(1)
+        expect(String(mockConsoleError.mock.calls[0]?.[0] ?? '')).toContain(
+            'cache normalization',
+        )
     })
 
     test('dispose() calls destroy() on all plugins', async () => {

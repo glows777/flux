@@ -153,6 +153,12 @@ async function resolveOptionalStreamValue<T>(
     return (await Promise.resolve(value)) as T
 }
 
+function resolveRolloutGateStatus(
+    cachePlan: ReturnType<typeof buildCachePlan> | undefined,
+): 'observe-only' | 'enabled' {
+    return cachePlan ? 'enabled' : 'observe-only'
+}
+
 export async function createAIRuntime(
     options: RuntimeOptions,
 ): Promise<AIRuntime> {
@@ -231,8 +237,12 @@ export async function createAIRuntime(
                     assembledContext: assembledSnapshot,
                     providerChangeFlags: {},
                 })
-            } catch {
+            } catch (error) {
                 cacheDisabledReason = 'cache_plan_failed'
+                console.warn(
+                    '[ai-runtime][cache planning] failed; continuing without provider cache plan',
+                    error,
+                )
             }
 
             let manifest = createBaseManifest({
@@ -244,14 +254,6 @@ export async function createAIRuntime(
 
             manifest = attachPluginOutputsSnapshot(manifest, collectedOutputs)
             manifest = attachAssembledContextSnapshot(manifest, assembledSnapshot)
-            manifest = attachModelRequestSnapshot(manifest, {
-                systemText: assembled.systemText,
-                modelMessages: assembled.modelMessages,
-                toolNames: Object.keys(assembled.aiTools),
-                resolvedParams: assembled.resolved,
-                maxOutputTokens: assembled.resolvedMaxOutputTokens,
-                providerOptions: assembled.providerOptions,
-            })
             if (cachePlan) {
                 manifest = attachCachePlanSnapshot(manifest, cachePlan)
             }
@@ -272,6 +274,15 @@ export async function createAIRuntime(
                       messages: convertedMessages,
                       providerOptions: assembled.providerOptions,
                   }
+
+            manifest = attachModelRequestSnapshot(manifest, {
+                systemText: providerCacheRequest.system as never,
+                modelMessages: providerCacheRequest.messages as never,
+                toolNames: Object.keys(assembled.aiTools),
+                resolvedParams: assembled.resolved,
+                maxOutputTokens: assembled.resolvedMaxOutputTokens,
+                providerOptions: providerCacheRequest.providerOptions,
+            })
 
             const streamResult = streamText({
                 model,
@@ -343,23 +354,38 @@ export async function createAIRuntime(
                     totalUsage,
                     providerMetadata,
                 } = await resolveFinalizedData()
+                const rolloutGateStatus = resolveRolloutGateStatus(cachePlan)
                 manifest = attachResultSnapshot(manifest, {
                     text,
                     responseMessage,
                     toolCalls,
                     usage,
                 })
-                manifest = attachCacheResultSnapshot(
-                    manifest,
-                    normalizeProviderCacheResult({
-                        cachePlan,
-                        totalUsage,
-                        providerMetadata,
-                        rolloutGateStatus: 'enabled',
+                try {
+                    manifest = attachCacheResultSnapshot(
+                        manifest,
+                        normalizeProviderCacheResult({
+                            cachePlan,
+                            totalUsage,
+                            providerMetadata,
+                            rolloutGateStatus,
+                            circuitBreakerState: 'closed',
+                            cacheDisabledReason,
+                        }),
+                    )
+                } catch (error) {
+                    console.error(
+                        '[ai-runtime][cache normalization] failed; attaching fallback cache result',
+                        error,
+                    )
+                    manifest = attachCacheResultSnapshot(manifest, {
+                        cacheObserved: false,
+                        cacheDisabledReason:
+                            'cache_result_normalization_failed',
+                        rolloutGateStatus,
                         circuitBreakerState: 'closed',
-                        cacheDisabledReason,
-                    }),
-                )
+                    })
+                }
 
                 await runAfterRunHooks(plugins, {
                     ...runCtx,
