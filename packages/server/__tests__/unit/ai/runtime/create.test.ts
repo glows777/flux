@@ -736,6 +736,110 @@ describe('createAIRuntime', () => {
         })
     })
 
+    test('below-threshold cache plans stay observe-only and do not reset rollout failures', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const belowThresholdPlan = createCachePlanFixture({
+            effectivePrefixEstimatedTokens: 900,
+            eligibility: {
+                providerSupportsPromptCache: true,
+                prefixAboveThreshold: false,
+                cacheExpected: false,
+                cacheExpectationReason: 'below_cache_threshold',
+                providerRuleAssumptions: [
+                    'anthropic.cacheControl.ephemeral',
+                ],
+            },
+        })
+
+        mockBuildCachePlan.mockImplementationOnce(() => {
+            throw new Error('cache plan failed 1')
+        })
+        mockBuildCachePlan.mockImplementationOnce(() => {
+            throw new Error('cache plan failed 2')
+        })
+        mockBuildCachePlan.mockImplementationOnce(() => belowThresholdPlan)
+        mockBuildCachePlan.mockImplementationOnce(() => {
+            throw new Error('cache plan failed 3')
+        })
+
+        const runtime = await createAIRuntime({
+            model: { modelId: 'claude-3-7-sonnet' } as never,
+            plugins: [
+                {
+                    name: 'prompt',
+                    contribute: () => ({
+                        segments: [
+                            {
+                                id: 'base',
+                                target: 'system',
+                                kind: 'system.base',
+                                payload: {
+                                    format: 'text',
+                                    text: 'base prompt',
+                                },
+                                source: { plugin: 'prompt' },
+                                priority: 'required',
+                                cacheability: 'stable',
+                                compactability: 'preserve',
+                            },
+                        ],
+                    }),
+                },
+            ],
+        })
+
+        await (await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })).consumeStream()
+        await (await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })).consumeStream()
+
+        const belowThresholdOutput = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const belowThresholdConsumed = await belowThresholdOutput.consumeStream()
+
+        expect(belowThresholdConsumed.contextManifest.cachePlan).toEqual(
+            belowThresholdPlan,
+        )
+        expect(
+            belowThresholdConsumed.contextManifest.result?.cacheResult,
+        ).toMatchObject({
+            cacheObserved: false,
+            cacheDisabledReason: undefined,
+            rolloutGateStatus: 'observe-only',
+            circuitBreakerState: 'closed',
+        })
+        expect(mockBuildProviderCacheRequest).not.toHaveBeenCalled()
+        expect(mockStreamText).toHaveBeenCalledTimes(3)
+        expect(mockStreamText.mock.calls[2]![0]).toMatchObject({
+            system: 'base prompt',
+        })
+
+        const finalOutput = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const finalConsumed = await finalOutput.consumeStream()
+
+        expect(finalConsumed.contextManifest.result?.cacheResult).toMatchObject({
+            cacheObserved: false,
+            cacheDisabledReason: 'circuit_breaker_open',
+            rolloutGateStatus: 'disabled',
+            circuitBreakerState: 'open',
+        })
+        expect(mockBuildCachePlan).toHaveBeenCalledTimes(4)
+        expect(mockStreamText).toHaveBeenCalledTimes(4)
+    })
+
     test('chat retries once without cache when the cache-shaped request is rejected', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const cachePlan = createCachePlanFixture()

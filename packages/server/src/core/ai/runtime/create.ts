@@ -195,10 +195,10 @@ function getOrCreateCacheRolloutState(key: string): CacheRolloutState {
 }
 
 function resolveRolloutGateStatus(params: {
-    circuitBreakerWasOpenAtStart: boolean
+    circuitBreakerOpen: boolean
     usedCacheRequest: boolean
 }): 'observe-only' | 'enabled' | 'disabled' {
-    if (params.circuitBreakerWasOpenAtStart) return 'disabled'
+    if (params.circuitBreakerOpen) return 'disabled'
     return params.usedCacheRequest ? 'enabled' : 'observe-only'
 }
 
@@ -257,7 +257,6 @@ export async function createAIRuntime(
                     agentType: runCtx.agentType,
                 }),
             )
-            const circuitBreakerWasOpenAtStart = rolloutState.disabled
             const providerOptions = buildProviderOptions(assembledBase.resolved)
             const resolvedMaxOutputTokens = resolveMaxOutputTokens(
                 assembledBase.resolved,
@@ -332,9 +331,16 @@ export async function createAIRuntime(
                 providerOptions: assembled.providerOptions,
             }
             let providerCacheRequest = fallbackProviderCacheRequest
+            const shouldUseCacheRequest = Boolean(
+                cachePlan &&
+                    !cacheDisabledReason &&
+                    cachePlan.eligibility.providerSupportsPromptCache &&
+                    cachePlan.eligibility.cacheExpected,
+            )
+            let preparedCacheRequest = false
             let usedCacheRequest = false
 
-            if (cachePlan && !cacheDisabledReason) {
+            if (shouldUseCacheRequest) {
                 try {
                     providerCacheRequest = buildProviderCacheRequest({
                         provider,
@@ -343,6 +349,7 @@ export async function createAIRuntime(
                         modelMessages: convertedMessages,
                         providerOptions: assembled.providerOptions,
                     })
+                    preparedCacheRequest = true
                 } catch (error) {
                     rolloutState.adapterFailures += 1
                     if (
@@ -385,15 +392,13 @@ export async function createAIRuntime(
             let streamResult: ChatOutput['streamResult']
             try {
                 streamResult = startStream(providerCacheRequest)
-                usedCacheRequest = providerCacheRequest !== fallbackProviderCacheRequest
+                usedCacheRequest = preparedCacheRequest
                 if (usedCacheRequest) {
                     rolloutState.plannerFailures = 0
                     rolloutState.adapterFailures = 0
                 }
             } catch (error) {
-                const attemptedCacheRequest =
-                    providerCacheRequest !== fallbackProviderCacheRequest
-                if (!attemptedCacheRequest) {
+                if (!preparedCacheRequest) {
                     throw error
                 }
 
@@ -476,7 +481,7 @@ export async function createAIRuntime(
                     providerMetadata,
                 } = await resolveFinalizedData()
                 const rolloutGateStatus = resolveRolloutGateStatus({
-                    circuitBreakerWasOpenAtStart,
+                    circuitBreakerOpen: rolloutState.disabled,
                     usedCacheRequest,
                 })
                 const circuitBreakerState = rolloutState.disabled
