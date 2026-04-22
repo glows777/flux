@@ -13,6 +13,58 @@ import {
     formatSerializableContent,
 } from '@/lib/ai/context-visibility'
 
+const DESKTOP_MEDIA_QUERY = '(min-width: 768px)'
+
+function useMatchesMediaQuery(query: string) {
+    const getMatches = () =>
+        typeof window !== 'undefined' &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia(query).matches
+
+    const [matches, setMatches] = useState(getMatches)
+
+    useEffect(() => {
+        if (typeof window === 'undefined') {
+            return
+        }
+
+        const mediaQuery = window.matchMedia(query)
+        const handleChange = (event: MediaQueryListEvent) => {
+            setMatches(event.matches)
+        }
+
+        setMatches(mediaQuery.matches)
+        mediaQuery.addEventListener('change', handleChange)
+
+        return () => mediaQuery.removeEventListener('change', handleChange)
+    }, [query])
+
+    return matches
+}
+
+function formatFlagLabel(value: boolean | undefined) {
+    if (value === true) return 'Included'
+    if (value === false) return 'Excluded'
+    return null
+}
+
+function SegmentMetadata({
+    label,
+    value,
+}: {
+    readonly label: string
+    readonly value: string | number
+}) {
+    return (
+        <div className='rounded-lg border border-white/6 bg-white/[0.03] px-3 py-2'>
+            <p className='text-[11px] uppercase tracking-[0.16em] text-slate-500'>
+                {label}
+            </p>
+            <p className='mt-1 text-xs text-slate-200'>{value}</p>
+        </div>
+    )
+}
+
 function JsonBlock({
     value,
     emptyLabel = '—',
@@ -51,6 +103,20 @@ function SegmentCard({
     readonly segment: MessageContextSegment
     readonly defaultOpen: boolean
 }) {
+    const inclusionLabel = formatFlagLabel(segment.included)
+    const metadata = [
+        { label: 'Source', value: formatSegmentSource(segment.source) },
+        { label: 'Priority', value: segment.priority },
+        { label: 'Cacheability', value: segment.cacheability },
+        { label: 'Compactability', value: segment.compactability },
+        ...(inclusionLabel
+            ? [{ label: 'Visibility', value: inclusionLabel }]
+            : []),
+        ...(segment.finalOrder != null
+            ? [{ label: 'Final order', value: segment.finalOrder }]
+            : []),
+    ]
+
     return (
         <details
             open={defaultOpen}
@@ -74,7 +140,16 @@ function SegmentCard({
                     ) : null}
                 </div>
             </summary>
-            <div className='mt-3'>
+            <div className='mt-3 space-y-3'>
+                <div className='grid gap-2 sm:grid-cols-2'>
+                    {metadata.map((item) => (
+                        <SegmentMetadata
+                            key={`${segment.id}-${item.label}`}
+                            label={item.label}
+                            value={item.value}
+                        />
+                    ))}
+                </div>
                 <JsonBlock value={segment.payload} />
             </div>
         </details>
@@ -99,6 +174,7 @@ export function MessageContextDetailSheet({
     const [isRawOpen, setIsRawOpen] = useState(false)
     const titleId = useId()
     const rawInspectId = useId()
+    const isDesktop = useMatchesMediaQuery(DESKTOP_MEDIA_QUERY)
 
     useEffect(() => {
         setIsRawOpen(false)
@@ -136,7 +212,7 @@ export function MessageContextDetailSheet({
 
             <aside
                 role='dialog'
-                aria-modal='true'
+                aria-modal={isDesktop ? undefined : 'true'}
                 aria-labelledby={titleId}
                 className='fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto border-t border-white/10 bg-[#050505] p-4 text-slate-200 shadow-[-1px_0_0_rgba(255,255,255,0.05)] md:static md:inset-auto md:w-[clamp(420px,36vw,480px)] md:border-l md:border-t-0'
             >

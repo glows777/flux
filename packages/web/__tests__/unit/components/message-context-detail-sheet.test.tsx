@@ -1,7 +1,25 @@
-import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MessageContextDetailSheet } from '@/components/chat/messages/MessageContextDetailSheet'
 import type { MessageContextState } from '@/lib/ai/context-visibility'
+
+let matchesDesktop = true
+
+function installMatchMediaMock() {
+    Object.defineProperty(window, 'matchMedia', {
+        writable: true,
+        value: mock((query: string) => ({
+            matches: query === '(min-width: 768px)' ? matchesDesktop : false,
+            media: query,
+            onchange: null,
+            addListener: () => {},
+            removeListener: () => {},
+            addEventListener: () => {},
+            removeEventListener: () => {},
+            dispatchEvent: () => false,
+        })),
+    })
+}
 
 const readyState: MessageContextState = {
     status: 'ready',
@@ -43,10 +61,15 @@ const readyState: MessageContextState = {
                                 },
                             ],
                         },
-                        source: { plugin: 'session' },
+                        source: {
+                            plugin: 'session',
+                            origin: 'recent window',
+                        },
                         priority: 'high',
                         cacheability: 'session',
                         compactability: 'summarize',
+                        included: true,
+                        finalOrder: 1,
                         estimatedTokens: 480,
                     },
                     {
@@ -61,6 +84,7 @@ const readyState: MessageContextState = {
                         priority: 'medium',
                         cacheability: 'stable',
                         compactability: 'summarize',
+                        included: false,
                         estimatedTokens: 320,
                     },
                     {
@@ -139,6 +163,11 @@ afterEach(() => {
     cleanup()
 })
 
+beforeEach(() => {
+    matchesDesktop = true
+    installMatchMediaMock()
+})
+
 describe('MessageContextDetailSheet', () => {
     it('renders the expected section order', () => {
         render(
@@ -151,9 +180,8 @@ describe('MessageContextDetailSheet', () => {
         )
 
         expect(screen.getByText('Context details')).toBeDefined()
-        expect(
-            screen.getByRole('dialog', { name: 'Context details' }),
-        ).toBeDefined()
+        const sheet = screen.getByRole('dialog', { name: 'Context details' })
+        expect(sheet?.getAttribute('aria-modal')).toBeNull()
         const headings = screen
             .getAllByRole('heading', { level: 2 })
             .map((node) => node.textContent)
@@ -190,6 +218,62 @@ describe('MessageContextDetailSheet', () => {
             'Runtime context',
             'System',
         ])
+    })
+
+    it('uses dialog semantics on narrow screens only', () => {
+        matchesDesktop = false
+        installMatchMediaMock()
+
+        render(
+            <MessageContextDetailSheet
+                state={readyState}
+                isOpen={true}
+                messageId='assistant-1'
+                onClose={() => {}}
+            />,
+        )
+
+        expect(
+            screen.getByRole('dialog', { name: 'Context details' }),
+        ).toBeDefined()
+        expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe(
+            'true',
+        )
+    })
+
+    it('shows restored segment metadata in the card body', () => {
+        render(
+            <MessageContextDetailSheet
+                state={readyState}
+                isOpen={true}
+                messageId='assistant-1'
+                onClose={() => {}}
+            />,
+        )
+
+        const recentCard = screen.getByText('recent-1').closest('details')
+        const memoryCard = screen.getByText('memory-1').closest('details')
+
+        expect(recentCard).toBeDefined()
+        expect(memoryCard).toBeDefined()
+        expect(within(recentCard as HTMLElement).getByText('Priority')).toBeDefined()
+        expect(
+            within(recentCard as HTMLElement).getByText('Cacheability'),
+        ).toBeDefined()
+        expect(
+            within(recentCard as HTMLElement).getByText('Compactability'),
+        ).toBeDefined()
+        expect(within(recentCard as HTMLElement).getByText('Included')).toBeDefined()
+        expect(
+            within(recentCard as HTMLElement).getByText('Final order'),
+        ).toBeDefined()
+        expect(within(recentCard as HTMLElement).getByText('Source')).toBeDefined()
+        expect(
+            within(recentCard as HTMLElement).getAllByText(
+                'session · recent window',
+            ).length,
+        ).toBeGreaterThanOrEqual(2)
+        expect(within(memoryCard as HTMLElement).getByText('Excluded')).toBeDefined()
     })
 
     it('keeps raw inspect collapsed until opened', () => {
