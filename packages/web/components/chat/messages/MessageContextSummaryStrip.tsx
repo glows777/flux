@@ -48,8 +48,11 @@ export function MessageContextSummaryStrip({
     onRetry,
 }: MessageContextSummaryStripProps) {
     const model = buildMessageContextSummaryModel(state, { isSelected })
-    const onClick =
-        state.status === 'error' && onRetry != null ? onRetry : onOpen
+    const isError = state.status === 'error'
+    const canRetry = !isError || onRetry != null
+    const onClick = isError
+        ? onRetry ?? undefined
+        : onOpen
 
     return (
         <div
@@ -73,9 +76,13 @@ export function MessageContextSummaryStrip({
             </div>
             <button
                 type='button'
+                aria-pressed={isSelected}
+                disabled={!canRetry}
                 onClick={onClick}
                 className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    state.status === 'error'
+                    !canRetry
+                        ? 'cursor-not-allowed border-rose-500/10 bg-rose-500/5 text-rose-300/60'
+                        : state.status === 'error'
                         ? 'border-rose-500/20 bg-rose-500/10 text-rose-200 hover:border-rose-400/30 hover:bg-rose-500/15'
                         : isSelected
                           ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/15'

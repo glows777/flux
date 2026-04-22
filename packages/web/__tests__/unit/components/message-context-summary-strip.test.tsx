@@ -147,6 +147,11 @@ describe('MessageContextSummaryStrip', () => {
         )
 
         expect(screen.getByRole('button', { name: 'Viewing' })).toBeDefined()
+        expect(
+            screen.getByRole('button', { name: 'Viewing' }).getAttribute(
+                'aria-pressed',
+            ),
+        ).toBe('true')
     })
 
     it('routes error state to the retry action', () => {
@@ -162,5 +167,21 @@ describe('MessageContextSummaryStrip', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
         expect(onRetry).toHaveBeenCalledTimes(1)
+    })
+
+    it('disables the retry action when no retry handler exists', () => {
+        const onOpen = mock(() => {})
+        render(
+            <MessageContextSummaryStrip
+                state={{ status: 'error', error: 'boom' }}
+                isSelected={false}
+                onOpen={onOpen}
+            />,
+        )
+
+        const retryButton = screen.getByRole('button', { name: 'Retry' })
+        expect(retryButton.getAttribute('disabled')).toBe('')
+        fireEvent.click(retryButton)
+        expect(onOpen).toHaveBeenCalledTimes(0)
     })
 })
