@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import * as React from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MessageContextDetailSheet } from '@/components/chat/messages/MessageContextDetailSheet'
 import type { MessageContextState } from '@/lib/ai/context-visibility'
@@ -269,6 +270,44 @@ describe('MessageContextDetailSheet', () => {
         expect(screen.queryByRole('complementary')).toBeNull()
     })
 
+    it('moves focus into the mobile dialog and restores it on close', () => {
+        matchesDesktop = false
+        installMatchMediaMock()
+
+        function Harness() {
+            const [isOpen, setIsOpen] = React.useState(false)
+
+            return (
+                <div>
+                    <button type='button' onClick={() => setIsOpen(true)}>
+                        Open context
+                    </button>
+                    <MessageContextDetailSheet
+                        state={readyState}
+                        isOpen={isOpen}
+                        messageId='assistant-1'
+                        onClose={() => setIsOpen(false)}
+                    />
+                </div>
+            )
+        }
+
+        render(<Harness />)
+
+        const openButton = screen.getByRole('button', { name: 'Open context' })
+        openButton.focus()
+        fireEvent.click(openButton)
+
+        const closeButton = screen.getByRole('button', {
+            name: 'Close context details',
+        })
+        expect(document.activeElement).toBe(closeButton)
+
+        fireEvent.click(closeButton)
+        expect(screen.queryByRole('dialog')).toBeNull()
+        expect(document.activeElement).toBe(openButton)
+    })
+
     it('shows restored segment metadata in the card body', () => {
         render(
             <MessageContextDetailSheet
@@ -329,6 +368,52 @@ describe('MessageContextDetailSheet', () => {
         expect(screen.getByText('Resolved params candidates')).toBeDefined()
         expect(screen.getAllByText('Tool request context')).toHaveLength(2)
         expect(screen.getByText('Result snapshot')).toBeDefined()
+    })
+
+    it('preserves segment disclosure state across rerenders while mounted', () => {
+        const { rerender } = render(
+            <MessageContextDetailSheet
+                state={readyState}
+                isOpen={true}
+                messageId='assistant-1'
+                onClose={() => {}}
+            />,
+        )
+
+        const runtimeCard = screen.getByText('runtime-1').closest('details')
+        expect(runtimeCard).toBeDefined()
+        expect(runtimeCard?.hasAttribute('open')).toBe(true)
+
+        fireEvent.click(screen.getByText('runtime-1'))
+        expect(runtimeCard?.hasAttribute('open')).toBe(false)
+
+        rerender(
+            <MessageContextDetailSheet
+                state={{
+                    ...readyState,
+                    record: {
+                        ...readyState.record,
+                        manifest: {
+                            ...readyState.record.manifest,
+                            modelRequest: {
+                                ...readyState.record.manifest.modelRequest,
+                                maxOutputTokens: 1024,
+                            },
+                        },
+                    },
+                }}
+                isOpen={true}
+                messageId='assistant-1'
+                onClose={() => {}}
+            />,
+        )
+
+        expect(
+            screen
+                .getByText('runtime-1')
+                .closest('details')
+                ?.hasAttribute('open'),
+        ).toBe(false)
     })
 
     it('restores request diagnostics for advanced debugging', () => {

@@ -587,7 +587,10 @@ export function ChatPage() {
                             />
                         ) : (
                             <div className='max-w-5xl w-[85%] mx-auto px-6 py-6 space-y-4'>
-                                {messages.map((msg, index) => {
+                                {(() => {
+                                    let assistantMessageCount = 0
+
+                                    return messages.map((msg, index) => {
                                     const cutoffIndex =
                                         messages.length - TRUNCATE_LIMIT
                                     const showDivider =
@@ -610,6 +613,7 @@ export function ChatPage() {
                                             />
                                         )
                                     } else if (msg.role === 'assistant') {
+                                        assistantMessageCount += 1
                                         const isLast =
                                             index === messages.length - 1
                                         const contextState =
@@ -618,6 +622,7 @@ export function ChatPage() {
                                             }
                                         const isContextOpen =
                                             activeContextMessageId === msg.id
+                                        const actionLabel = `assistant message ${assistantMessageCount}`
                                         messageNode = (
                                             <div
                                                 key={msg.id}
@@ -631,6 +636,7 @@ export function ChatPage() {
                                                 <MessageContextSummaryStrip
                                                     state={contextState}
                                                     isSelected={isContextOpen}
+                                                    actionLabel={actionLabel}
                                                     onOpen={() =>
                                                         handleOpenContextMessage(
                                                             msg.id,
@@ -667,7 +673,8 @@ export function ChatPage() {
                                         )
                                     }
                                     return messageNode
-                                })}
+                                    })
+                                })()}
 
                                 {error ? (
                                     <ErrorBanner

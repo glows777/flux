@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronRight, RefreshCcw, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type {
     MessageContextSegment,
     MessageContextState,
@@ -14,6 +14,14 @@ import {
 } from '@/lib/ai/context-visibility'
 
 const DESKTOP_MEDIA_QUERY = '(min-width: 768px)'
+const FOCUSABLE_SELECTOR = [
+    'button:not([disabled])',
+    '[href]',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+].join(', ')
 
 function useMatchesMediaQuery(query: string) {
     const getMatches = () =>
@@ -117,10 +125,12 @@ function DiagnosticCard({
 
 function SegmentCard({
     segment,
-    defaultOpen,
+    isOpen,
+    onOpenChange,
 }: {
     readonly segment: MessageContextSegment
-    readonly defaultOpen: boolean
+    readonly isOpen: boolean
+    readonly onOpenChange: (nextOpen: boolean) => void
 }) {
     const inclusionLabel = formatFlagLabel(segment.included)
     const metadata = [
@@ -138,7 +148,13 @@ function SegmentCard({
 
     return (
         <details
-            open={defaultOpen}
+            open={isOpen}
+            onToggle={(event) => {
+                const nextOpen = event.currentTarget.open
+                if (nextOpen !== isOpen) {
+                    onOpenChange(nextOpen)
+                }
+            }}
             className='rounded-xl border border-white/6 bg-black/20 p-3'
         >
             <summary className='cursor-pointer list-none'>
@@ -191,13 +207,66 @@ export function MessageContextDetailSheet({
     onRetry,
 }: MessageContextDetailSheetProps) {
     const [isRawOpen, setIsRawOpen] = useState(false)
+    const [segmentOpenState, setSegmentOpenState] = useState<
+        Record<string, boolean>
+    >({})
     const titleId = useId()
     const rawInspectId = useId()
     const isDesktop = useMatchesMediaQuery(DESKTOP_MEDIA_QUERY)
+    const sheetRef = useRef<HTMLElement | null>(null)
+    const closeButtonRef = useRef<HTMLButtonElement | null>(null)
+    const previousFocusRef = useRef<HTMLElement | null>(null)
+
+    const groups = state.status === 'ready' ? buildSegmentGroups(state.record) : []
+    const segmentIdsSignature =
+        state.status === 'ready'
+            ? groups
+                  .flatMap((group) =>
+                      group.segments.map(
+                          (segment) =>
+                              `${group.key}:${segment.id}:${group.collapsedByDefault ? 'closed' : 'open'}`,
+                      ),
+                  )
+                  .join('|')
+            : ''
 
     useEffect(() => {
         setIsRawOpen(false)
     }, [messageId, isOpen])
+
+    useEffect(() => {
+        if (!isOpen || messageId == null || state.status !== 'ready') {
+            setSegmentOpenState((prev) =>
+                Object.keys(prev).length === 0 ? prev : {},
+            )
+            return
+        }
+
+        setSegmentOpenState((prev) => {
+            const nextState = { ...prev }
+            const nextSegmentIds = new Set<string>()
+            let changed = false
+
+            for (const group of groups) {
+                for (const segment of group.segments) {
+                    nextSegmentIds.add(segment.id)
+                    if (nextState[segment.id] == null) {
+                        nextState[segment.id] = !group.collapsedByDefault
+                        changed = true
+                    }
+                }
+            }
+
+            for (const segmentId of Object.keys(nextState)) {
+                if (!nextSegmentIds.has(segmentId)) {
+                    delete nextState[segmentId]
+                    changed = true
+                }
+            }
+
+            return changed ? nextState : prev
+        })
+    }, [isOpen, messageId, segmentIdsSignature, state.status])
 
     useEffect(() => {
         if (!isOpen) {
@@ -214,11 +283,79 @@ export function MessageContextDetailSheet({
         return () => window.removeEventListener('keydown', handleKeyDown)
     }, [isOpen, onClose])
 
+    useEffect(() => {
+        if (!isOpen || isDesktop) {
+            return
+        }
+
+        previousFocusRef.current =
+            document.activeElement instanceof HTMLElement
+                ? document.activeElement
+                : null
+
+        const focusTarget = closeButtonRef.current ?? sheetRef.current
+        focusTarget?.focus()
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Tab') {
+                return
+            }
+
+            const sheet = sheetRef.current
+            if (!sheet) {
+                return
+            }
+
+            const focusableElements = Array.from(
+                sheet.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+            )
+            const tabbableElements = focusableElements.filter(
+                (element) =>
+                    !element.hasAttribute('disabled') &&
+                    element.getAttribute('aria-hidden') !== 'true',
+            )
+
+            if (tabbableElements.length === 0) {
+                event.preventDefault()
+                sheet.focus()
+                return
+            }
+
+            const firstElement = tabbableElements[0]
+            const lastElement = tabbableElements[tabbableElements.length - 1]
+            const activeElement = document.activeElement
+
+            if (event.shiftKey) {
+                if (activeElement === firstElement || activeElement === sheet) {
+                    event.preventDefault()
+                    lastElement?.focus()
+                }
+                return
+            }
+
+            if (activeElement === lastElement) {
+                event.preventDefault()
+                firstElement?.focus()
+            }
+        }
+
+        window.addEventListener('keydown', handleKeyDown)
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown)
+
+            const previousFocus = previousFocusRef.current
+            if (previousFocus?.isConnected) {
+                previousFocus.focus()
+            }
+            previousFocusRef.current = null
+        }
+    }, [isDesktop, isOpen])
+
     if (!isOpen || messageId == null) {
         return null
     }
 
-    const groups = state.status === 'ready' ? buildSegmentGroups(state.record) : []
     const isModal = !isDesktop
 
     return (
@@ -233,9 +370,11 @@ export function MessageContextDetailSheet({
             ) : null}
 
             <aside
+                ref={sheetRef}
                 role={isModal ? 'dialog' : 'complementary'}
                 aria-modal={isModal ? 'true' : undefined}
                 aria-labelledby={titleId}
+                tabIndex={-1}
                 className='fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto border-t border-white/10 bg-[#050505] p-4 text-slate-200 shadow-[-1px_0_0_rgba(255,255,255,0.05)] md:static md:inset-auto md:w-[clamp(420px,36vw,480px)] md:border-l md:border-t-0'
             >
                 <div className='sticky top-0 z-10 -mx-4 -mt-4 border-b border-white/8 bg-[#050505]/95 px-4 py-4 backdrop-blur'>
@@ -278,6 +417,7 @@ export function MessageContextDetailSheet({
                             ) : null}
                         </div>
                         <button
+                            ref={closeButtonRef}
                             type='button'
                             aria-label='Close context details'
                             onClick={onClose}
@@ -350,8 +490,19 @@ export function MessageContextDetailSheet({
                                                 <SegmentCard
                                                     key={segment.id}
                                                     segment={segment}
-                                                    defaultOpen={
-                                                        !group.collapsedByDefault
+                                                    isOpen={
+                                                        segmentOpenState[
+                                                            segment.id
+                                                        ] ?? !group.collapsedByDefault
+                                                    }
+                                                    onOpenChange={(nextOpen) =>
+                                                        setSegmentOpenState(
+                                                            (prev) => ({
+                                                                ...prev,
+                                                                [segment.id]:
+                                                                    nextOpen,
+                                                            }),
+                                                        )
                                                     }
                                                 />
                                             ))}

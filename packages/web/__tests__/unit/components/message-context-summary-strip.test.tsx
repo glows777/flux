@@ -128,6 +128,7 @@ describe('MessageContextSummaryStrip', () => {
                 state={readyState}
                 isSelected={false}
                 onOpen={onOpen}
+                actionLabel='assistant message 2'
             />,
         )
 
@@ -137,7 +138,11 @@ describe('MessageContextSummaryStrip', () => {
         expect(screen.getByText('2 tools')).toBeDefined()
         expect(screen.getByText('4 segments · ~1.2k input')).toBeDefined()
 
-        fireEvent.click(screen.getByRole('button', { name: 'View context' }))
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'View context for assistant message 2',
+            }),
+        )
         expect(onOpen).toHaveBeenCalledTimes(1)
     })
 
@@ -147,14 +152,21 @@ describe('MessageContextSummaryStrip', () => {
                 state={readyState}
                 isSelected={true}
                 onOpen={() => {}}
+                actionLabel='assistant message 2'
             />,
         )
 
-        expect(screen.getByRole('button', { name: 'Viewing' })).toBeDefined()
         expect(
-            screen.getByRole('button', { name: 'Viewing' }).getAttribute(
-                'aria-pressed',
-            ),
+            screen.getByRole('button', {
+                name: 'Viewing context for assistant message 2',
+            }),
+        ).toBeDefined()
+        expect(
+            screen
+                .getByRole('button', {
+                    name: 'Viewing context for assistant message 2',
+                })
+                .getAttribute('aria-pressed'),
         ).toBe('true')
     })
 
@@ -166,10 +178,15 @@ describe('MessageContextSummaryStrip', () => {
                 isSelected={false}
                 onOpen={() => {}}
                 onRetry={onRetry}
+                actionLabel='assistant message 4'
             />,
         )
 
-        fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: 'Retry loading context for assistant message 4',
+            }),
+        )
         expect(onRetry).toHaveBeenCalledTimes(1)
     })
 
@@ -180,10 +197,13 @@ describe('MessageContextSummaryStrip', () => {
                 state={{ status: 'error', error: 'boom' }}
                 isSelected={false}
                 onOpen={onOpen}
+                actionLabel='assistant message 4'
             />,
         )
 
-        const retryButton = screen.getByRole('button', { name: 'Retry' })
+        const retryButton = screen.getByRole('button', {
+            name: 'Retry loading context for assistant message 4',
+        })
         expect(retryButton).toBeDisabled()
         fireEvent.click(retryButton)
         expect(onOpen).toHaveBeenCalledTimes(0)

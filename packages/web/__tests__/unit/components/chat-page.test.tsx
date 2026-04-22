@@ -945,7 +945,7 @@ describe('ChatPage', () => {
         scrollIntoViewMock.mockClear()
 
         const openButtons = screen.getAllByRole('button', {
-            name: 'View context',
+            name: /view context for assistant message/i,
         })
 
         fireEvent.click(openButtons[0] as HTMLElement)
@@ -961,13 +961,73 @@ describe('ChatPage', () => {
         )
 
         fireEvent.click(
-            screen.getAllByRole('button', { name: /view context|viewing/i })[1] as HTMLElement,
+            screen.getAllByRole('button', {
+                name: /view(ing)? context for assistant message/i,
+            })[1] as HTMLElement,
         )
         fireEvent.click(
             screen.getByRole('button', { name: 'Close context details' }),
         )
 
         expect(scrollIntoViewMock).not.toHaveBeenCalled()
+    })
+
+    it('exposes unique context action names for different assistant messages', async () => {
+        chatMessages = [
+            {
+                id: 'message-user-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-1',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'first reply' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-2',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'second reply' }],
+            } as UIMessage,
+        ]
+
+        messageContextResponses[
+            '/api/sessions/session-1/messages/message-assistant-2/context'
+        ] = {
+            body: buildMessageContextResponse('run-2'),
+        }
+
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: chatMessages,
+                                error: null,
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await screen.findByText('first reply')
+
+        expect(
+            screen.getByRole('button', {
+                name: 'View context for assistant message 1',
+            }),
+        ).toBeDefined()
+        expect(
+            screen.getByRole('button', {
+                name: 'View context for assistant message 2',
+            }),
+        ).toBeDefined()
     })
 
     it('opens one shared sheet and reuses cached context across close and reopen', async () => {
@@ -1026,7 +1086,7 @@ describe('ChatPage', () => {
         )
 
         const readyButton = screen.getByRole('button', {
-            name: /view context/i,
+            name: /view context for assistant message 1/i,
         })
         expect(readyButton.getAttribute('aria-pressed')).toBe('false')
         expect(
@@ -1041,7 +1101,9 @@ describe('ChatPage', () => {
         expect(await findContextSheet()).toBeDefined()
         expect(
             screen
-                .getByRole('button', { name: /viewing/i })
+                .getByRole('button', {
+                    name: /viewing context for assistant message 1/i,
+                })
                 .getAttribute('aria-pressed'),
         ).toBe('true')
 
@@ -1055,10 +1117,16 @@ describe('ChatPage', () => {
         )
         expect(
             screen
-                .getByRole('button', { name: /view context/i })
+                .getByRole('button', {
+                    name: /view context for assistant message 1/i,
+                })
                 .getAttribute('aria-pressed'),
         ).toBe('false')
-        fireEvent.click(screen.getByRole('button', { name: /view context/i }))
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: /view context for assistant message 1/i,
+            }),
+        )
         expect(await findContextSheet()).toBeDefined()
         expect(
             screen.getByText(

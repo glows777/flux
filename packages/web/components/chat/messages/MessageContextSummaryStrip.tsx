@@ -8,6 +8,7 @@ export interface MessageContextSummaryStripProps {
     readonly isSelected: boolean
     readonly onOpen: () => void
     readonly onRetry?: () => void
+    readonly actionLabel?: string
 }
 
 function chipToneClassName(
@@ -46,6 +47,7 @@ export function MessageContextSummaryStrip({
     isSelected,
     onOpen,
     onRetry,
+    actionLabel,
 }: MessageContextSummaryStripProps) {
     const model = buildMessageContextSummaryModel(state, { isSelected })
     const isError = state.status === 'error'
@@ -53,6 +55,14 @@ export function MessageContextSummaryStrip({
     const onClick = isError
         ? onRetry ?? undefined
         : onOpen
+    const actionAriaLabel =
+        actionLabel == null
+            ? model.actionLabel
+            : state.status === 'error'
+              ? `Retry loading context for ${actionLabel}`
+              : isSelected
+                ? `Viewing context for ${actionLabel}`
+                : `View context for ${actionLabel}`
 
     return (
         <div
@@ -79,6 +89,7 @@ export function MessageContextSummaryStrip({
                 {...(state.status === 'error'
                     ? {}
                     : { 'aria-pressed': isSelected })}
+                aria-label={actionAriaLabel}
                 disabled={!canRetry}
                 onClick={onClick}
                 className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
