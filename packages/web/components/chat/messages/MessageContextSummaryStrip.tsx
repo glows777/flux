@@ -76,7 +76,9 @@ export function MessageContextSummaryStrip({
             </div>
             <button
                 type='button'
-                aria-pressed={isSelected}
+                {...(state.status === 'error'
+                    ? {}
+                    : { 'aria-pressed': isSelected })}
                 disabled={!canRetry}
                 onClick={onClick}
                 className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${

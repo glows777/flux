@@ -1,5 +1,5 @@
-import { describe, expect, it, mock } from 'bun:test'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, mock } from 'bun:test'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MessageContextSummaryStrip } from '@/components/chat/messages/MessageContextSummaryStrip'
 import type { MessageContextState } from '@/lib/ai/context-visibility'
 
@@ -116,6 +116,10 @@ const readyState: MessageContextState = {
     },
 }
 
+afterEach(() => {
+    cleanup()
+})
+
 describe('MessageContextSummaryStrip', () => {
     it('renders chips, counts, and the view action', () => {
         const onOpen = mock(() => {})
@@ -180,7 +184,7 @@ describe('MessageContextSummaryStrip', () => {
         )
 
         const retryButton = screen.getByRole('button', { name: 'Retry' })
-        expect(retryButton.getAttribute('disabled')).toBe('')
+        expect(retryButton).toBeDisabled()
         fireEvent.click(retryButton)
         expect(onOpen).toHaveBeenCalledTimes(0)
     })
