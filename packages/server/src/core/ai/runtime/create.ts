@@ -55,6 +55,10 @@ interface CacheRolloutState {
 
 const cacheRolloutStates = new Map<string, CacheRolloutState>()
 
+export function __resetCacheRolloutStatesForTests(): void {
+    cacheRolloutStates.clear()
+}
+
 function createRunId(): string {
     if (
         typeof crypto !== 'undefined' &&
@@ -191,11 +195,11 @@ function getOrCreateCacheRolloutState(key: string): CacheRolloutState {
 }
 
 function resolveRolloutGateStatus(params: {
-    rolloutState: CacheRolloutState
-    cachePlan: ReturnType<typeof buildCachePlan> | undefined
+    circuitBreakerWasOpenAtStart: boolean
+    usedCacheRequest: boolean
 }): 'observe-only' | 'enabled' | 'disabled' {
-    if (params.rolloutState.disabled) return 'disabled'
-    return params.cachePlan ? 'enabled' : 'observe-only'
+    if (params.circuitBreakerWasOpenAtStart) return 'disabled'
+    return params.usedCacheRequest ? 'enabled' : 'observe-only'
 }
 
 export async function createAIRuntime(
@@ -253,6 +257,7 @@ export async function createAIRuntime(
                     agentType: runCtx.agentType,
                 }),
             )
+            const circuitBreakerWasOpenAtStart = rolloutState.disabled
             const providerOptions = buildProviderOptions(assembledBase.resolved)
             const resolvedMaxOutputTokens = resolveMaxOutputTokens(
                 assembledBase.resolved,
@@ -327,6 +332,7 @@ export async function createAIRuntime(
                 providerOptions: assembled.providerOptions,
             }
             let providerCacheRequest = fallbackProviderCacheRequest
+            let usedCacheRequest = false
 
             if (cachePlan && !cacheDisabledReason) {
                 try {
@@ -337,8 +343,6 @@ export async function createAIRuntime(
                         modelMessages: convertedMessages,
                         providerOptions: assembled.providerOptions,
                     })
-                    rolloutState.plannerFailures = 0
-                    rolloutState.adapterFailures = 0
                 } catch (error) {
                     rolloutState.adapterFailures += 1
                     if (
@@ -357,6 +361,58 @@ export async function createAIRuntime(
                 }
             }
 
+            function startStream(
+                request: typeof fallbackProviderCacheRequest,
+            ): ChatOutput['streamResult'] {
+                return streamText({
+                    model,
+                    system: request.system,
+                    messages: request.messages,
+                    tools: assembled.aiTools as never,
+                    stopWhen: stepCountIs(
+                        assembled.resolved.maxSteps ?? baseParams.maxSteps,
+                    ) as never,
+                    temperature: assembled.resolved.temperature,
+                    ...(assembled.resolvedMaxOutputTokens != null
+                        ? { maxOutputTokens: assembled.resolvedMaxOutputTokens }
+                        : {}),
+                    ...(Object.keys(request.providerOptions).length > 0
+                        ? { providerOptions: request.providerOptions }
+                        : {}),
+                } as never) as unknown as ChatOutput['streamResult']
+            }
+
+            let streamResult: ChatOutput['streamResult']
+            try {
+                streamResult = startStream(providerCacheRequest)
+                usedCacheRequest = providerCacheRequest !== fallbackProviderCacheRequest
+                if (usedCacheRequest) {
+                    rolloutState.plannerFailures = 0
+                    rolloutState.adapterFailures = 0
+                }
+            } catch (error) {
+                const attemptedCacheRequest =
+                    providerCacheRequest !== fallbackProviderCacheRequest
+                if (!attemptedCacheRequest) {
+                    throw error
+                }
+
+                rolloutState.adapterFailures += 1
+                if (rolloutState.adapterFailures >= CACHE_FAILURE_THRESHOLD) {
+                    rolloutState.disabled = true
+                    cacheDisabledReason = 'circuit_breaker_open'
+                } else {
+                    cacheDisabledReason = 'cache_request_failed'
+                }
+                console.warn(
+                    '[ai-runtime][cache request] failed; retrying without provider cache request',
+                    error,
+                )
+
+                providerCacheRequest = fallbackProviderCacheRequest
+                streamResult = startStream(providerCacheRequest)
+            }
+
             manifest = attachModelRequestSnapshot(manifest, {
                 systemText: (providerCacheRequest.system ?? '') as never,
                 modelMessages: providerCacheRequest.messages as never,
@@ -365,23 +421,6 @@ export async function createAIRuntime(
                 maxOutputTokens: assembled.resolvedMaxOutputTokens,
                 providerOptions: providerCacheRequest.providerOptions,
             })
-
-            const streamResult = streamText({
-                model,
-                system: providerCacheRequest.system,
-                messages: providerCacheRequest.messages,
-                tools: assembled.aiTools as never,
-                stopWhen: stepCountIs(
-                    assembled.resolved.maxSteps ?? baseParams.maxSteps,
-                ) as never,
-                temperature: assembled.resolved.temperature,
-                ...(assembled.resolvedMaxOutputTokens != null
-                    ? { maxOutputTokens: assembled.resolvedMaxOutputTokens }
-                    : {}),
-                ...(Object.keys(providerCacheRequest.providerOptions).length > 0
-                    ? { providerOptions: providerCacheRequest.providerOptions }
-                    : {}),
-            } as never) as unknown as ChatOutput['streamResult']
 
             let finalized = false
             let finalizedData:
@@ -437,8 +476,8 @@ export async function createAIRuntime(
                     providerMetadata,
                 } = await resolveFinalizedData()
                 const rolloutGateStatus = resolveRolloutGateStatus({
-                    rolloutState,
-                    cachePlan,
+                    circuitBreakerWasOpenAtStart,
+                    usedCacheRequest,
                 })
                 const circuitBreakerState = rolloutState.disabled
                     ? 'open'

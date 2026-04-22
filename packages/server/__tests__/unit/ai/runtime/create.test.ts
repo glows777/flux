@@ -130,8 +130,12 @@ mock.module('../../../../src/core/ai/runtime/provider-cache', () => ({
     normalizeProviderCacheResult: mockNormalizeProviderCacheResult,
 }))
 
+async function loadCreateRuntimeModule() {
+    return import('../../../../src/core/ai/runtime/create')
+}
+
 async function loadCreateAIRuntime() {
-    const mod = await import('../../../../src/core/ai/runtime/create')
+    const mod = await loadCreateRuntimeModule()
     return mod.createAIRuntime
 }
 
@@ -141,7 +145,7 @@ let originalConsoleError: typeof console.error
 let mockConsoleWarn: ReturnType<typeof mock>
 let mockConsoleError: ReturnType<typeof mock>
 
-beforeEach(() => {
+beforeEach(async () => {
     mockConvertToModelMessages.mockClear()
     mockStepCountIs.mockClear()
     mockStreamText.mockClear()
@@ -185,6 +189,11 @@ beforeEach(() => {
     mockConsoleError = mock(() => {})
     console.warn = mockConsoleWarn as typeof console.warn
     console.error = mockConsoleError as typeof console.error
+
+    const runtimeModule = (await loadCreateRuntimeModule()) as {
+        __resetCacheRolloutStatesForTests?: () => void
+    }
+    runtimeModule.__resetCacheRolloutStatesForTests?.()
 })
 
 afterEach(() => {
@@ -659,6 +668,167 @@ describe('createAIRuntime', () => {
         expect(String(mockConsoleWarn.mock.calls[0]?.[0] ?? '')).toContain(
             'cache planning',
         )
+    })
+
+    test('chat reports observe-only when cache shaping falls back after an adapter failure', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const cachePlan = createCachePlanFixture()
+
+        mockBuildCachePlan.mockImplementationOnce(() => cachePlan)
+        mockBuildProviderCacheRequest.mockImplementationOnce(() => {
+            throw new Error('adapter blew up')
+        })
+
+        const runtime = await createAIRuntime({
+            model: { modelId: 'claude-3-7-sonnet' } as never,
+            plugins: [
+                {
+                    name: 'prompt',
+                    contribute: () => ({
+                        segments: [
+                            {
+                                id: 'base',
+                                target: 'system',
+                                kind: 'system.base',
+                                payload: {
+                                    format: 'text',
+                                    text: 'base prompt',
+                                },
+                                source: { plugin: 'prompt' },
+                                priority: 'required',
+                                cacheability: 'stable',
+                                compactability: 'preserve',
+                            },
+                        ],
+                    }),
+                },
+            ],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const consumed = await output.consumeStream()
+
+        expect(consumed.text).toBe('mock text')
+        expect(consumed.contextManifest.cachePlan).toEqual(cachePlan)
+        expect(consumed.contextManifest.result?.cacheResult).toMatchObject({
+            cacheObserved: false,
+            cacheDisabledReason: 'cache_adapter_failed',
+            rolloutGateStatus: 'observe-only',
+            circuitBreakerState: 'closed',
+        })
+        expect(mockBuildProviderCacheRequest).toHaveBeenCalledTimes(1)
+        expect(mockStreamText).toHaveBeenCalledTimes(1)
+        expect(mockStreamText.mock.calls[0]![0]).toMatchObject({
+            system: 'base prompt',
+        })
+    })
+
+    test('chat retries once without cache when the cache-shaped request is rejected', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const cachePlan = createCachePlanFixture()
+        const rewrittenMessages = [
+            {
+                role: 'system',
+                content: 'cached stable prompt',
+                providerOptions: {
+                    anthropic: { cacheControl: { type: 'ephemeral' } },
+                },
+            },
+            {
+                role: 'user',
+                content: 'hello',
+            },
+        ]
+
+        mockBuildCachePlan.mockImplementationOnce(() => cachePlan)
+        mockBuildProviderCacheRequest.mockImplementationOnce(() => ({
+            system: undefined,
+            messages: rewrittenMessages,
+            providerOptions: {
+                anthropic: {
+                    thinking: { type: 'enabled', budgetTokens: 256 },
+                },
+            },
+        }))
+        mockStreamText.mockImplementationOnce(() => {
+            throw new Error('provider rejected cache request')
+        })
+        mockStreamText.mockImplementationOnce(() =>
+            createMockStreamResult({ text: 'fallback stream text' }),
+        )
+
+        const runtime = await createAIRuntime({
+            model: { modelId: 'claude-3-7-sonnet' } as never,
+            defaults: { thinkingBudget: 256 },
+            plugins: [
+                {
+                    name: 'prompt',
+                    contribute: () => ({
+                        segments: [
+                            {
+                                id: 'base',
+                                target: 'system',
+                                kind: 'system.base',
+                                payload: {
+                                    format: 'text',
+                                    text: 'base prompt',
+                                },
+                                source: { plugin: 'prompt' },
+                                priority: 'required',
+                                cacheability: 'stable',
+                                compactability: 'preserve',
+                            },
+                        ],
+                    }),
+                },
+            ],
+        })
+
+        const output = await runtime.chat({
+            messages: [
+                {
+                    id: 'u1',
+                    role: 'user',
+                    parts: [{ type: 'text', text: 'hello' }],
+                },
+            ],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const consumed = await output.consumeStream()
+
+        expect(consumed.text).toBe('fallback stream text')
+        expect(consumed.contextManifest.result?.cacheResult).toMatchObject({
+            cacheObserved: false,
+            cacheDisabledReason: 'cache_request_failed',
+            rolloutGateStatus: 'observe-only',
+            circuitBreakerState: 'closed',
+        })
+        expect(mockBuildProviderCacheRequest).toHaveBeenCalledTimes(1)
+        expect(mockStreamText).toHaveBeenCalledTimes(2)
+        expect(mockStreamText.mock.calls[0]![0]).toMatchObject({
+            system: undefined,
+            messages: rewrittenMessages,
+        })
+        expect(mockStreamText.mock.calls[1]![0]).toMatchObject({
+            system: 'base prompt',
+            messages: [
+                {
+                    id: 'u1',
+                    role: 'user',
+                    parts: [{ type: 'text', text: 'hello' }],
+                },
+            ],
+            providerOptions: {
+                anthropic: {
+                    thinking: { type: 'enabled', budgetTokens: 256 },
+                },
+            },
+        })
     })
 
     test('opens the cache rollout guard after repeated planner failures', async () => {
