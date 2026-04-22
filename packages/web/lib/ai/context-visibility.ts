@@ -240,11 +240,11 @@ export function formatSerializableContent(value: unknown): string {
     return stringifyJson(value)
 }
 
-function formatCompactTokenEstimate(tokens: number): string {
+export function formatCompactTokenEstimate(tokens: number): string {
     return `~${formatTokenEstimate(tokens)} input`
 }
 
-function hasSegmentKind(
+export function hasSegmentKind(
     record: MessageContextRecord,
     kind: MessageContextSegment['kind'],
 ) {
