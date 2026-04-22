@@ -101,6 +101,20 @@ function isCacheResultShape(value: unknown): value is Record<string, unknown> {
 function isResultShape(value: unknown): value is Record<string, unknown> {
     if (!isPlainObject(value)) return false
 
+    if (
+        !('text' in value) ||
+        !('responseMessage' in value) ||
+        !('toolCalls' in value) ||
+        !('usage' in value)
+    ) {
+        return false
+    }
+
+    if (typeof value.text !== 'string') return false
+    if (!isPlainObject(value.responseMessage)) return false
+    if (!Array.isArray(value.toolCalls)) return false
+    if (!isPlainObject(value.usage)) return false
+
     if ('cacheResult' in value && !isCacheResultShape(value.cacheResult)) {
         return false
     }

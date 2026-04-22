@@ -6,7 +6,7 @@ import {
 } from '../../../../src/core/ai/runtime/context-manifest'
 
 describe('context-manifest cache snapshots', () => {
-    test('attaches cachePlan and cacheResult without mutating other manifest sections', () => {
+    test('does not invent a result when cacheResult is attached before finalization', () => {
         let manifest = createBaseManifest({
             runId: 'run-cache-1',
             input: {
@@ -72,10 +72,67 @@ describe('context-manifest cache snapshots', () => {
 
         expect(manifest.cachePlan?.provider).toBe('anthropic')
         expect(manifest.cachePlan?.breakpoints).toHaveLength(2)
-        expect(manifest.result?.cacheResult?.cacheReadTokens).toBe(1200)
-        expect(manifest.result?.cacheResult?.rolloutGateStatus).toBe(
-            'enabled',
-        )
+        expect(manifest.result).toBeUndefined()
         expect(manifest.modelRequest.providerOptions).toEqual({})
+    })
+
+    test('preserves an existing real result when cacheResult is attached', () => {
+        const manifest = createBaseManifest({
+            runId: 'run-cache-2',
+            input: {
+                messages: [],
+                channel: 'web',
+                mode: 'conversation',
+            },
+            defaults: { maxSteps: 20 },
+        })
+
+        const withResult = {
+            ...manifest,
+            result: {
+                text: 'final text',
+                responseMessage: { id: 'msg-1', role: 'assistant', parts: [] },
+                toolCalls: [],
+                usage: { inputTokens: 10, outputTokens: 3 },
+            },
+        }
+
+        const updated = attachCacheResultSnapshot(withResult, {
+            cacheObserved: true,
+            cacheReadTokens: 1200,
+            cacheWriteTokens: 400,
+            uncachedInputTokens: 200,
+            cachedTokenRatio: 0.75,
+            providerRawCacheUsage: {
+                anthropic: {
+                    cache_creation_input_tokens: 400,
+                    cache_read_input_tokens: 1200,
+                },
+            },
+            rolloutGateStatus: 'enabled',
+            circuitBreakerState: 'closed',
+        })
+
+        expect(updated.result).toEqual({
+            text: 'final text',
+            responseMessage: { id: 'msg-1', role: 'assistant', parts: [] },
+            toolCalls: [],
+            usage: { inputTokens: 10, outputTokens: 3 },
+            cacheResult: {
+                cacheObserved: true,
+                cacheReadTokens: 1200,
+                cacheWriteTokens: 400,
+                uncachedInputTokens: 200,
+                cachedTokenRatio: 0.75,
+                providerRawCacheUsage: {
+                    anthropic: {
+                        cache_creation_input_tokens: 400,
+                        cache_read_input_tokens: 1200,
+                    },
+                },
+                rolloutGateStatus: 'enabled',
+                circuitBreakerState: 'closed',
+            },
+        })
     })
 })

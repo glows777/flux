@@ -344,4 +344,66 @@ describe('loadMessageManifest', () => {
             )
         }
     })
+
+    it('throws INVALID_INPUT when result is missing core fields even if cacheResult is valid', async () => {
+        const { loadMessageManifest } = await importActualSessionModule()
+        const { SessionError } = await importActualSessionErrors()
+        const db = createMockDb()
+        db.chatMessageManifest.findUnique = mock(() =>
+            Promise.resolve({
+                version: 1,
+                runId: 'run-6',
+                manifest: JSON.stringify({
+                    runId: 'run-6',
+                    createdAt: '2024-06-04T00:00:00.000Z',
+                    input: {
+                        channel: 'web',
+                        mode: 'conversation',
+                        agentType: 'trading-agent',
+                        rawMessages: [],
+                        defaults: {},
+                    },
+                    pluginOutputs: [],
+                    assembledContext: {
+                        segments: [],
+                        systemSegments: [],
+                        tools: [],
+                        params: { candidates: [], resolved: {} },
+                        totalEstimatedInputTokens: 0,
+                    },
+                    modelRequest: {
+                        systemText: '',
+                        modelMessages: [],
+                        toolNames: [],
+                        resolvedParams: {},
+                        providerOptions: {},
+                    },
+                    result: {
+                        cacheResult: {
+                            cacheObserved: true,
+                            cacheReadTokens: 1,
+                            cacheWriteTokens: 2,
+                            uncachedInputTokens: 3,
+                            cachedTokenRatio: 0.25,
+                            providerRawCacheUsage: {},
+                            rolloutGateStatus: 'enabled',
+                            circuitBreakerState: 'closed',
+                        },
+                    },
+                }),
+            }),
+        ) as typeof db.chatMessageManifest.findUnique
+
+        try {
+            await loadMessageManifest('session-1', 'message-1', {
+                db,
+            } as unknown as SessionDeps)
+            expect.unreachable('Should have thrown')
+        } catch (error) {
+            expect(error).toBeInstanceOf(SessionError)
+            expect((error as InstanceType<typeof SessionError>).code).toBe(
+                'INVALID_INPUT',
+            )
+        }
+    })
 })

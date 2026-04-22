@@ -85,11 +85,11 @@ export function attachCacheResultSnapshot(
     manifest: ContextManifest,
     snapshot: CacheResultSnapshot,
 ): ContextManifest {
+    if (!manifest.result) return manifest
+
     return {
         ...manifest,
-        result: manifest.result
-            ? { ...manifest.result, cacheResult: snapshot }
-            : ({ cacheResult: snapshot } as ResultSnapshot),
+        result: { ...manifest.result, cacheResult: snapshot },
     }
 }
 
