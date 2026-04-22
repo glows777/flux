@@ -151,15 +151,17 @@ describe('MessageContextDetailSheet', () => {
         )
 
         expect(screen.getByText('Context details')).toBeDefined()
-        expect(screen.getByRole('heading', { name: 'Overview' })).toBeDefined()
-        expect(screen.getByRole('heading', { name: 'Segments' })).toBeDefined()
-        expect(screen.getByRole('heading', { name: 'Tools' })).toBeDefined()
-        expect(
-            screen.getByRole('heading', { name: 'Request config' }),
-        ).toBeDefined()
-        expect(
-            screen.getByRole('heading', { name: 'Raw inspect' }),
-        ).toBeDefined()
+        const headings = screen
+            .getAllByRole('heading', { level: 2 })
+            .map((node) => node.textContent)
+
+        expect(headings).toEqual([
+            'Overview',
+            'Segments',
+            'Tools',
+            'Request config',
+            'Raw inspect',
+        ])
     })
 
     it('renders segment groups by source type with system last', () => {
