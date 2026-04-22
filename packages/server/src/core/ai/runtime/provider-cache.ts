@@ -19,16 +19,26 @@ function buildCombinedSystemText(
 function groupAnthropicSystemLayers(
     systemSegments: SystemContextSegmentSnapshot[],
     cachePlan: CachePlanSnapshot,
-): { stableText?: string; sessionText?: string } {
+): { stableText?: string; sessionText?: string; remainderText?: string } {
+    const stableIds = new Set(cachePlan.stableCoreSegmentIds)
+    const sessionIds = new Set(cachePlan.cacheableSessionSegmentIds)
+
     const stableText = systemSegments
-        .filter((segment) => cachePlan.stableCoreSegmentIds.includes(segment.id))
+        .filter((segment) => stableIds.has(segment.id))
         .map((segment) => segment.payload.text)
         .filter(Boolean)
         .join('\n\n')
 
     const sessionText = systemSegments
-        .filter((segment) =>
-            cachePlan.cacheableSessionSegmentIds.includes(segment.id),
+        .filter((segment) => sessionIds.has(segment.id))
+        .map((segment) => segment.payload.text)
+        .filter(Boolean)
+        .join('\n\n')
+
+    const remainderText = systemSegments
+        .filter(
+            (segment) =>
+                !stableIds.has(segment.id) && !sessionIds.has(segment.id),
         )
         .map((segment) => segment.payload.text)
         .filter(Boolean)
@@ -37,6 +47,7 @@ function groupAnthropicSystemLayers(
     return {
         stableText: stableText || undefined,
         sessionText: sessionText || undefined,
+        remainderText: remainderText || undefined,
     }
 }
 
@@ -74,13 +85,13 @@ export function buildProviderCacheRequest(input: {
         }
     }
 
-    const { stableText, sessionText } = groupAnthropicSystemLayers(
+    const { stableText, sessionText, remainderText } = groupAnthropicSystemLayers(
         input.systemSegments,
         input.cachePlan,
     )
 
     return {
-        system: undefined,
+        system: remainderText,
         messages: [
             ...(stableText ? [createAnthropicCacheMessage(stableText)] : []),
             ...(sessionText ? [createAnthropicCacheMessage(sessionText)] : []),

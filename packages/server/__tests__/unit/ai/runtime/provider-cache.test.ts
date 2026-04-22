@@ -83,6 +83,19 @@ const systemSegments: SystemContextSegmentSnapshot[] = [
         finalOrder: 2,
         estimatedTokens: 220,
     },
+    {
+        id: 'heartbeat-live-context',
+        target: 'system',
+        kind: 'live.runtime',
+        payload: { format: 'text', text: 'market is open for 3 more hours' },
+        source: { plugin: 'heartbeat' },
+        priority: 'high',
+        cacheability: 'volatile',
+        compactability: 'trim',
+        included: true,
+        finalOrder: 3,
+        estimatedTokens: 80,
+    },
 ]
 
 describe('buildProviderCacheRequest', () => {
@@ -104,7 +117,7 @@ describe('buildProviderCacheRequest', () => {
             },
         })
 
-        expect(request.system).toBeUndefined()
+        expect(request.system).toBe('market is open for 3 more hours')
         expect(request.messages[0]).toMatchObject({
             role: 'system',
             content: 'base prompt\n\ntool instructions',
@@ -158,7 +171,7 @@ describe('buildProviderCacheRequest', () => {
         })
 
         expect(request.system).toBe(
-            'base prompt\n\ntool instructions\n\nprefers ETFs',
+            'base prompt\n\ntool instructions\n\nprefers ETFs\n\nmarket is open for 3 more hours',
         )
         expect(request.messages).toEqual([{ role: 'user', content: 'hello' }])
         expect(request.providerOptions).toEqual({
@@ -195,7 +208,7 @@ describe('buildProviderCacheRequest', () => {
         })
 
         expect(request.system).toBe(
-            'base prompt\n\ntool instructions\n\nprefers ETFs',
+            'base prompt\n\ntool instructions\n\nprefers ETFs\n\nmarket is open for 3 more hours',
         )
         expect(request.messages).toEqual([{ role: 'user', content: 'hello' }])
         expect(request.providerOptions).toEqual({
