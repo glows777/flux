@@ -16,12 +16,17 @@ import {
 const DESKTOP_MEDIA_QUERY = '(min-width: 768px)'
 const FOCUSABLE_SELECTOR = [
     'button:not([disabled])',
+    'summary',
     '[href]',
     'input:not([disabled])',
     'select:not([disabled])',
     'textarea:not([disabled])',
     '[tabindex]:not([tabindex="-1"])',
 ].join(', ')
+
+function getSegmentStateKey(messageId: string, segmentId: string) {
+    return `${messageId}:${segmentId}`
+}
 
 function useMatchesMediaQuery(query: string) {
     const getMatches = () =>
@@ -224,7 +229,9 @@ export function MessageContextDetailSheet({
                   .flatMap((group) =>
                       group.segments.map(
                           (segment) =>
-                              `${group.key}:${segment.id}:${group.collapsedByDefault ? 'closed' : 'open'}`,
+                              `${group.key}:${getSegmentStateKey(messageId ?? 'unknown', segment.id)}:${
+                                  group.collapsedByDefault ? 'closed' : 'open'
+                              }`,
                       ),
                   )
                   .join('|')
@@ -249,9 +256,14 @@ export function MessageContextDetailSheet({
 
             for (const group of groups) {
                 for (const segment of group.segments) {
-                    nextSegmentIds.add(segment.id)
-                    if (nextState[segment.id] == null) {
-                        nextState[segment.id] = !group.collapsedByDefault
+                    const segmentStateKey = getSegmentStateKey(
+                        messageId,
+                        segment.id,
+                    )
+
+                    nextSegmentIds.add(segmentStateKey)
+                    if (nextState[segmentStateKey] == null) {
+                        nextState[segmentStateKey] = !group.collapsedByDefault
                         changed = true
                     }
                 }
@@ -488,19 +500,29 @@ export function MessageContextDetailSheet({
                                         <div className='mt-3 space-y-2'>
                                             {group.segments.map((segment) => (
                                                 <SegmentCard
-                                                    key={segment.id}
+                                                    key={getSegmentStateKey(
+                                                        messageId,
+                                                        segment.id,
+                                                    )}
                                                     segment={segment}
                                                     isOpen={
                                                         segmentOpenState[
-                                                            segment.id
+                                                            getSegmentStateKey(
+                                                                messageId,
+                                                                segment.id,
+                                                            )
                                                         ] ?? !group.collapsedByDefault
                                                     }
                                                     onOpenChange={(nextOpen) =>
                                                         setSegmentOpenState(
                                                             (prev) => ({
                                                                 ...prev,
-                                                                [segment.id]:
-                                                                    nextOpen,
+                                                                [
+                                                                    getSegmentStateKey(
+                                                                        messageId,
+                                                                        segment.id,
+                                                                    )
+                                                                ]: nextOpen,
                                                             }),
                                                         )
                                                     }

@@ -416,6 +416,41 @@ describe('MessageContextDetailSheet', () => {
         ).toBe(false)
     })
 
+    it('resets segment disclosure state when switching to a different message', () => {
+        const { rerender } = render(
+            <MessageContextDetailSheet
+                state={readyState}
+                isOpen={true}
+                messageId='assistant-1'
+                onClose={() => {}}
+            />,
+        )
+
+        fireEvent.click(screen.getByText('runtime-1'))
+        expect(
+            screen
+                .getByText('runtime-1')
+                .closest('details')
+                ?.hasAttribute('open'),
+        ).toBe(false)
+
+        rerender(
+            <MessageContextDetailSheet
+                state={readyState}
+                isOpen={true}
+                messageId='assistant-2'
+                onClose={() => {}}
+            />,
+        )
+
+        expect(
+            screen
+                .getByText('runtime-1')
+                .closest('details')
+                ?.hasAttribute('open'),
+        ).toBe(true)
+    })
+
     it('restores request diagnostics for advanced debugging', () => {
         render(
             <MessageContextDetailSheet
