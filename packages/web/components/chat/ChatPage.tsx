@@ -492,6 +492,23 @@ export function ChatPage() {
             : (messageContextStates[activeContextMessageId] ?? {
                   status: 'idle' as const,
               })
+    const handleOpenContextMessage = useCallback(
+        (messageId: string) => {
+            const isSelected = activeContextMessageIdRef.current === messageId
+            if (isSelected) {
+                setActiveContextMessageId(null)
+                return
+            }
+
+            setActiveContextMessageId(messageId)
+
+            const activeSessionId = sessionIdRef.current
+            if (!activeSessionId) return
+
+            void loadMessageContext(activeSessionId, messageId)
+        },
+        [loadMessageContext],
+    )
 
     return (
         <div className='flex h-full flex-1 min-w-0'>
@@ -510,134 +527,144 @@ export function ChatPage() {
                 onToggleCollapse={toggleSidebar}
             />
 
-            <div className='flex-1 flex flex-col min-w-0'>
-                {sidebarCollapsed && (
-                    <div className='p-2'>
-                        <button
-                            type='button'
-                            onClick={toggleSidebar}
-                            className='p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors'
-                            aria-label='展开侧栏'
-                        >
-                            <PanelLeft size={16} />
-                        </button>
-                    </div>
-                )}
-                {/* Message area */}
-                <div className='flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10'>
-                    {messages.length === 0 ? (
-                        <ChatWelcome
-                            symbol={symbol}
-                            onSuggestionClick={handleSuggestionClick}
-                        />
-                    ) : (
-                        <div className='max-w-5xl w-[85%] mx-auto px-6 py-6 space-y-4'>
-                            {messages.map((msg, index) => {
-                                const cutoffIndex =
-                                    messages.length - TRUNCATE_LIMIT
-                                const showDivider =
-                                    messages.length > TRUNCATE_LIMIT &&
-                                    index === cutoffIndex
+            <div className='flex min-w-0 flex-1'>
+                <div className='flex min-w-0 flex-1 flex-col'>
+                    {sidebarCollapsed && (
+                        <div className='p-2'>
+                            <button
+                                type='button'
+                                onClick={toggleSidebar}
+                                className='p-2 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/5 transition-colors'
+                                aria-label='展开侧栏'
+                            >
+                                <PanelLeft size={16} />
+                            </button>
+                        </div>
+                    )}
+                    {/* Message area */}
+                    <div className='flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-white/10'>
+                        {messages.length === 0 ? (
+                            <ChatWelcome
+                                symbol={symbol}
+                                onSuggestionClick={handleSuggestionClick}
+                            />
+                        ) : (
+                            <div className='max-w-5xl w-[85%] mx-auto px-6 py-6 space-y-4'>
+                                {messages.map((msg, index) => {
+                                    const cutoffIndex =
+                                        messages.length - TRUNCATE_LIMIT
+                                    const showDivider =
+                                        messages.length > TRUNCATE_LIMIT &&
+                                        index === cutoffIndex
 
-                                let messageNode: React.ReactNode = null
-                                if (msg.role === 'user') {
-                                    const textPart = msg.parts?.find(
-                                        (p) => p.type === 'text',
-                                    )
-                                    const text =
-                                        textPart && 'text' in textPart
-                                            ? textPart.text
-                                            : ''
-                                    messageNode = (
-                                        <UserMessage
-                                            key={msg.id}
-                                            content={text}
-                                        />
-                                    )
-                                } else if (msg.role === 'assistant') {
-                                    const isLast = index === messages.length - 1
-                                    const contextState = messageContextStates[
-                                        msg.id
-                                    ] ?? {
-                                        status: 'idle',
-                                    }
-                                    const isContextOpen =
-                                        activeContextMessageId === msg.id
-                                    messageNode = (
-                                        <div key={msg.id} className='space-y-3'>
-                                            <AssistantMessage
-                                                message={msg}
-                                                isLast={isLast}
-                                                isLoading={isLoading}
+                                    let messageNode: React.ReactNode = null
+                                    if (msg.role === 'user') {
+                                        const textPart = msg.parts?.find(
+                                            (p) => p.type === 'text',
+                                        )
+                                        const text =
+                                            textPart && 'text' in textPart
+                                                ? textPart.text
+                                                : ''
+                                        messageNode = (
+                                            <UserMessage
+                                                key={msg.id}
+                                                content={text}
                                             />
-                                            <MessageContextSummaryStrip
-                                                state={contextState}
-                                                isSelected={isContextOpen}
-                                                onOpen={() => {
-                                                    setActiveContextMessageId(
-                                                        msg.id,
-                                                    )
-                                                    const activeSessionId =
-                                                        sessionIdRef.current
-                                                    if (activeSessionId) {
-                                                        void loadMessageContext(
-                                                            activeSessionId,
+                                        )
+                                    } else if (msg.role === 'assistant') {
+                                        const isLast =
+                                            index === messages.length - 1
+                                        const contextState =
+                                            messageContextStates[msg.id] ?? {
+                                                status: 'idle',
+                                            }
+                                        const isContextOpen =
+                                            activeContextMessageId === msg.id
+                                        messageNode = (
+                                            <div
+                                                key={msg.id}
+                                                className='space-y-3'
+                                            >
+                                                <AssistantMessage
+                                                    message={msg}
+                                                    isLast={isLast}
+                                                    isLoading={isLoading}
+                                                />
+                                                <MessageContextSummaryStrip
+                                                    state={contextState}
+                                                    isSelected={isContextOpen}
+                                                    onOpen={() =>
+                                                        handleOpenContextMessage(
                                                             msg.id,
                                                         )
                                                     }
-                                                }}
-                                                onRetry={() => {
-                                                    const activeSessionId =
-                                                        sessionIdRef.current
-                                                    if (!activeSessionId) return
+                                                    onRetry={() => {
+                                                        const activeSessionId =
+                                                            sessionIdRef.current
+                                                        if (!activeSessionId)
+                                                            return
 
-                                                    setActiveContextMessageId(
-                                                        msg.id,
-                                                    )
-                                                    void loadMessageContext(
-                                                        activeSessionId,
-                                                        msg.id,
-                                                        { force: true },
-                                                    )
-                                                }}
-                                            />
-                                        </div>
-                                    )
-                                }
-
-                                if (showDivider) {
-                                    return (
-                                        <div key={msg.id}>
-                                            <TruncationNotice />
-                                            {messageNode}
-                                        </div>
-                                    )
-                                }
-                                return messageNode
-                            })}
-
-                            {error ? (
-                                <ErrorBanner
-                                    error={error}
-                                    onReload={handleRetry}
-                                />
-                            ) : persistedError ? (
-                                <ErrorBanner
-                                    error={
-                                        // Reconstruct an Error so ErrorBanner
-                                        // stays source-agnostic (same API whether
-                                        // from useChat or DB).
-                                        Object.assign(
-                                            new Error(persistedError.message),
-                                            { name: persistedError.name },
+                                                        setActiveContextMessageId(
+                                                            msg.id,
+                                                        )
+                                                        void loadMessageContext(
+                                                            activeSessionId,
+                                                            msg.id,
+                                                            {
+                                                                force: true,
+                                                            },
+                                                        )
+                                                    }}
+                                                />
+                                            </div>
                                         )
                                     }
-                                    onReload={handleRetry}
-                                />
-                            ) : null}
-                            <div ref={bottomRef} />
-                        </div>
-                    )}
+
+                                    if (showDivider) {
+                                        return (
+                                            <div key={msg.id}>
+                                                <TruncationNotice />
+                                                {messageNode}
+                                            </div>
+                                        )
+                                    }
+                                    return messageNode
+                                })}
+
+                                {error ? (
+                                    <ErrorBanner
+                                        error={error}
+                                        onReload={handleRetry}
+                                    />
+                                ) : persistedError ? (
+                                    <ErrorBanner
+                                        error={
+                                            Object.assign(
+                                                new Error(
+                                                    persistedError.message,
+                                                ),
+                                                { name: persistedError.name },
+                                            )
+                                        }
+                                        onReload={handleRetry}
+                                    />
+                                ) : null}
+                                <div ref={bottomRef} />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Input */}
+                    <div className='max-w-5xl w-[85%] mx-auto'>
+                        <ContextInput
+                            value={inputValue}
+                            onChange={setInputValue}
+                            onSend={handleSend}
+                            isLoading={isLoading}
+                            placeholder={placeholder}
+                        />
+                    </div>
                 </div>
 
                 <MessageContextDetailSheet
@@ -655,17 +682,6 @@ export function ChatPage() {
                         })
                     }}
                 />
-
-                {/* Input */}
-                <div className='max-w-5xl w-[85%] mx-auto'>
-                    <ContextInput
-                        value={inputValue}
-                        onChange={setInputValue}
-                        onSend={handleSend}
-                        isLoading={isLoading}
-                        placeholder={placeholder}
-                    />
-                </div>
             </div>
         </div>
     )

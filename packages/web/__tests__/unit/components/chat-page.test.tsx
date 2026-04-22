@@ -965,6 +965,84 @@ describe('ChatPage', () => {
         ).toHaveLength(1)
     })
 
+    it('clicking the selected assistant message closes the shared sheet', async () => {
+        chatMessages = [
+            {
+                id: 'message-user-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-1',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'hi there' }],
+            } as UIMessage,
+        ]
+
+        messageContextResponses[
+            '/api/sessions/session-1/messages/message-assistant-1/context'
+        ] = {
+            body: buildMessageContextResponse('run-1'),
+        }
+
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: chatMessages,
+                                error: null,
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.filter(
+                    ([input]) =>
+                        String(input) ===
+                        '/api/sessions/session-1/messages/message-assistant-1/context',
+                ),
+            ).toHaveLength(1),
+        )
+
+        const summaryButton = await screen.findByRole('button', {
+            name: /view context/i,
+        })
+
+        fireEvent.click(summaryButton)
+        await screen.findByRole('dialog', { name: /context details/i })
+        expect(
+            screen.getByRole('button', { name: /viewing/i }),
+        ).toBeDefined()
+
+        fireEvent.click(screen.getByRole('button', { name: /viewing/i }))
+
+        await waitFor(() =>
+            expect(
+                screen.queryByRole('dialog', { name: /context details/i }),
+            ).toBeNull(),
+        )
+        expect(
+            screen.getByRole('button', { name: /view context/i }),
+        ).toBeDefined()
+        expect(
+            fetchMock.mock.calls.filter(
+                ([input]) =>
+                    String(input) ===
+                    '/api/sessions/session-1/messages/message-assistant-1/context',
+            ),
+        ).toHaveLength(1)
+    })
+
     it('opens one shared sheet and switches the active assistant message', async () => {
         chatMessages = [
             {
@@ -1308,10 +1386,24 @@ describe('ChatPage', () => {
             json: () => Promise.resolve(buildMessageContextResponse('run-1')),
         })
 
+        await screen.findByRole('button', { name: /view context/i })
+        expect(
+            screen.queryByRole('dialog', { name: /context details/i }),
+        ).toBeNull()
+
+        fireEvent.click(screen.getByRole('button', { name: /view context/i }))
+
         await screen.findByRole('button', { name: /viewing/i })
         expect(
             screen.getByRole('dialog', { name: /context details/i }),
         ).toBeDefined()
+        expect(
+            fetchMock.mock.calls.filter(
+                ([input]) =>
+                    String(input) ===
+                    '/api/sessions/session-1/messages/message-assistant-1/context',
+            ),
+        ).toHaveLength(1)
     })
 
     it('ignores a late auto-restore response after switching sessions', async () => {
