@@ -527,7 +527,16 @@ describe('createAIRuntime', () => {
         })
         expect(streamArgs.system).toBeUndefined()
         expect(manifest.modelRequest.systemText).toBe('')
-        expect(manifest.modelRequest.modelMessages).toEqual(streamArgs.messages)
+        expect(manifest.modelRequest.modelMessages).toEqual([
+            {
+                id: 'u1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            },
+        ])
+        expect(manifest.modelRequest.modelMessages).not.toEqual(
+            streamArgs.messages,
+        )
         expect(manifest.modelRequest.providerOptions).toEqual(
             streamArgs.providerOptions,
         )

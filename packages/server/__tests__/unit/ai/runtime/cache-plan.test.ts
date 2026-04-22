@@ -270,6 +270,41 @@ describe('buildCachePlan', () => {
         )
     })
 
+    test('does not let tool tokens alone push anthropic cache eligibility above threshold', () => {
+        const nearThresholdBase: SystemContextSegmentSnapshot = {
+            id: 'near-threshold-base',
+            target: 'system',
+            kind: 'system.base',
+            payload: { format: 'text', text: 'near threshold base' },
+            source: { plugin: 'prompt' },
+            priority: 'required',
+            cacheability: 'stable',
+            compactability: 'preserve',
+            included: true,
+            finalOrder: 0,
+            estimatedTokens: 900,
+        }
+
+        const plan = createPlan({
+            systemSegments: [nearThresholdBase],
+            segments: [nearThresholdBase],
+            tools: [
+                {
+                    ...tools[0],
+                    estimatedTokens: 300,
+                },
+            ],
+            totalEstimatedInputTokens: 1200,
+        })
+
+        expect(plan.effectivePrefixEstimatedTokens).toBe(900)
+        expect(plan.eligibility.prefixAboveThreshold).toBe(false)
+        expect(plan.eligibility.cacheExpected).toBe(false)
+        expect(plan.eligibility.cacheExpectationReason).toBe(
+            'below_cache_threshold',
+        )
+    })
+
     test('keeps volatile memory out of cacheableSession', () => {
         const base: SystemContextSegmentSnapshot = {
             id: 'small-base',

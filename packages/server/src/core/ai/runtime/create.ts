@@ -415,7 +415,7 @@ export async function createAIRuntime(
 
             manifest = attachModelRequestSnapshot(manifest, {
                 systemText: (providerCacheRequest.system ?? '') as never,
-                modelMessages: providerCacheRequest.messages as never,
+                modelMessages: assembled.modelMessages as never,
                 toolNames: Object.keys(assembled.aiTools),
                 resolvedParams: assembled.resolved,
                 maxOutputTokens: assembled.resolvedMaxOutputTokens,

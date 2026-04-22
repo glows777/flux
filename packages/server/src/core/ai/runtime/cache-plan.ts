@@ -164,10 +164,6 @@ export function buildCachePlan(input: {
         effectivePrefix.reduce(
             (total, segment) => total + (segment.estimatedTokens ?? 0),
             0,
-        ) +
-        input.assembledContext.tools.reduce(
-            (total, tool) => total + tool.estimatedTokens,
-            0,
         )
 
     const candidateInvalidationReasons: string[] = []
