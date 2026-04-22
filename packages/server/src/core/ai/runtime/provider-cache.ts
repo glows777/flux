@@ -63,6 +63,36 @@ function createAnthropicCacheMessage(content: string): ModelMessage {
     } as ModelMessage
 }
 
+function createSystemMessage(content: string): ModelMessage {
+    return {
+        role: 'system',
+        content,
+    } as ModelMessage
+}
+
+function pickAnthropicCacheUsage(
+    providerMetadata?: ProviderMetadata,
+): Record<string, unknown> | undefined {
+    const anthropicMetadata = providerMetadata?.anthropic
+    if (
+        anthropicMetadata == null ||
+        typeof anthropicMetadata !== 'object' ||
+        Array.isArray(anthropicMetadata)
+    ) {
+        return undefined
+    }
+
+    const cacheUsageEntries = Object.entries(anthropicMetadata).filter(
+        ([key]) => key.startsWith('cache_'),
+    )
+
+    if (cacheUsageEntries.length === 0) return undefined
+
+    return {
+        anthropic: Object.fromEntries(cacheUsageEntries),
+    }
+}
+
 export function buildProviderCacheRequest(input: {
     provider: 'anthropic' | 'openai' | 'unknown'
     cachePlan: CachePlanSnapshot
@@ -91,10 +121,11 @@ export function buildProviderCacheRequest(input: {
     )
 
     return {
-        system: remainderText,
+        system: undefined,
         messages: [
             ...(stableText ? [createAnthropicCacheMessage(stableText)] : []),
             ...(sessionText ? [createAnthropicCacheMessage(sessionText)] : []),
+            ...(remainderText ? [createSystemMessage(remainderText)] : []),
             ...input.modelMessages,
         ],
         providerOptions: input.providerOptions,
@@ -129,11 +160,7 @@ export function normalizeProviderCacheResult(input: {
         uncachedInputTokens,
         cachedTokenRatio:
             totalInput > 0 ? (cacheReadTokens ?? 0) / totalInput : undefined,
-        providerRawCacheUsage:
-            input.providerMetadata &&
-            Object.keys(input.providerMetadata).length > 0
-                ? (input.providerMetadata as Record<string, unknown>)
-                : undefined,
+        providerRawCacheUsage: pickAnthropicCacheUsage(input.providerMetadata),
         cacheDisabledReason: input.cacheDisabledReason,
         rolloutGateStatus: input.rolloutGateStatus,
         circuitBreakerState: input.circuitBreakerState,

@@ -117,25 +117,31 @@ describe('buildProviderCacheRequest', () => {
             },
         })
 
-        expect(request.system).toBe('market is open for 3 more hours')
-        expect(request.messages[0]).toMatchObject({
-            role: 'system',
-            content: 'base prompt\n\ntool instructions',
-            providerOptions: {
-                anthropic: { cacheControl: { type: 'ephemeral' } },
+        expect(request.system).toBeUndefined()
+        expect(request.messages).toEqual([
+            {
+                role: 'system',
+                content: 'base prompt\n\ntool instructions',
+                providerOptions: {
+                    anthropic: { cacheControl: { type: 'ephemeral' } },
+                },
             },
-        })
-        expect(request.messages[1]).toMatchObject({
-            role: 'system',
-            content: 'prefers ETFs',
-            providerOptions: {
-                anthropic: { cacheControl: { type: 'ephemeral' } },
+            {
+                role: 'system',
+                content: 'prefers ETFs',
+                providerOptions: {
+                    anthropic: { cacheControl: { type: 'ephemeral' } },
+                },
             },
-        })
-        expect(request.messages[2]).toEqual({
-            role: 'user',
-            content: 'hello',
-        })
+            {
+                role: 'system',
+                content: 'market is open for 3 more hours',
+            },
+            {
+                role: 'user',
+                content: 'hello',
+            },
+        ])
         expect(request.providerOptions).toEqual({
             anthropic: {
                 thinking: { type: 'enabled', budgetTokens: 2048 },
@@ -236,6 +242,10 @@ describe('normalizeProviderCacheResult', () => {
                 anthropic: {
                     cache_creation_input_tokens: 300,
                     cache_read_input_tokens: 1200,
+                    some_unrelated_field: 'ignore me',
+                },
+                openai: {
+                    requestId: 'req-123',
                 },
             } as never,
             rolloutGateStatus: 'enabled',
@@ -248,14 +258,14 @@ describe('normalizeProviderCacheResult', () => {
             cacheWriteTokens: 300,
             uncachedInputTokens: 100,
             cachedTokenRatio: 0.75,
-            providerRawCacheUsage: {
-                anthropic: {
-                    cache_creation_input_tokens: 300,
-                    cache_read_input_tokens: 1200,
-                },
-            },
             rolloutGateStatus: 'enabled',
             circuitBreakerState: 'closed',
+        })
+        expect(result.providerRawCacheUsage).toEqual({
+            anthropic: {
+                cache_creation_input_tokens: 300,
+                cache_read_input_tokens: 1200,
+            },
         })
     })
 })
