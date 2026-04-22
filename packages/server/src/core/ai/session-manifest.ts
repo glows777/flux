@@ -70,8 +70,54 @@ function isModelRequestShape(value: unknown): value is Record<string, unknown> {
     )
 }
 
+function isCachePlanShape(value: unknown): value is Record<string, unknown> {
+    if (!isPlainObject(value)) return false
+
+    return (
+        hasStringKey(value, 'provider') &&
+        hasArrayKey(value, 'stableCoreSegmentIds') &&
+        hasArrayKey(value, 'cacheableSessionSegmentIds') &&
+        hasArrayKey(value, 'dynamicTailSegmentIds') &&
+        hasArrayKey(value, 'effectivePrefixSegmentIds') &&
+        typeof value.effectivePrefixEstimatedTokens === 'number' &&
+        hasArrayKey(value, 'breakpoints') &&
+        hasObjectKey(value, 'hashes') &&
+        hasObjectKey(value, 'eligibility') &&
+        hasObjectKey(value, 'providerChangeFlags') &&
+        hasArrayKey(value, 'candidateInvalidationReasons')
+    )
+}
+
+function isCacheResultShape(value: unknown): value is Record<string, unknown> {
+    if (!isPlainObject(value)) return false
+
+    return (
+        typeof value.cacheObserved === 'boolean' &&
+        hasStringKey(value, 'rolloutGateStatus') &&
+        hasStringKey(value, 'circuitBreakerState')
+    )
+}
+
+function isResultShape(value: unknown): value is Record<string, unknown> {
+    if (!isPlainObject(value)) return false
+
+    if ('cacheResult' in value && !isCacheResultShape(value.cacheResult)) {
+        return false
+    }
+
+    return true
+}
+
 function isContextManifestShape(value: unknown): value is ContextManifest {
     if (!isPlainObject(value)) return false
+
+    if ('cachePlan' in value && !isCachePlanShape(value.cachePlan)) {
+        return false
+    }
+
+    if ('result' in value && !isResultShape(value.result)) {
+        return false
+    }
 
     return (
         typeof value.runId === 'string' &&

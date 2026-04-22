@@ -11,6 +11,11 @@ export type {
     ChatInput,
     ChatOutput,
     ChatParams,
+    CacheBreakpointSnapshot,
+    CacheEligibilitySnapshot,
+    CachePlanHashesSnapshot,
+    CachePlanSnapshot,
+    CacheResultSnapshot,
     ConsumedResult,
     ContextManifest,
     ContextSegment,
@@ -22,3 +27,12 @@ export type {
     ToolDisplayMeta,
 } from './types'
 export { DEFAULT_CHAT_PARAMS } from './types'
+export {
+    attachAssembledContextSnapshot,
+    attachCachePlanSnapshot,
+    attachCacheResultSnapshot,
+    attachModelRequestSnapshot,
+    attachPluginOutputsSnapshot,
+    attachResultSnapshot,
+    createBaseManifest,
+} from './context-manifest'

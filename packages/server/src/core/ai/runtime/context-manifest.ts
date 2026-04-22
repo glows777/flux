@@ -1,6 +1,8 @@
 import type {
     AfterRunContext,
     AssembledContextSnapshot,
+    CachePlanSnapshot,
+    CacheResultSnapshot,
     ChatInput,
     ContextManifest,
     ModelRequestSnapshot,
@@ -70,6 +72,25 @@ export function attachModelRequestSnapshot(
     snapshot: ModelRequestSnapshot,
 ): ContextManifest {
     return { ...manifest, modelRequest: snapshot }
+}
+
+export function attachCachePlanSnapshot(
+    manifest: ContextManifest,
+    snapshot: CachePlanSnapshot,
+): ContextManifest {
+    return { ...manifest, cachePlan: snapshot }
+}
+
+export function attachCacheResultSnapshot(
+    manifest: ContextManifest,
+    snapshot: CacheResultSnapshot,
+): ContextManifest {
+    return {
+        ...manifest,
+        result: manifest.result
+            ? { ...manifest.result, cacheResult: snapshot }
+            : ({ cacheResult: snapshot } as ResultSnapshot),
+    }
 }
 
 export function attachResultSnapshot(

@@ -162,6 +162,55 @@ export interface ModelRequestSnapshot {
     readonly providerOptions: Record<string, unknown>
 }
 
+export interface CacheBreakpointSnapshot {
+    readonly layer: 'stableCore' | 'cacheableSession'
+    readonly segmentId: string
+}
+
+export interface CachePlanHashesSnapshot {
+    readonly toolDefinitionsHash: string
+    readonly systemHash: string
+    readonly memoryHash: string
+    readonly stableCoreHash: string
+    readonly effectivePrefixHash: string
+    readonly dynamicTailHash: string
+}
+
+export interface CacheEligibilitySnapshot {
+    readonly providerSupportsPromptCache: boolean
+    readonly prefixAboveThreshold: boolean
+    readonly cacheExpected: boolean
+    readonly cacheExpectationReason: string
+    readonly providerRuleAssumptions: string[]
+}
+
+export interface CachePlanSnapshot {
+    readonly provider: 'anthropic' | 'openai' | 'unknown'
+    readonly stableCoreSegmentIds: string[]
+    readonly cacheableSessionSegmentIds: string[]
+    readonly dynamicTailSegmentIds: string[]
+    readonly effectivePrefixSegmentIds: string[]
+    readonly effectivePrefixEstimatedTokens: number
+    readonly breakpoints: CacheBreakpointSnapshot[]
+    readonly hashes: CachePlanHashesSnapshot
+    readonly eligibility: CacheEligibilitySnapshot
+    readonly providerChangeFlags: Record<string, boolean>
+    readonly candidateInvalidationReasons: string[]
+}
+
+export interface CacheResultSnapshot {
+    readonly cacheObserved: boolean
+    readonly cacheReadTokens?: number
+    readonly cacheWriteTokens?: number
+    readonly uncachedInputTokens?: number
+    readonly cachedTokenRatio?: number
+    readonly providerRawCacheUsage?: Record<string, unknown>
+    readonly cacheDisabledReason?: string
+    readonly rolloutGateStatus: 'observe-only' | 'enabled' | 'disabled'
+    readonly circuitBreakerState: 'closed' | 'open'
+    readonly missDiagnosis?: string[]
+}
+
 export interface ResultSnapshot {
     readonly text: string
     readonly responseMessage: UIMessage
@@ -170,6 +219,7 @@ export interface ResultSnapshot {
         readonly inputTokens: number | undefined
         readonly outputTokens: number | undefined
     }
+    readonly cacheResult?: CacheResultSnapshot
 }
 
 export interface ContextManifest {
@@ -179,6 +229,7 @@ export interface ContextManifest {
     readonly pluginOutputs: PluginOutputSnapshot[]
     readonly assembledContext: AssembledContextSnapshot
     readonly modelRequest: ModelRequestSnapshot
+    readonly cachePlan?: CachePlanSnapshot
     readonly result?: ResultSnapshot
 }
 
