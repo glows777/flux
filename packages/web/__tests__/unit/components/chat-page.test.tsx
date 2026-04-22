@@ -52,6 +52,7 @@ let messageContextResponses: Record<
         body?: unknown
     }
 > = {}
+const scrollIntoViewMock = mock(() => {})
 
 mock.module('next/navigation', () => ({
     useRouter: () => ({ replace: mock(() => {}) }),
@@ -156,8 +157,18 @@ mock.module('@/components/chat/ChatWelcome', () => ({
 }))
 
 mock.module('@/components/chat/messages/AssistantMessage', () => ({
-    AssistantMessage: ({ children }: { children?: ReactNode }) => (
-        <div>{children}</div>
+    AssistantMessage: ({
+        message,
+        children,
+    }: {
+        message?: UIMessage
+        children?: ReactNode
+    }) => (
+        <div>
+            {message?.parts?.find((part) => part.type === 'text' && 'text' in part)
+                ?.text ?? null}
+            {children}
+        </div>
     ),
 }))
 
@@ -316,6 +327,18 @@ function createDeferred<T>() {
     return { promise, resolve, reject }
 }
 
+function queryContextSheet() {
+    return (
+        screen.queryByRole('complementary', { name: /context details/i }) ??
+        screen.queryByRole('dialog', { name: /context details/i })
+    )
+}
+
+async function findContextSheet() {
+    await waitFor(() => expect(queryContextSheet()).toBeDefined())
+    return queryContextSheet() as HTMLElement
+}
+
 describe('ChatPage', () => {
     beforeEach(() => {
         cleanup()
@@ -328,7 +351,9 @@ describe('ChatPage', () => {
         mockSendMessage.mockClear()
         mockRegenerate.mockClear()
         fetchMock.mockClear()
+        scrollIntoViewMock.mockClear()
         global.fetch = fetchMock as typeof fetch
+        Element.prototype.scrollIntoView = scrollIntoViewMock
     })
 
     afterEach(() => {
@@ -729,9 +754,7 @@ describe('ChatPage', () => {
                     '/api/sessions/session-1/messages/message-assistant-1/context',
             ),
         ).toBe(false)
-        expect(
-            screen.queryByRole('dialog', { name: /context details/i }),
-        ).toBeNull()
+        expect(queryContextSheet()).toBeNull()
     })
 
     it('prefetches the latest assistant context when switching sessions', async () => {
@@ -859,6 +882,94 @@ describe('ChatPage', () => {
         ).toBe(false)
     })
 
+    it('does not force transcript auto-scroll on sheet-only state changes', async () => {
+        chatMessages = [
+            {
+                id: 'message-user-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-1',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'first reply' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-2',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'second reply' }],
+            } as UIMessage,
+        ]
+
+        messageContextResponses[
+            '/api/sessions/session-1/messages/message-assistant-1/context'
+        ] = {
+            body: buildMessageContextResponse('run-1'),
+        }
+        messageContextResponses[
+            '/api/sessions/session-1/messages/message-assistant-2/context'
+        ] = {
+            body: buildMessageContextResponse('run-2'),
+        }
+
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: chatMessages,
+                                error: null,
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await screen.findByText('first reply')
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) =>
+                        String(input) ===
+                        '/api/sessions/session-1/messages/message-assistant-2/context',
+                ),
+            ).toBe(true),
+        )
+
+        scrollIntoViewMock.mockClear()
+
+        const openButtons = screen.getAllByRole('button', {
+            name: 'View context',
+        })
+
+        fireEvent.click(openButtons[0] as HTMLElement)
+        await findContextSheet()
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) =>
+                        String(input) ===
+                        '/api/sessions/session-1/messages/message-assistant-1/context',
+                ),
+            ).toBe(true),
+        )
+
+        fireEvent.click(
+            screen.getAllByRole('button', { name: /view context|viewing/i })[1] as HTMLElement,
+        )
+        fireEvent.click(
+            screen.getByRole('button', { name: 'Close context details' }),
+        )
+
+        expect(scrollIntoViewMock).not.toHaveBeenCalled()
+    })
+
     it('opens one shared sheet and reuses cached context across close and reopen', async () => {
         chatMessages = [
             {
@@ -927,9 +1038,7 @@ describe('ChatPage', () => {
         ).toHaveLength(1)
 
         fireEvent.click(readyButton)
-        expect(
-            await screen.findByRole('dialog', { name: /context details/i }),
-        ).toBeDefined()
+        expect(await findContextSheet()).toBeDefined()
         expect(
             screen
                 .getByRole('button', { name: /viewing/i })
@@ -941,7 +1050,7 @@ describe('ChatPage', () => {
         )
         await waitFor(() =>
             expect(
-                screen.queryByRole('dialog', { name: /context details/i }),
+                queryContextSheet(),
             ).toBeNull(),
         )
         expect(
@@ -950,9 +1059,7 @@ describe('ChatPage', () => {
                 .getAttribute('aria-pressed'),
         ).toBe('false')
         fireEvent.click(screen.getByRole('button', { name: /view context/i }))
-        expect(
-            await screen.findByRole('dialog', { name: /context details/i }),
-        ).toBeDefined()
+        expect(await findContextSheet()).toBeDefined()
         expect(
             screen.getByText(
                 (_, element) =>
@@ -1022,7 +1129,7 @@ describe('ChatPage', () => {
         })
 
         fireEvent.click(summaryButton)
-        await screen.findByRole('dialog', { name: /context details/i })
+        await findContextSheet()
         expect(
             screen.getByRole('button', { name: /viewing/i }),
         ).toBeDefined()
@@ -1031,7 +1138,7 @@ describe('ChatPage', () => {
 
         await waitFor(() =>
             expect(
-                screen.queryByRole('dialog', { name: /context details/i }),
+                queryContextSheet(),
             ).toBeNull(),
         )
         expect(
@@ -1116,9 +1223,7 @@ describe('ChatPage', () => {
 
         fireEvent.click(readyButtons[0] as HTMLElement)
 
-        expect(
-            await screen.findByRole('dialog', { name: /context details/i }),
-        ).toBeDefined()
+        expect(await findContextSheet()).toBeDefined()
         expect(
             screen.getByText((_, element) =>
                 element?.textContent === 'Message message-assistant-1',
@@ -1150,8 +1255,8 @@ describe('ChatPage', () => {
             ),
         ).toBeNull()
         expect(
-            screen.getAllByRole('dialog', { name: /context details/i }),
-        ).toHaveLength(1)
+            queryContextSheet(),
+        ).toBeDefined()
         expect(
             screen
                 .getAllByRole('button')
@@ -1239,7 +1344,7 @@ describe('ChatPage', () => {
             await screen.findByRole('button', { name: /view context/i }),
         )
 
-        await screen.findByRole('dialog', { name: /context details/i })
+        await findContextSheet()
         expect(
             screen.getByRole('button', { name: /viewing/i }),
         ).toBeDefined()
@@ -1259,7 +1364,7 @@ describe('ChatPage', () => {
 
         await waitFor(() =>
             expect(
-                screen.queryByRole('dialog', { name: /context details/i }),
+                queryContextSheet(),
             ).toBeNull(),
         )
         expect(screen.queryByRole('button', { name: /viewing/i })).toBeNull()
@@ -1338,7 +1443,7 @@ describe('ChatPage', () => {
         })
         expect(initialButton).toBeDefined()
         fireEvent.click(initialButton)
-        await screen.findByRole('dialog', { name: /context details/i })
+        await findContextSheet()
 
         fireEvent.click(screen.getByText('switch-session-2'))
 
@@ -1355,7 +1460,7 @@ describe('ChatPage', () => {
             screen.queryByRole('button', { name: /context selected/i }),
         ).toBeNull()
         expect(
-            screen.queryByRole('dialog', { name: /context details/i }),
+            queryContextSheet(),
         ).toBeNull()
 
         sessionSwitchDeferred.resolve({
@@ -1475,16 +1580,12 @@ describe('ChatPage', () => {
         })
 
         await screen.findByRole('button', { name: /view context/i })
-        expect(
-            screen.queryByRole('dialog', { name: /context details/i }),
-        ).toBeNull()
+        expect(queryContextSheet()).toBeNull()
 
         fireEvent.click(screen.getByRole('button', { name: /view context/i }))
 
         await screen.findByRole('button', { name: /viewing/i })
-        expect(
-            screen.getByRole('dialog', { name: /context details/i }),
-        ).toBeDefined()
+        expect(queryContextSheet()).toBeDefined()
         expect(
             fetchMock.mock.calls.filter(
                 ([input]) =>

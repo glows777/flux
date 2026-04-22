@@ -96,6 +96,25 @@ function Section({
     )
 }
 
+function DiagnosticCard({
+    title,
+    value,
+}: {
+    readonly title: string
+    readonly value: unknown
+}) {
+    return (
+        <div className='rounded-xl border border-white/6 bg-black/20 p-3'>
+            <p className='text-xs uppercase tracking-[0.16em] text-slate-500'>
+                {title}
+            </p>
+            <div className='mt-2'>
+                <JsonBlock value={value} />
+            </div>
+        </div>
+    )
+}
+
 function SegmentCard({
     segment,
     defaultOpen,
@@ -200,19 +219,22 @@ export function MessageContextDetailSheet({
     }
 
     const groups = state.status === 'ready' ? buildSegmentGroups(state.record) : []
+    const isModal = !isDesktop
 
     return (
         <>
-            <button
-                type='button'
-                aria-label='Close context details overlay'
-                onClick={onClose}
-                className='fixed inset-0 z-30 bg-black/60 md:hidden'
-            />
+            {isModal ? (
+                <button
+                    type='button'
+                    aria-label='Close context details overlay'
+                    onClick={onClose}
+                    className='fixed inset-0 z-30 bg-black/60 md:hidden'
+                />
+            ) : null}
 
             <aside
-                role='dialog'
-                aria-modal={isDesktop ? undefined : 'true'}
+                role={isModal ? 'dialog' : 'complementary'}
+                aria-modal={isModal ? 'true' : undefined}
                 aria-labelledby={titleId}
                 className='fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto border-t border-white/10 bg-[#050505] p-4 text-slate-200 shadow-[-1px_0_0_rgba(255,255,255,0.05)] md:static md:inset-auto md:w-[clamp(420px,36vw,480px)] md:border-l md:border-t-0'
             >
@@ -370,18 +392,51 @@ export function MessageContextDetailSheet({
 
                         <Section title='Request config'>
                             <div className='grid gap-3 md:grid-cols-2'>
-                                <div className='rounded-xl border border-white/6 bg-black/20 p-3 text-sm text-slate-300'>
-                                    Messages:{' '}
-                                    {
+                                <DiagnosticCard
+                                    title='Model messages'
+                                    value={{
+                                        count: state.record.manifest
+                                            .modelRequest.modelMessages.length,
+                                        messages:
+                                            state.record.manifest.modelRequest
+                                                .modelMessages,
+                                    }}
+                                />
+                                <DiagnosticCard
+                                    title='Tool names'
+                                    value={
                                         state.record.manifest.modelRequest
-                                            .modelMessages.length
+                                            .toolNames
                                     }
-                                </div>
-                                <div className='rounded-xl border border-white/6 bg-black/20 p-3 text-sm text-slate-300'>
-                                    Max output tokens:{' '}
-                                    {state.record.manifest.modelRequest
-                                        .maxOutputTokens ?? 'Not set'}
-                                </div>
+                                />
+                                <DiagnosticCard
+                                    title='Resolved params'
+                                    value={
+                                        state.record.manifest.modelRequest
+                                            .resolvedParams
+                                    }
+                                />
+                                <DiagnosticCard
+                                    title='Provider options'
+                                    value={
+                                        state.record.manifest.modelRequest
+                                            .providerOptions
+                                    }
+                                />
+                                <DiagnosticCard
+                                    title='Max output tokens'
+                                    value={
+                                        state.record.manifest.modelRequest
+                                            .maxOutputTokens ?? 'Not set'
+                                    }
+                                />
+                                <DiagnosticCard
+                                    title='Tool request context'
+                                    value={
+                                        state.record.manifest.assembledContext
+                                            .tools
+                                    }
+                                />
                             </div>
                         </Section>
 
@@ -427,6 +482,51 @@ export function MessageContextDetailSheet({
                                             value={
                                                 state.record.manifest.modelRequest
                                                     .systemText
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
+                                            Input raw messages
+                                        </p>
+                                        <JsonBlock
+                                            value={
+                                                state.record.manifest.input
+                                                    .rawMessages
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
+                                            Request model messages
+                                        </p>
+                                        <JsonBlock
+                                            value={
+                                                state.record.manifest
+                                                    .modelRequest.modelMessages
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
+                                            Resolved params candidates
+                                        </p>
+                                        <JsonBlock
+                                            value={
+                                                state.record.manifest
+                                                    .assembledContext.params
+                                                    .candidates
+                                            }
+                                        />
+                                    </div>
+                                    <div>
+                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
+                                            Tool request context
+                                        </p>
+                                        <JsonBlock
+                                            value={
+                                                state.record.manifest
+                                                    .assembledContext.tools
                                             }
                                         />
                                     </div>

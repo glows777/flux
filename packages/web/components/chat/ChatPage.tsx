@@ -495,9 +495,32 @@ export function ChatPage() {
 
     // ─── Auto-scroll ───
     const bottomRef = useRef<HTMLDivElement>(null)
+    const previousScrollSignatureRef = useRef<string | null>(null)
+    const messageScrollSignature = useMemo(() => {
+        const lastMessage = messages.at(-1)
+        if (!lastMessage) return null
+
+        return JSON.stringify({
+            count: messages.length,
+            id: lastMessage.id,
+            role: lastMessage.role,
+            parts: lastMessage.parts,
+        })
+    }, [messages])
+
     useEffect(() => {
+        if (messageScrollSignature == null) {
+            previousScrollSignatureRef.current = null
+            return
+        }
+
+        if (previousScrollSignatureRef.current === messageScrollSignature) {
+            return
+        }
+
+        previousScrollSignatureRef.current = messageScrollSignature
         bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    })
+    }, [messageScrollSignature])
 
     const placeholder = symbol ? `询问关于 ${symbol} 的问题...` : '发送消息...'
     const activeContextState =

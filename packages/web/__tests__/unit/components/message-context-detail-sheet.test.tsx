@@ -139,7 +139,18 @@ const readyState: MessageContextState = {
             },
             modelRequest: {
                 systemText: 'Base prompt text',
-                modelMessages: [],
+                modelMessages: [
+                    {
+                        id: 'request-user-1',
+                        role: 'user',
+                        parts: [
+                            {
+                                type: 'text',
+                                text: 'Compare NVDA and AMD',
+                            },
+                        ],
+                    },
+                ],
                 toolNames: ['webSearch'],
                 resolvedParams: { maxSteps: 4 },
                 maxOutputTokens: 512,
@@ -169,7 +180,7 @@ beforeEach(() => {
 })
 
 describe('MessageContextDetailSheet', () => {
-    it('renders the expected section order', () => {
+    it('renders desktop as a named side pane instead of a dialog', () => {
         render(
             <MessageContextDetailSheet
                 state={readyState}
@@ -180,8 +191,24 @@ describe('MessageContextDetailSheet', () => {
         )
 
         expect(screen.getByText('Context details')).toBeDefined()
-        const sheet = screen.getByRole('dialog', { name: 'Context details' })
-        expect(sheet?.getAttribute('aria-modal')).toBeNull()
+        expect(
+            screen.queryByRole('dialog', { name: 'Context details' }),
+        ).toBeNull()
+        expect(
+            screen.getByRole('complementary', { name: 'Context details' }),
+        ).toBeDefined()
+    })
+
+    it('renders the expected section order', () => {
+        render(
+            <MessageContextDetailSheet
+                state={readyState}
+                isOpen={true}
+                messageId='assistant-1'
+                onClose={() => {}}
+            />,
+        )
+
         const headings = screen
             .getAllByRole('heading', { level: 2 })
             .map((node) => node.textContent)
@@ -239,6 +266,7 @@ describe('MessageContextDetailSheet', () => {
         expect(screen.getByRole('dialog').getAttribute('aria-modal')).toBe(
             'true',
         )
+        expect(screen.queryByRole('complementary')).toBeNull()
     })
 
     it('shows restored segment metadata in the card body', () => {
@@ -296,7 +324,43 @@ describe('MessageContextDetailSheet', () => {
                 .getAttribute('aria-expanded'),
         ).toBe('true')
         expect(screen.getByText('System text')).toBeDefined()
+        expect(screen.getByText('Input raw messages')).toBeDefined()
+        expect(screen.getByText('Request model messages')).toBeDefined()
+        expect(screen.getByText('Resolved params candidates')).toBeDefined()
+        expect(screen.getAllByText('Tool request context')).toHaveLength(2)
         expect(screen.getByText('Result snapshot')).toBeDefined()
+    })
+
+    it('restores request diagnostics for advanced debugging', () => {
+        render(
+            <MessageContextDetailSheet
+                state={readyState}
+                isOpen={true}
+                messageId='assistant-1'
+                onClose={() => {}}
+            />,
+        )
+
+        const requestConfig = screen
+            .getByRole('heading', { name: 'Request config' })
+            .closest('section')
+
+        expect(within(requestConfig as HTMLElement).getByText('Model messages')).toBeDefined()
+        expect(within(requestConfig as HTMLElement).getByText('Resolved params')).toBeDefined()
+        expect(within(requestConfig as HTMLElement).getByText('Provider options')).toBeDefined()
+        expect(within(requestConfig as HTMLElement).getByText('Tool names')).toBeDefined()
+        expect(
+            within(requestConfig as HTMLElement).getAllByText(/webSearch/).length,
+        ).toBeGreaterThanOrEqual(2)
+        expect(
+            within(requestConfig as HTMLElement).getByText(/"count": 1/),
+        ).toBeDefined()
+        expect(
+            within(requestConfig as HTMLElement).getByText(/"maxSteps": 4/),
+        ).toBeDefined()
+        expect(
+            within(requestConfig as HTMLElement).getByText(/"reasoning": "medium"/),
+        ).toBeDefined()
     })
 
     it('closes the sheet when the close button is pressed', () => {
