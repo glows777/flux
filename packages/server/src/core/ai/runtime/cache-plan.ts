@@ -85,6 +85,7 @@ function hashTools(tools: ToolContributionSnapshot[]): string {
         canonicalize(
             tools.map((tool) => ({
                 name: tool.name,
+                tool: tool.definition.tool,
                 description: tool.manifestSpec.description ?? '',
                 inputSchemaSummary: tool.manifestSpec.inputSchemaSummary ?? null,
             })),

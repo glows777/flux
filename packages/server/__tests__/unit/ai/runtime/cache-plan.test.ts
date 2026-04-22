@@ -163,7 +163,7 @@ describe('buildCachePlan', () => {
         )
     })
 
-    test('hashes full tool definitions and flags memory/tool changes', () => {
+    test('hashes full tool definitions and flags tool-definition drift', () => {
         const previous = createPlan()
 
         const current = buildCachePlan({
@@ -171,19 +171,7 @@ describe('buildCachePlan', () => {
             modelId: 'claude-sonnet-4-6',
             assembledContext: {
                 segments: [
-                    {
-                        ...systemSegments[0],
-                    },
-                    {
-                        ...systemSegments[1],
-                    },
-                    {
-                        ...systemSegments[2],
-                        payload: {
-                            format: 'text',
-                            text: 'prefers dividend ETFs',
-                        },
-                    },
+                    ...systemSegments,
                     {
                         id: 'session-history',
                         target: 'messages',
@@ -195,24 +183,13 @@ describe('buildCachePlan', () => {
                         compactability: 'summarize',
                     },
                 ],
-                systemSegments: [
-                    systemSegments[0],
-                    systemSegments[1],
-                    {
-                        ...systemSegments[2],
-                        payload: {
-                            format: 'text',
-                            text: 'prefers dividend ETFs',
-                        },
-                    },
-                ],
+                systemSegments,
                 tools: [
                     {
                         ...tools[0],
                         definition: {
                             tool: {
-                                description:
-                                    'Search stock by symbol or company',
+                                description: 'Search stock by symbol',
                                 inputSchema: {
                                     type: 'object',
                                     properties: {
@@ -220,38 +197,27 @@ describe('buildCachePlan', () => {
                                     },
                                     required: ['symbol'],
                                 },
+                                execute: () => undefined,
                             } as never,
-                        },
-                        manifestSpec: {
-                            description: 'Search stock by symbol or company',
-                            inputSchemaSummary: {
-                                type: 'object',
-                                properties: {
-                                    symbol: { type: 'string' },
-                                },
-                                required: ['symbol'],
-                            },
                         },
                     },
                     tools[1],
                 ],
                 params: { candidates: [], resolved: {} },
-                totalEstimatedInputTokens: 1320,
+                totalEstimatedInputTokens: 1420,
             },
-            providerChangeFlags: { toolChoiceChanged: true },
+            providerChangeFlags: {},
             previousPlan: previous,
         })
 
-        expect(current.hashes.memoryHash).not.toBe(previous.hashes.memoryHash)
         expect(current.hashes.toolDefinitionsHash).not.toBe(
             previous.hashes.toolDefinitionsHash,
         )
-        expect(current.candidateInvalidationReasons).toContain('memory_changed')
         expect(current.candidateInvalidationReasons).toContain(
             'tool_definitions_changed',
         )
-        expect(current.candidateInvalidationReasons).toContain(
-            'tool_choice_changed',
+        expect(current.candidateInvalidationReasons).not.toContain(
+            'memory_changed',
         )
     })
 })
