@@ -504,7 +504,8 @@ describe('createAIRuntime', () => {
                 },
             },
         })
-        expect(manifest.modelRequest.systemText).toBe(streamArgs.system)
+        expect(streamArgs.system).toBeUndefined()
+        expect(manifest.modelRequest.systemText).toBe('')
         expect(manifest.modelRequest.modelMessages).toEqual(streamArgs.messages)
         expect(manifest.modelRequest.providerOptions).toEqual(
             streamArgs.providerOptions,

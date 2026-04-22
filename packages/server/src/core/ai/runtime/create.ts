@@ -276,7 +276,7 @@ export async function createAIRuntime(
                   }
 
             manifest = attachModelRequestSnapshot(manifest, {
-                systemText: providerCacheRequest.system as never,
+                systemText: (providerCacheRequest.system ?? '') as never,
                 modelMessages: providerCacheRequest.messages as never,
                 toolNames: Object.keys(assembled.aiTools),
                 resolvedParams: assembled.resolved,
