@@ -166,6 +166,12 @@ describe('buildCachePlan', () => {
             'global-instructions',
             'memory-context',
         ])
+        expect(Object.keys(plan.hashes).sort()).toEqual([
+            'dynamicTailHash',
+            'memoryHash',
+            'systemHash',
+            'toolDefinitionsHash',
+        ])
         expect(plan.eligibility.cacheExpected).toBe(true)
         expect(plan.eligibility.prefixAboveThreshold).toBe(true)
         expect(plan.eligibility.cacheExpectationReason).toBe(

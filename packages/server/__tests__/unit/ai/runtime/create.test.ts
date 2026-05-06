@@ -71,8 +71,6 @@ function createCachePlanFixture(
             toolDefinitionsHash: 'tool-hash',
             systemHash: 'system-hash',
             memoryHash: 'memory-hash',
-            stableCoreHash: 'stable-core-hash',
-            effectivePrefixHash: 'effective-prefix-hash',
             dynamicTailHash: 'dynamic-tail-hash',
         },
         eligibility: {

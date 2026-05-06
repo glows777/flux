@@ -171,8 +171,6 @@ export interface CachePlanHashesSnapshot {
     readonly toolDefinitionsHash: string
     readonly systemHash: string
     readonly memoryHash: string
-    readonly stableCoreHash: string
-    readonly effectivePrefixHash: string
     readonly dynamicTailHash: string
 }
 

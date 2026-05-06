@@ -30,8 +30,6 @@ const cachePlan: CachePlanSnapshot = {
         toolDefinitionsHash: 'tool-hash',
         systemHash: 'system-hash',
         memoryHash: 'memory-hash',
-        stableCoreHash: 'core-hash',
-        effectivePrefixHash: 'prefix-hash',
         dynamicTailHash: 'tail-hash',
     },
     eligibility: {

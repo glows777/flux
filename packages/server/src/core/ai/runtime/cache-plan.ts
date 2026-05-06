@@ -155,8 +155,6 @@ export function buildCachePlan(input: {
         memoryHash: sha256(
             canonicalize(cacheableSession.map((segment) => segment.payload)),
         ),
-        stableCoreHash: sha256(canonicalize(stableCore)),
-        effectivePrefixHash: sha256(canonicalize(effectivePrefix)),
         dynamicTailHash: sha256(canonicalize(dynamicTail)),
     }
 
