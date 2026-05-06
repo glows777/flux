@@ -308,35 +308,6 @@ function buildProviderChangeFlags(params: {
     return flags
 }
 
-function hasObservedCacheUsage(totalUsage?: LanguageModelUsage): boolean {
-    const details = totalUsage?.inputTokenDetails
-    return (
-        (details?.cacheReadTokens ?? 0) > 0 ||
-        (details?.cacheWriteTokens ?? 0) > 0
-    )
-}
-
-function deriveMissDiagnosis(params: {
-    cachePlan?: ReturnType<typeof buildCachePlan>
-    usedCacheRequest: boolean
-    totalUsage?: LanguageModelUsage
-}): string[] | undefined {
-    if (!params.usedCacheRequest || !params.cachePlan) return undefined
-    if (hasObservedCacheUsage(params.totalUsage)) return undefined
-
-    const candidateReasons =
-        params.cachePlan.candidateInvalidationReasons.filter(
-            (reason) => reason !== 'no_previous_baseline',
-        )
-
-    if (candidateReasons.length > 0) return candidateReasons
-    if (params.cachePlan.candidateInvalidationReasons.length > 0) {
-        return [...params.cachePlan.candidateInvalidationReasons]
-    }
-
-    return ['ttl_or_provider_eviction_suspected']
-}
-
 export async function createAIRuntime(
     options: RuntimeOptions,
 ): Promise<AIRuntime> {
@@ -430,7 +401,6 @@ export async function createAIRuntime(
                         modelId: resolveModelId(model),
                         assembledContext: assembledSnapshot,
                         providerChangeFlags,
-                        previousPlan: previousContextManifest?.cachePlan,
                     })
                 } catch (error) {
                     rolloutState.plannerFailures += 1
@@ -642,11 +612,6 @@ export async function createAIRuntime(
                             rolloutGateStatus,
                             circuitBreakerState,
                             cacheDisabledReason,
-                            missDiagnosis: deriveMissDiagnosis({
-                                cachePlan,
-                                usedCacheRequest,
-                                totalUsage,
-                            }),
                         }),
                     )
                 } catch (error) {
@@ -656,6 +621,7 @@ export async function createAIRuntime(
                     )
                     manifest = attachCacheResultSnapshot(manifest, {
                         cacheObserved: false,
+                        evidenceSource: 'none',
                         cacheDisabledReason:
                             'cache_result_normalization_failed',
                         rolloutGateStatus,

@@ -13,6 +13,7 @@ export type {
     ChatParams,
     CacheBreakpointSnapshot,
     CacheEligibilitySnapshot,
+    CacheEvidenceSource,
     CachePlanHashesSnapshot,
     CachePlanSnapshot,
     CacheResultSnapshot,

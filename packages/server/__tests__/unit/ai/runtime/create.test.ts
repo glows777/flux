@@ -87,7 +87,6 @@ function createCachePlanFixture(
             providerRuleAssumptions: ['anthropic.cacheControl.ephemeral'],
         },
         providerChangeFlags: {},
-        candidateInvalidationReasons: [],
         ...overrides,
     }
 }
@@ -154,6 +153,7 @@ const mockNormalizeProviderCacheResult = mock(
         circuitBreakerState: 'closed' | 'open'
     }) => ({
         cacheObserved: false,
+        evidenceSource: 'none' as const,
         cacheDisabledReason: input.cacheDisabledReason,
         rolloutGateStatus: input.rolloutGateStatus,
         circuitBreakerState: input.circuitBreakerState,
@@ -226,6 +226,7 @@ beforeEach(async () => {
             circuitBreakerState: 'closed' | 'open'
         }) => ({
             cacheObserved: false,
+            evidenceSource: 'none' as const,
             cacheDisabledReason: input.cacheDisabledReason,
             rolloutGateStatus: input.rolloutGateStatus,
             circuitBreakerState: input.circuitBreakerState,
@@ -615,7 +616,7 @@ describe('createAIRuntime', () => {
         )
     })
 
-    test('chat forwards previous cache baseline and provider change flags into cache planning', async () => {
+    test('chat forwards provider change flags into cache planning without previous cache baseline', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const previousManifest = createPreviousManifestFixture()
 
@@ -646,11 +647,13 @@ describe('createAIRuntime', () => {
 
         expect(mockBuildCachePlan).toHaveBeenCalledTimes(1)
         expect(mockBuildCachePlan.mock.calls[0]?.[0]).toMatchObject({
-            previousPlan: previousManifest.cachePlan,
             providerChangeFlags: {
                 thinkingConfigChanged: true,
             },
         })
+        expect(mockBuildCachePlan.mock.calls[0]?.[0]).not.toHaveProperty(
+            'previousPlan',
+        )
     })
 
     test('consumeStream normalizes cache usage into manifest.result.cacheResult', async () => {
@@ -675,6 +678,7 @@ describe('createAIRuntime', () => {
         }
         const normalizedCacheResult = {
             cacheObserved: true,
+            evidenceSource: 'both' as const,
             cacheReadTokens: 1200,
             cacheWriteTokens: 300,
             uncachedInputTokens: 100,
@@ -719,50 +723,11 @@ describe('createAIRuntime', () => {
         )
     })
 
-    test('consumeStream passes miss diagnosis through cache result normalization when an eligible cache request misses', async () => {
-        const createAIRuntime = await loadCreateAIRuntime()
-        const cachePlan = createCachePlanFixture({
-            candidateInvalidationReasons: ['tool_definitions_changed'],
-        })
-        const totalUsage = {
-            inputTokens: 900,
-            outputTokens: 80,
-            inputTokenDetails: {
-                cacheReadTokens: 0,
-                cacheWriteTokens: 0,
-                noCacheTokens: 900,
-            },
-        }
-
-        mockBuildCachePlan.mockImplementationOnce(() => cachePlan)
-        mockStreamText.mockImplementationOnce(() =>
-            createMockStreamResult({ totalUsage }),
-        )
-
-        const runtime = await createAIRuntime({
-            model: { modelId: 'claude-3-7-sonnet' } as never,
-            plugins: [],
-        })
-
-        const output = await runtime.chat({
-            messages: [],
-            channel: 'web',
-            mode: 'conversation',
-        })
-        await output.consumeStream()
-
-        expect(mockNormalizeProviderCacheResult).toHaveBeenCalledTimes(1)
-        expect(
-            mockNormalizeProviderCacheResult.mock.calls[0]?.[0],
-        ).toMatchObject({
-            missDiagnosis: ['tool_definitions_changed'],
-        })
-    })
-
     test('chat falls back cleanly when cache planning throws', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const normalizedCacheResult = {
             cacheObserved: false,
+            evidenceSource: 'none' as const,
             cacheDisabledReason: 'cache_plan_failed',
             rolloutGateStatus: 'observe-only' as const,
             circuitBreakerState: 'closed' as const,
@@ -1255,6 +1220,7 @@ describe('createAIRuntime', () => {
         expect(consumed.text).toBe('mock text')
         expect(consumed.contextManifest.result?.cacheResult).toEqual({
             cacheObserved: false,
+            evidenceSource: 'none',
             cacheDisabledReason: 'cache_result_normalization_failed',
             rolloutGateStatus: 'enabled',
             circuitBreakerState: 'closed',

@@ -1,5 +1,6 @@
 import type { LanguageModelUsage, ModelMessage, ProviderMetadata } from 'ai'
 import type {
+    CacheEvidenceSource,
     CachePlanSnapshot,
     CacheResultSnapshot,
     SystemContextSegmentSnapshot,
@@ -180,6 +181,63 @@ function pickAnthropicCacheUsage(
     }
 }
 
+function toPositiveNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0
+        ? value
+        : undefined
+}
+
+function hasPositiveTotalUsageCacheEvidence(
+    totalUsage?: LanguageModelUsage,
+): boolean {
+    const details = totalUsage?.inputTokenDetails
+    return (
+        toPositiveNumber(details?.cacheReadTokens) != null ||
+        toPositiveNumber(details?.cacheWriteTokens) != null
+    )
+}
+
+function hasPositiveProviderCacheEvidence(
+    providerRawCacheUsage?: Record<string, unknown>,
+): boolean {
+    const anthropic = providerRawCacheUsage?.anthropic
+    if (
+        anthropic == null ||
+        typeof anthropic !== 'object' ||
+        Array.isArray(anthropic)
+    ) {
+        return false
+    }
+
+    const record = anthropic as Record<string, unknown>
+    if (toPositiveNumber(record.cacheCreationInputTokens) != null) {
+        return true
+    }
+
+    const usage = record.usage
+    if (usage == null || typeof usage !== 'object' || Array.isArray(usage)) {
+        return false
+    }
+
+    const usageRecord = usage as Record<string, unknown>
+    return (
+        toPositiveNumber(usageRecord.cache_creation_input_tokens) != null ||
+        toPositiveNumber(usageRecord.cache_read_input_tokens) != null
+    )
+}
+
+function resolveCacheEvidenceSource(params: {
+    totalUsagePositive: boolean
+    providerMetadataPositive: boolean
+}): CacheEvidenceSource {
+    if (params.totalUsagePositive && params.providerMetadataPositive) {
+        return 'both'
+    }
+    if (params.totalUsagePositive) return 'totalUsage'
+    if (params.providerMetadataPositive) return 'providerMetadata'
+    return 'none'
+}
+
 export function buildProviderCacheRequest(input: {
     provider: 'anthropic' | 'openai' | 'unknown'
     cachePlan: CachePlanSnapshot
@@ -228,7 +286,6 @@ export function normalizeProviderCacheResult(input: {
     rolloutGateStatus: 'observe-only' | 'enabled' | 'disabled'
     circuitBreakerState: 'closed' | 'open'
     cacheDisabledReason?: string
-    missDiagnosis?: string[]
 }): CacheResultSnapshot {
     void input.cachePlan
 
@@ -241,19 +298,28 @@ export function normalizeProviderCacheResult(input: {
         (cacheReadTokens ?? 0) +
         (cacheWriteTokens ?? 0) +
         (uncachedInputTokens ?? 0)
+    const providerRawCacheUsage = pickAnthropicCacheUsage(input.providerMetadata)
+    const totalUsagePositive = hasPositiveTotalUsageCacheEvidence(
+        input.totalUsage,
+    )
+    const providerMetadataPositive =
+        hasPositiveProviderCacheEvidence(providerRawCacheUsage)
+    const evidenceSource = resolveCacheEvidenceSource({
+        totalUsagePositive,
+        providerMetadataPositive,
+    })
 
     return {
-        cacheObserved:
-            (cacheReadTokens ?? 0) > 0 || (cacheWriteTokens ?? 0) > 0,
+        cacheObserved: evidenceSource !== 'none',
+        evidenceSource,
         cacheReadTokens,
         cacheWriteTokens,
         uncachedInputTokens,
         cachedTokenRatio:
             totalInput > 0 ? (cacheReadTokens ?? 0) / totalInput : undefined,
-        providerRawCacheUsage: pickAnthropicCacheUsage(input.providerMetadata),
+        providerRawCacheUsage,
         cacheDisabledReason: input.cacheDisabledReason,
         rolloutGateStatus: input.rolloutGateStatus,
         circuitBreakerState: input.circuitBreakerState,
-        missDiagnosis: input.missDiagnosis,
     }
 }

@@ -88,7 +88,6 @@ describe('saveMessageManifest', () => {
                     providerRuleAssumptions: ['anthropic>=1024'],
                 },
                 providerChangeFlags: {},
-                candidateInvalidationReasons: ['below_cache_threshold'],
             },
             result: {
                 text: '',
@@ -97,6 +96,7 @@ describe('saveMessageManifest', () => {
                 usage: { inputTokens: 0, outputTokens: 0 },
                 cacheResult: {
                     cacheObserved: false,
+                    evidenceSource: 'none',
                     cacheReadTokens: 0,
                     cacheWriteTokens: 0,
                     uncachedInputTokens: 0,
@@ -216,7 +216,6 @@ describe('loadMessageManifest', () => {
                     providerRuleAssumptions: ['anthropic>=1024'],
                 },
                 providerChangeFlags: {},
-                candidateInvalidationReasons: ['below_cache_threshold'],
             },
             result: {
                 text: '',
@@ -225,6 +224,7 @@ describe('loadMessageManifest', () => {
                 usage: { inputTokens: 0, outputTokens: 0 },
                 cacheResult: {
                     cacheObserved: false,
+                    evidenceSource: 'none',
                     cacheReadTokens: 0,
                     cacheWriteTokens: 0,
                     uncachedInputTokens: 0,
@@ -253,6 +253,124 @@ describe('loadMessageManifest', () => {
             runId: 'run-2',
             manifest,
         })
+    })
+
+    it('loads legacy cache results without evidenceSource', async () => {
+        const { loadMessageManifest } = await importActualSessionModule()
+        const db = createMockDb()
+        const deps = { db } as unknown as SessionDeps
+        const manifest = {
+            runId: 'run-legacy-cache',
+            createdAt: '2024-06-04T00:00:00.000Z',
+            input: {
+                channel: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                rawMessages: [],
+                defaults: {},
+            },
+            pluginOutputs: [],
+            assembledContext: {
+                segments: [],
+                systemSegments: [],
+                tools: [],
+                params: { candidates: [], resolved: {} },
+                totalEstimatedInputTokens: 0,
+            },
+            modelRequest: {
+                systemText: '',
+                modelMessages: [],
+                toolNames: [],
+                resolvedParams: {},
+                providerOptions: {},
+            },
+            result: {
+                text: '',
+                responseMessage: { id: 'a1', role: 'assistant', parts: [] },
+                toolCalls: [],
+                usage: { inputTokens: 0, outputTokens: 0 },
+                cacheResult: {
+                    cacheObserved: false,
+                    rolloutGateStatus: 'observe-only',
+                    circuitBreakerState: 'closed',
+                },
+            },
+        }
+
+        db.chatMessageManifest.findUnique = mock(() =>
+            Promise.resolve({
+                version: 1,
+                runId: manifest.runId,
+                manifest: JSON.stringify(manifest),
+            }),
+        ) as typeof db.chatMessageManifest.findUnique
+
+        const result = await loadMessageManifest('session-1', 'message-1', deps)
+
+        expect(result?.manifest.result?.cacheResult?.cacheObserved).toBe(false)
+    })
+
+    it('rejects cache results with invalid evidenceSource', async () => {
+        const { loadMessageManifest } = await importActualSessionModule()
+        const { SessionError } = await importActualSessionErrors()
+        const db = createMockDb()
+        const deps = { db } as unknown as SessionDeps
+        const manifest = {
+            runId: 'run-invalid-evidence-source',
+            createdAt: '2024-06-04T00:00:00.000Z',
+            input: {
+                channel: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                rawMessages: [],
+                defaults: {},
+            },
+            pluginOutputs: [],
+            assembledContext: {
+                segments: [],
+                systemSegments: [],
+                tools: [],
+                params: { candidates: [], resolved: {} },
+                totalEstimatedInputTokens: 0,
+            },
+            modelRequest: {
+                systemText: '',
+                modelMessages: [],
+                toolNames: [],
+                resolvedParams: {},
+                providerOptions: {},
+            },
+            result: {
+                text: '',
+                responseMessage: { id: 'a1', role: 'assistant', parts: [] },
+                toolCalls: [],
+                usage: { inputTokens: 0, outputTokens: 0 },
+                cacheResult: {
+                    cacheObserved: false,
+                    evidenceSource: 'localGuess',
+                    rolloutGateStatus: 'observe-only',
+                    circuitBreakerState: 'closed',
+                },
+            },
+        }
+
+        db.chatMessageManifest.findUnique = mock(() =>
+            Promise.resolve({
+                version: 1,
+                runId: manifest.runId,
+                manifest: JSON.stringify(manifest),
+            }),
+        ) as typeof db.chatMessageManifest.findUnique
+
+        try {
+            await loadMessageManifest('session-1', 'message-1', deps)
+            expect.unreachable('Should have thrown')
+        } catch (error) {
+            expect(error).toBeInstanceOf(SessionError)
+            expect((error as InstanceType<typeof SessionError>).code).toBe(
+                'INVALID_INPUT',
+            )
+        }
     })
 
     it('throws INVALID_INPUT when manifest JSON is malformed', async () => {
@@ -377,6 +495,7 @@ describe('loadMessageManifest', () => {
                     result: {
                         cacheResult: {
                             cacheObserved: true,
+                            evidenceSource: 'totalUsage',
                             cacheReadTokens: 1,
                             cacheWriteTokens: 2,
                             uncachedInputTokens: 3,

@@ -30,6 +30,15 @@ function hasObjectKey(value: Record<string, unknown>, key: string): boolean {
     return isPlainObject(value[key])
 }
 
+function isCacheEvidenceSource(value: unknown): boolean {
+    return (
+        value === 'totalUsage' ||
+        value === 'providerMetadata' ||
+        value === 'both' ||
+        value === 'none'
+    )
+}
+
 function isManifestInputShape(
     value: unknown,
 ): value is Record<string, unknown> {
@@ -83,19 +92,31 @@ function isCachePlanShape(value: unknown): value is Record<string, unknown> {
         hasArrayKey(value, 'breakpoints') &&
         hasObjectKey(value, 'hashes') &&
         hasObjectKey(value, 'eligibility') &&
-        hasObjectKey(value, 'providerChangeFlags') &&
-        hasArrayKey(value, 'candidateInvalidationReasons')
+        hasObjectKey(value, 'providerChangeFlags')
     )
 }
 
 function isCacheResultShape(value: unknown): value is Record<string, unknown> {
     if (!isPlainObject(value)) return false
 
-    return (
-        typeof value.cacheObserved === 'boolean' &&
-        hasStringKey(value, 'rolloutGateStatus') &&
-        hasStringKey(value, 'circuitBreakerState')
-    )
+    if (
+        !(
+            typeof value.cacheObserved === 'boolean' &&
+            hasStringKey(value, 'rolloutGateStatus') &&
+            hasStringKey(value, 'circuitBreakerState')
+        )
+    ) {
+        return false
+    }
+
+    if (
+        'evidenceSource' in value &&
+        !isCacheEvidenceSource(value.evidenceSource)
+    ) {
+        return false
+    }
+
+    return true
 }
 
 function isResultShape(value: unknown): value is Record<string, unknown> {

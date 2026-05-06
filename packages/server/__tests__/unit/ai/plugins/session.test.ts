@@ -187,7 +187,6 @@ describe('sessionPlugin', () => {
                     ],
                 },
                 providerChangeFlags: {},
-                candidateInvalidationReasons: [],
             },
         }
         const deps = makeDeps({

@@ -40,7 +40,6 @@ const cachePlan: CachePlanSnapshot = {
         providerRuleAssumptions: ['anthropic.cacheControl.ephemeral'],
     },
     providerChangeFlags: {},
-    candidateInvalidationReasons: [],
 }
 
 const systemSegments: SystemContextSegmentSnapshot[] = [
@@ -304,6 +303,7 @@ describe('normalizeProviderCacheResult', () => {
 
         expect(result).toMatchObject({
             cacheObserved: true,
+            evidenceSource: 'both',
             cacheReadTokens: 1200,
             cacheWriteTokens: 300,
             uncachedInputTokens: 100,
@@ -320,5 +320,212 @@ describe('normalizeProviderCacheResult', () => {
                 },
             },
         })
+    })
+
+    test('uses totalUsage as the evidence source when normalized cache tokens are present', async () => {
+        const { normalizeProviderCacheResult } = await loadProviderCacheModule()
+
+        const result = normalizeProviderCacheResult({
+            cachePlan,
+            totalUsage: {
+                inputTokens: 1600,
+                outputTokens: 80,
+                inputTokenDetails: {
+                    cacheReadTokens: 1200,
+                    cacheWriteTokens: 300,
+                    noCacheTokens: 100,
+                },
+            } as never,
+            rolloutGateStatus: 'enabled',
+            circuitBreakerState: 'closed',
+        })
+
+        expect(result).toMatchObject({
+            cacheObserved: true,
+            evidenceSource: 'totalUsage',
+            cacheReadTokens: 1200,
+            cacheWriteTokens: 300,
+            uncachedInputTokens: 100,
+            cachedTokenRatio: 0.75,
+        })
+    })
+
+    test('falls back to provider metadata when totalUsage lacks cache details', async () => {
+        const { normalizeProviderCacheResult } = await loadProviderCacheModule()
+
+        const result = normalizeProviderCacheResult({
+            cachePlan,
+            totalUsage: {
+                inputTokens: 1600,
+                outputTokens: 80,
+            } as never,
+            providerMetadata: {
+                anthropic: {
+                    usage: {
+                        cache_creation_input_tokens: 300,
+                        cache_read_input_tokens: 1200,
+                    },
+                },
+            } as never,
+            rolloutGateStatus: 'enabled',
+            circuitBreakerState: 'closed',
+        })
+
+        expect(result).toMatchObject({
+            cacheObserved: true,
+            evidenceSource: 'providerMetadata',
+            cacheReadTokens: undefined,
+            cacheWriteTokens: undefined,
+            uncachedInputTokens: undefined,
+            cachedTokenRatio: undefined,
+        })
+        expect(result.providerRawCacheUsage).toEqual({
+            anthropic: {
+                usage: {
+                    cache_creation_input_tokens: 300,
+                    cache_read_input_tokens: 1200,
+                },
+            },
+        })
+    })
+
+    test('records both evidence sources when normalized usage and metadata are positive', async () => {
+        const { normalizeProviderCacheResult } = await loadProviderCacheModule()
+
+        const result = normalizeProviderCacheResult({
+            cachePlan,
+            totalUsage: {
+                inputTokens: 1600,
+                outputTokens: 80,
+                inputTokenDetails: {
+                    cacheReadTokens: 1200,
+                    cacheWriteTokens: 300,
+                    noCacheTokens: 100,
+                },
+            } as never,
+            providerMetadata: {
+                anthropic: {
+                    usage: {
+                        cache_creation_input_tokens: 300,
+                        cache_read_input_tokens: 1200,
+                    },
+                },
+            } as never,
+            rolloutGateStatus: 'enabled',
+            circuitBreakerState: 'closed',
+        })
+
+        expect(result.cacheObserved).toBe(true)
+        expect(result.evidenceSource).toBe('both')
+    })
+
+    test('records providerMetadata when metadata is positive but normalized usage is zero', async () => {
+        const { normalizeProviderCacheResult } = await loadProviderCacheModule()
+
+        const result = normalizeProviderCacheResult({
+            cachePlan,
+            totalUsage: {
+                inputTokens: 1600,
+                outputTokens: 80,
+                inputTokenDetails: {
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    noCacheTokens: 1600,
+                },
+            } as never,
+            providerMetadata: {
+                anthropic: {
+                    usage: {
+                        cache_read_input_tokens: 1200,
+                    },
+                },
+            } as never,
+            rolloutGateStatus: 'enabled',
+            circuitBreakerState: 'closed',
+        })
+
+        expect(result.cacheObserved).toBe(true)
+        expect(result.evidenceSource).toBe('providerMetadata')
+        expect(result.cacheReadTokens).toBe(0)
+        expect(result.uncachedInputTokens).toBe(1600)
+    })
+
+    test('records none when no positive cache evidence is present', async () => {
+        const { normalizeProviderCacheResult } = await loadProviderCacheModule()
+
+        const result = normalizeProviderCacheResult({
+            cachePlan,
+            totalUsage: {
+                inputTokens: 1600,
+                outputTokens: 80,
+                inputTokenDetails: {
+                    cacheReadTokens: 0,
+                    cacheWriteTokens: 0,
+                    noCacheTokens: 1600,
+                },
+            } as never,
+            providerMetadata: {
+                anthropic: {
+                    usage: {
+                        input_tokens: 1600,
+                    },
+                },
+            } as never,
+            rolloutGateStatus: 'observe-only',
+            circuitBreakerState: 'closed',
+        })
+
+        expect(result).toMatchObject({
+            cacheObserved: false,
+            evidenceSource: 'none',
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+            uncachedInputTokens: 1600,
+            cachedTokenRatio: 0,
+        })
+    })
+
+    test('does not treat malformed totalUsage cache token values as positive evidence', async () => {
+        const { normalizeProviderCacheResult } = await loadProviderCacheModule()
+        const malformedInputTokenDetails = [
+            {
+                cacheReadTokens: '1200',
+                cacheWriteTokens: 0,
+                noCacheTokens: 1600,
+            },
+            {
+                cacheReadTokens: 0,
+                cacheWriteTokens: '300',
+                noCacheTokens: 1600,
+            },
+            {
+                cacheReadTokens: null,
+                cacheWriteTokens: undefined,
+                noCacheTokens: 1600,
+            },
+            {
+                cacheReadTokens: -1200,
+                cacheWriteTokens: -300,
+                noCacheTokens: 1600,
+            },
+        ]
+
+        for (const inputTokenDetails of malformedInputTokenDetails) {
+            const result = normalizeProviderCacheResult({
+                cachePlan,
+                totalUsage: {
+                    inputTokens: 1600,
+                    outputTokens: 80,
+                    inputTokenDetails,
+                } as never,
+                rolloutGateStatus: 'enabled',
+                circuitBreakerState: 'closed',
+            })
+
+            expect(result).toMatchObject({
+                cacheObserved: false,
+                evidenceSource: 'none',
+            })
+        }
     })
 })

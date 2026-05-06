@@ -318,6 +318,7 @@ describe('ai context visibility integration', () => {
         )
         expect(manifest.result?.cacheResult).toMatchObject({
             cacheObserved: false,
+            evidenceSource: 'none',
             rolloutGateStatus: 'observe-only',
             circuitBreakerState: 'closed',
         })

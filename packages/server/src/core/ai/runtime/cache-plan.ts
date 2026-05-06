@@ -84,20 +84,6 @@ function classifySegments(segments: ContextSegmentSnapshot[]) {
     return { stableCore, cacheableSession, dynamicTail }
 }
 
-function classifyDynamicTail(segments: ContextSegmentSnapshot[]) {
-    return {
-        historyTail: segments.filter(
-            (segment) => segment.kind === 'history.recent',
-        ),
-        liveTail: segments.filter((segment) => segment.kind === 'live.runtime'),
-        otherTail: segments.filter(
-            (segment) =>
-                segment.kind !== 'history.recent' &&
-                segment.kind !== 'live.runtime',
-        ),
-    }
-}
-
 function hashTools(tools: ToolContributionSnapshot[]): string {
     return sha256(
         canonicalize(
@@ -116,29 +102,15 @@ function estimateTools(tools: ToolContributionSnapshot[]): number {
     return tools.reduce((total, tool) => total + (tool.estimatedTokens ?? 0), 0)
 }
 
-function toSnakeCase(value: string): string {
-    return value
-        .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-        .replace(/([A-Z]+)([A-Z][a-z0-9]+)/g, '$1_$2')
-        .toLowerCase()
-}
-
-function uniquePush(target: string[], value: string): void {
-    if (!target.includes(value)) target.push(value)
-}
-
 export function buildCachePlan(input: {
     provider: 'anthropic' | 'openai' | 'unknown'
     modelId?: string
     assembledContext: AssembledContextSnapshot
     providerChangeFlags: Record<string, boolean>
-    previousPlan?: CachePlanSnapshot
 }): CachePlanSnapshot {
     const { stableCore, cacheableSession, dynamicTail } = classifySegments(
         input.assembledContext.segments,
     )
-    const { historyTail, liveTail, otherTail } =
-        classifyDynamicTail(dynamicTail)
     const toolDefinitionsHash = hashTools(input.assembledContext.tools)
     const effectivePrefix = [...stableCore, ...cacheableSession]
     const breakpoints: Array<{
@@ -178,49 +150,6 @@ export function buildCachePlan(input: {
             0,
         )
 
-    const candidateInvalidationReasons: string[] = []
-    const previous = input.previousPlan
-
-    if (!previous) {
-        candidateInvalidationReasons.push('no_previous_baseline')
-    } else {
-        if (
-            previous.hashes.toolDefinitionsHash !== hashes.toolDefinitionsHash
-        ) {
-            uniquePush(candidateInvalidationReasons, 'tool_definitions_changed')
-        }
-
-        if (previous.hashes.systemHash !== hashes.systemHash) {
-            uniquePush(candidateInvalidationReasons, 'system_changed')
-        }
-
-        if (previous.hashes.memoryHash !== hashes.memoryHash) {
-            uniquePush(candidateInvalidationReasons, 'memory_changed')
-        }
-
-        if (previous.hashes.dynamicTailHash !== hashes.dynamicTailHash) {
-            if (
-                historyTail.length > 0 &&
-                liveTail.length === 0 &&
-                otherTail.length === 0
-            ) {
-                uniquePush(candidateInvalidationReasons, 'history_grew')
-            } else if (
-                liveTail.length > 0 &&
-                historyTail.length === 0 &&
-                otherTail.length === 0
-            ) {
-                uniquePush(candidateInvalidationReasons, 'live_context_changed')
-            } else {
-                uniquePush(candidateInvalidationReasons, 'dynamic_tail_changed')
-            }
-        }
-    }
-
-    for (const [flag, changed] of Object.entries(input.providerChangeFlags)) {
-        if (changed) uniquePush(candidateInvalidationReasons, toSnakeCase(flag))
-    }
-
     const providerSupportsPromptCache = input.provider === 'anthropic'
     const prefixAboveThreshold =
         providerSupportsPromptCache && effectivePrefixEstimatedTokens >= 1024
@@ -254,8 +183,5 @@ export function buildCachePlan(input: {
                 : ['provider_not_supported'],
         },
         providerChangeFlags: input.providerChangeFlags,
-        candidateInvalidationReasons: [
-            ...new Set(candidateInvalidationReasons),
-        ],
     }
 }

@@ -123,7 +123,6 @@ function createPlan(
     overrides: Partial<{
         provider: 'anthropic' | 'openai' | 'unknown'
         providerChangeFlags: Record<string, boolean>
-        previousPlan: CachePlanSnapshot
         segments: ContextSegmentSnapshot[]
         systemSegments: SystemContextSegmentSnapshot[]
         tools: ToolContributionSnapshot[]
@@ -144,7 +143,6 @@ function createPlan(
                 overrides.totalEstimatedInputTokens ?? 1420,
         },
         providerChangeFlags: overrides.providerChangeFlags ?? {},
-        previousPlan: overrides.previousPlan,
     })
 }
 
@@ -180,26 +178,14 @@ describe('buildCachePlan', () => {
         )
     })
 
-    test('hashes full tool definitions and flags tool-definition drift', () => {
+    test('hashes full tool definitions without producing local invalidation reasons', () => {
         const previous = createPlan()
 
         const current = buildCachePlan({
             provider: 'anthropic',
             modelId: 'claude-sonnet-4-6',
             assembledContext: {
-                segments: [
-                    ...systemSegments,
-                    {
-                        id: 'session-history',
-                        target: 'messages',
-                        kind: 'history.recent',
-                        payload: { format: 'messages', messages: [] },
-                        source: { plugin: 'session' },
-                        priority: 'high',
-                        cacheability: 'session',
-                        compactability: 'summarize',
-                    },
-                ],
+                segments: [...systemSegments, historySegment],
                 systemSegments,
                 tools: [
                     {
@@ -224,18 +210,12 @@ describe('buildCachePlan', () => {
                 totalEstimatedInputTokens: 1420,
             },
             providerChangeFlags: {},
-            previousPlan: previous,
         })
 
         expect(current.hashes.toolDefinitionsHash).not.toBe(
             previous.hashes.toolDefinitionsHash,
         )
-        expect(current.candidateInvalidationReasons).toContain(
-            'tool_definitions_changed',
-        )
-        expect(current.candidateInvalidationReasons).not.toContain(
-            'memory_changed',
-        )
+        expect('candidateInvalidationReasons' in current).toBe(false)
     })
 
     test('disables cache expectations for non-anthropic providers', () => {
@@ -397,7 +377,7 @@ describe('buildCachePlan', () => {
         expect(plan.dynamicTailSegmentIds).toContain('memory-volatile')
     })
 
-    test('treats live-context-only changes as live_context_changed', () => {
+    test('keeps live runtime context in the dynamic tail without local miss inference', () => {
         const base: SystemContextSegmentSnapshot = {
             id: 'small-base',
             target: 'system',
@@ -411,57 +391,28 @@ describe('buildCachePlan', () => {
             finalOrder: 0,
             estimatedTokens: 600,
         }
+        const liveContext: ContextSegmentSnapshot = {
+            id: 'live-context',
+            target: 'system',
+            kind: 'live.runtime',
+            payload: { format: 'text', text: 'live two' },
+            source: { plugin: 'heartbeat' },
+            priority: 'high',
+            cacheability: 'volatile',
+            compactability: 'preserve',
+            included: true,
+            finalOrder: 1,
+            estimatedTokens: 100,
+        }
 
-        const previous = createPlan({
+        const plan = createPlan({
             systemSegments: [base],
-            segments: [
-                base,
-                {
-                    id: 'live-context',
-                    target: 'system',
-                    kind: 'live.runtime',
-                    payload: { format: 'text', text: 'live one' },
-                    source: { plugin: 'heartbeat' },
-                    priority: 'high',
-                    cacheability: 'volatile',
-                    compactability: 'preserve',
-                    included: true,
-                    finalOrder: 1,
-                    estimatedTokens: 100,
-                },
-            ],
+            segments: [base, liveContext],
             tools: [],
             totalEstimatedInputTokens: 700,
         })
 
-        const current = createPlan({
-            systemSegments: [base],
-            segments: [
-                base,
-                {
-                    id: 'live-context',
-                    target: 'system',
-                    kind: 'live.runtime',
-                    payload: { format: 'text', text: 'live two' },
-                    source: { plugin: 'heartbeat' },
-                    priority: 'high',
-                    cacheability: 'volatile',
-                    compactability: 'preserve',
-                    included: true,
-                    finalOrder: 1,
-                    estimatedTokens: 100,
-                },
-            ],
-            tools: [],
-            totalEstimatedInputTokens: 700,
-            previousPlan: previous,
-        })
-
-        expect(current.candidateInvalidationReasons).toContain(
-            'live_context_changed',
-        )
-        expect(current.candidateInvalidationReasons).not.toContain(
-            'history_grew',
-        )
+        expect(plan.dynamicTailSegmentIds).toContain('live-context')
+        expect('candidateInvalidationReasons' in plan).toBe(false)
     })
 })

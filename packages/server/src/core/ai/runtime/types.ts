@@ -182,6 +182,12 @@ export interface CacheEligibilitySnapshot {
     readonly providerRuleAssumptions: string[]
 }
 
+export type CacheEvidenceSource =
+    | 'totalUsage'
+    | 'providerMetadata'
+    | 'both'
+    | 'none'
+
 export interface CachePlanSnapshot {
     readonly provider: 'anthropic' | 'openai' | 'unknown'
     readonly stableCoreSegmentIds: string[]
@@ -193,11 +199,11 @@ export interface CachePlanSnapshot {
     readonly hashes: CachePlanHashesSnapshot
     readonly eligibility: CacheEligibilitySnapshot
     readonly providerChangeFlags: Record<string, boolean>
-    readonly candidateInvalidationReasons: string[]
 }
 
 export interface CacheResultSnapshot {
     readonly cacheObserved: boolean
+    readonly evidenceSource: CacheEvidenceSource
     readonly cacheReadTokens?: number
     readonly cacheWriteTokens?: number
     readonly uncachedInputTokens?: number
@@ -206,7 +212,6 @@ export interface CacheResultSnapshot {
     readonly cacheDisabledReason?: string
     readonly rolloutGateStatus: 'observe-only' | 'enabled' | 'disabled'
     readonly circuitBreakerState: 'closed' | 'open'
-    readonly missDiagnosis?: string[]
 }
 
 export interface ResultSnapshot {

@@ -49,11 +49,11 @@ describe('context-manifest cache snapshots', () => {
                 modelChanged: false,
                 toolChoiceChanged: false,
             },
-            candidateInvalidationReasons: [],
         })
 
         manifest = attachCacheResultSnapshot(manifest, {
             cacheObserved: true,
+            evidenceSource: 'both',
             cacheReadTokens: 1200,
             cacheWriteTokens: 400,
             uncachedInputTokens: 200,
@@ -97,6 +97,7 @@ describe('context-manifest cache snapshots', () => {
 
         const updated = attachCacheResultSnapshot(withResult, {
             cacheObserved: true,
+            evidenceSource: 'totalUsage',
             cacheReadTokens: 1200,
             cacheWriteTokens: 400,
             uncachedInputTokens: 200,
@@ -118,6 +119,7 @@ describe('context-manifest cache snapshots', () => {
             usage: { inputTokens: 10, outputTokens: 3 },
             cacheResult: {
                 cacheObserved: true,
+                evidenceSource: 'totalUsage',
                 cacheReadTokens: 1200,
                 cacheWriteTokens: 400,
                 uncachedInputTokens: 200,
