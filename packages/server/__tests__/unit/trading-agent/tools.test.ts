@@ -403,4 +403,70 @@ describe('createTradingAgentTools', () => {
         ).toBe(3)
         expect((result as { orders: unknown[]; total: number }).total).toBe(5)
     })
+
+    it('getTradeHistory uses filledQty when computing P&L for partial fills', async () => {
+        const buyDate = new Date('2026-03-01T00:00:00.000Z')
+        const sellDate = new Date('2026-03-05T00:00:00.000Z')
+        const mockOrders = [
+            {
+                id: 'b1',
+                alpacaOrderId: 'alp-b1',
+                symbol: 'AAPL',
+                side: 'buy',
+                qty: 10,
+                type: 'market',
+                status: 'filled',
+                filledQty: 4,
+                filledAvgPrice: 100,
+                filledAt: buyDate,
+                reasoning: 'partial buy',
+                createdAt: buyDate,
+                limitPrice: null,
+                stopPrice: null,
+                trailPercent: null,
+                timeInForce: 'day',
+                updatedAt: buyDate,
+            },
+            {
+                id: 's1',
+                alpacaOrderId: 'alp-s1',
+                symbol: 'AAPL',
+                side: 'sell',
+                qty: 10,
+                type: 'market',
+                status: 'filled',
+                filledQty: 4,
+                filledAvgPrice: 110,
+                filledAt: sellDate,
+                reasoning: 'partial sell',
+                createdAt: sellDate,
+                limitPrice: null,
+                stopPrice: null,
+                trailPercent: null,
+                timeInForce: 'day',
+                updatedAt: sellDate,
+            },
+        ]
+
+        const db = makeDb()
+        db.order.findMany = mock(
+            async () =>
+                mockOrders as unknown as Awaited<
+                    ReturnType<typeof db.order.findMany>
+                >,
+        )
+
+        const deps = makeDeps({ db: db as unknown as TradingAgentDeps['db'] })
+        const { getTradeHistory } = createTradingAgentTools(deps)
+
+        const result = await getTradeHistory.execute(
+            { limit: 20 },
+            { messages: [], toolCallId: 'test' },
+        )
+
+        const sell = (
+            result as { orders: Array<{ realizedPl: number | null }> }
+        ).orders[1]
+        expect(sell.realizedPl).toBe(40)
+    })
 })

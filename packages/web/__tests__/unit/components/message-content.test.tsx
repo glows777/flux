@@ -64,6 +64,18 @@ describe('MessageContent', () => {
         expect(getByText('买入')).toBeTruthy()
     })
 
+    it('leaves unsafe markdown links inert', () => {
+        const message = {
+            id: '1',
+            role: 'assistant' as const,
+            parts: [{ type: 'text' as const, text: '[detail](/detail/AAPL)' }],
+        } as UIMessage
+        const { container } = render(<MessageContent message={message} />)
+        const link = container.querySelector('a')
+        expect(link).toBeTruthy()
+        expect(link?.getAttribute('href')).toBeNull()
+    })
+
     it('text part splits tool parts into separate timelines', () => {
         const message = {
             id: '1',

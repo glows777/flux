@@ -165,8 +165,8 @@ export function createCronRoutes(deps: CronRouteDeps = {}) {
         .delete('/:id', async (c) => {
             try {
                 const id = c.req.param('id')
-                if (deps.scheduler) await deps.scheduler.removeJob(id)
                 await deleteCronJob(id)
+                if (deps.scheduler) await deps.scheduler.removeJob(id)
                 return c.json({ success: true })
             } catch (_error) {
                 return c.json(

@@ -280,6 +280,19 @@ describe('Cron API', () => {
             expect(mockScheduler.removeJob).toHaveBeenCalledWith('cron-1')
         })
 
+        it('keeps the job scheduled when deletion fails', async () => {
+            mockDeleteCronJob.mockImplementation(() =>
+                Promise.reject(new Error('DB error')),
+            )
+
+            const res = await appWithScheduler.request('/api/cron/cron-1', {
+                method: 'DELETE',
+            })
+
+            expect(res.status).toBe(500)
+            expect(mockScheduler.removeJob).not.toHaveBeenCalled()
+        })
+
         it('returns 500 on service error', async () => {
             mockDeleteCronJob.mockImplementation(() =>
                 Promise.reject(new Error('DB error')),

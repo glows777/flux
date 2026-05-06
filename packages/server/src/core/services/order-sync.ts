@@ -20,6 +20,32 @@ export interface HandleOrderUpdateDeps {
     readonly notifyOrderEvent: (n: OrderEventNotification) => Promise<void>
 }
 
+function normalizeInstant(value: unknown): number | string | null {
+    if (value == null) return null
+    if (value instanceof Date) return value.getTime()
+    if (
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+    ) {
+        const timestamp = new Date(value).getTime()
+        return Number.isNaN(timestamp) ? String(value) : timestamp
+    }
+    return String(value)
+}
+
+function shouldUpdateExistingOrder(
+    existing: Record<string, unknown>,
+    order: ReturnType<typeof mapOrder>,
+): boolean {
+    return (
+        existing.status !== order.status ||
+        existing.filledQty !== order.filledQty ||
+        existing.filledAvgPrice !== order.filledAvgPrice ||
+        normalizeInstant(existing.filledAt) !== normalizeInstant(order.filledAt)
+    )
+}
+
 export async function handleOrderUpdate(
     event: { event: string; order: Record<string, unknown> },
     deps: HandleOrderUpdateDeps,
@@ -32,7 +58,7 @@ export async function handleOrderUpdate(
     })
 
     if (existing) {
-        if (existing.status !== order.status) {
+        if (shouldUpdateExistingOrder(existing, order)) {
             await db.order.update({
                 where: { alpacaOrderId: order.id },
                 data: {

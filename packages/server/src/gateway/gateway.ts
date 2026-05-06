@@ -42,7 +42,22 @@ export class Gateway {
             return { text: '', sessionId: '', success: false, error: message }
         }
 
-        const { text } = await output.consumeStream()
+        let consumed: Awaited<ReturnType<ChatOutput['consumeStream']>>
+        try {
+            consumed = await output.consumeStream()
+        } catch (error) {
+            console.error('Gateway trigger stream consumption failed:', error)
+            const message =
+                error instanceof Error ? error.message : 'Unknown error'
+            return {
+                text: '',
+                sessionId: output.sessionId,
+                success: false,
+                error: message,
+            }
+        }
+
+        const { text } = consumed
 
         if (input.channelTarget) {
             const adapter = this.deps.channels.get(input.channelTarget.type)

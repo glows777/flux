@@ -91,6 +91,9 @@ describe('handleOrderUpdate', () => {
         db.order.findUnique = mock(async () => ({
             alpacaOrderId: 'alpaca-1',
             status: 'filled',
+            filledQty: 10,
+            filledAvgPrice: 185.2,
+            filledAt: new Date('2026-03-27T14:30:00Z'),
         }))
         const notifyOrderEvent = mock(async () => {})
 
@@ -113,5 +116,35 @@ describe('handleOrderUpdate', () => {
         await handleOrderUpdate(event, { db, notifyOrderEvent })
 
         expect(notifyOrderEvent).toHaveBeenCalledTimes(1)
+    })
+
+    it('updates existing order when fill details change without a status change', async () => {
+        const db = makeDb()
+        db.order.findUnique = mock(async () => ({
+            alpacaOrderId: 'alpaca-1',
+            status: 'partially_filled',
+            filledQty: 1,
+            filledAvgPrice: 185,
+            filledAt: new Date('2026-03-27T14:00:00Z'),
+        }))
+        const notifyOrderEvent = mock(async () => {})
+
+        const event = makeEvent({
+            status: 'partially_filled',
+            filled_qty: '4',
+            filled_avg_price: '185.20',
+            filled_at: '2026-03-27T14:30:00Z',
+        })
+        await handleOrderUpdate(event, { db, notifyOrderEvent })
+
+        expect(db.order.update).toHaveBeenCalledTimes(1)
+
+        const updateCall = db.order.update.mock.calls[0][0]
+        expect(updateCall.where).toEqual({ alpacaOrderId: 'alpaca-1' })
+        expect(updateCall.data).toMatchObject({
+            status: 'partially_filled',
+            filledQty: 4,
+            filledAvgPrice: 185.2,
+        })
     })
 })

@@ -96,6 +96,34 @@ describe('CachedDataSource — simple strategy', () => {
         })
         expect(source.get('AAPL')).rejects.toThrow('API down')
     })
+
+    test('does not share an inflight request across different params', async () => {
+        const store = {
+            get: mock(async (_key: string, params?: { days?: number }) => {
+                const days = params?.days ?? 0
+                return {
+                    data: `cached-${days}`,
+                    fetchedAt: new Date(),
+                }
+            }),
+            set: mock(async () => undefined),
+        }
+
+        const source = new CachedDataSource({
+            store,
+            fetchFn: mock(async () => 'fresh'),
+            ttl: 60_000,
+        })
+
+        const [shortRange, longRange] = await Promise.all([
+            source.get('AAPL', { days: 10 }),
+            source.get('AAPL', { days: 30 }),
+        ])
+
+        expect(shortRange).toBe('cached-10')
+        expect(longRange).toBe('cached-30')
+        expect(store.get).toHaveBeenCalledTimes(2)
+    })
 })
 
 describe('CachedDataSource — tiered strategy', () => {

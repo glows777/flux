@@ -15,8 +15,10 @@ import { ToolTimeline } from './ToolTimeline'
 // [C4 fix] Sanitize links to prevent javascript: XSS
 const markdownComponents: Components = {
     a: ({ href, children }) => (
+        // Keep unsafe links inert instead of turning them into "#" anchors,
+        // which can jump the page unexpectedly when clicked.
         <a
-            href={href && /^https?:\/\//.test(href) ? href : '#'}
+            href={href && /^https?:\/\//.test(href) ? href : undefined}
             target='_blank'
             rel='noopener noreferrer'
         >

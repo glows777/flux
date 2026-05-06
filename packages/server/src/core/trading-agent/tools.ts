@@ -233,6 +233,7 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
                     symbol: String(o.symbol),
                     side: String(o.side),
                     qty: Number(o.qty),
+                    filledQty: o.filledQty != null ? Number(o.filledQty) : null,
                     type: String(o.type),
                     status: String(o.status),
                     filledAvgPrice:

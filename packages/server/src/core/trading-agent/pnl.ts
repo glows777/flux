@@ -5,6 +5,7 @@ interface RawOrder {
     readonly symbol: string
     readonly side: string
     readonly qty: number
+    readonly filledQty?: number | null
     readonly type: string
     readonly status: string
     readonly filledAvgPrice: number | null
@@ -34,10 +35,11 @@ export function calculateTradePnl(orders: readonly RawOrder[]): PnlRecord[] {
     )
 
     return sorted.map((order): PnlRecord => {
+        const executedQty = order.filledQty ?? order.qty
         const base = {
             symbol: order.symbol,
             side: order.side as 'buy' | 'sell',
-            qty: order.qty,
+            qty: executedQty,
             filledAvgPrice: order.filledAvgPrice,
             reasoning: order.reasoning,
             filledAt: order.filledAt,
@@ -51,7 +53,7 @@ export function calculateTradePnl(orders: readonly RawOrder[]): PnlRecord[] {
         ) {
             const lots = openLots.get(order.symbol) ?? []
             lots.push({
-                qty: order.qty,
+                qty: executedQty,
                 price: order.filledAvgPrice,
                 filledAt: order.filledAt,
             })
@@ -65,7 +67,7 @@ export function calculateTradePnl(orders: readonly RawOrder[]): PnlRecord[] {
             order.filledAt != null
         ) {
             const lots = openLots.get(order.symbol) ?? []
-            let remainingQty = order.qty
+            let remainingQty = executedQty
             let totalPl = 0
             let totalWeightedDays = 0
 
@@ -84,7 +86,9 @@ export function calculateTradePnl(orders: readonly RawOrder[]): PnlRecord[] {
             }
 
             const holdingDays =
-                order.qty > 0 ? Math.round(totalWeightedDays / order.qty) : 0
+                executedQty > 0
+                    ? Math.round(totalWeightedDays / executedQty)
+                    : 0
 
             return {
                 ...base,

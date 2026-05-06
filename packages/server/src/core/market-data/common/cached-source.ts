@@ -40,16 +40,17 @@ export class CachedDataSource<
     }
 
     async get(key: string, params?: P): Promise<T> {
-        const existing = this.inflight.get(key)
+        const inflightKey = this.makeInflightKey(key, params)
+        const existing = this.inflight.get(inflightKey)
         if (existing) return existing
 
         const promise = this.resolve(key, params)
-        this.inflight.set(key, promise)
+        this.inflight.set(inflightKey, promise)
 
         try {
             return await promise
         } finally {
-            this.inflight.delete(key)
+            this.inflight.delete(inflightKey)
         }
     }
 
@@ -93,5 +94,14 @@ export class CachedDataSource<
             return Date.now() - fetchedAt.getTime() > recentTtl
         }
         return Date.now() - fetchedAt.getTime() > this.ttl
+    }
+
+    private makeInflightKey(key: string, params?: P): string {
+        if (params == null) return key
+
+        const stableParams = Object.fromEntries(
+            Object.entries(params).sort(([a], [b]) => a.localeCompare(b)),
+        )
+        return `${key}::${JSON.stringify(stableParams)}`
     }
 }

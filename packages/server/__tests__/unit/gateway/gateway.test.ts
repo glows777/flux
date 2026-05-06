@@ -207,6 +207,34 @@ describe('Gateway', () => {
         })
     })
 
+    test('trigger mode stream failure returns success: false', async () => {
+        const chatOutput = makeMockChatOutput('unused')
+        chatOutput.consumeStream = mock(() =>
+            Promise.reject(new Error('stream broke')),
+        )
+        const router = makeMockRouter({
+            chat: mock(() => Promise.resolve(chatOutput)),
+        })
+        const gateway = new Gateway({
+            router: router as unknown as Router,
+            channels: new Map(),
+        })
+
+        const input: GatewayInput = {
+            channel: 'cron',
+            mode: 'trigger',
+            content: 'run analysis',
+        }
+
+        const result = await gateway.chat(input)
+        expect(result).toEqual({
+            text: '',
+            sessionId: 'session-123',
+            success: false,
+            error: 'stream broke',
+        })
+    })
+
     test('clearSession delegates to router', async () => {
         const router = makeMockRouter()
         const gateway = new Gateway({

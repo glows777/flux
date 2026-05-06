@@ -153,6 +153,33 @@ describe('calculateTradePnl', () => {
         expect(tslaBuy.realizedPl).toBeNull()
     })
 
+    it('uses filled quantity for partial fills', () => {
+        const orders = [
+            order({
+                id: 'b1',
+                side: 'buy',
+                qty: 10,
+                filledQty: 4,
+                filledAvgPrice: 100,
+                filledAt: new Date('2026-03-01'),
+                createdAt: new Date('2026-03-01'),
+            }),
+            order({
+                id: 's1',
+                side: 'sell',
+                qty: 10,
+                filledQty: 4,
+                filledAvgPrice: 110,
+                filledAt: new Date('2026-03-05'),
+                createdAt: new Date('2026-03-05'),
+            }),
+        ]
+        const result = calculateTradePnl(orders)
+        const sell = expectFound(result.find((r) => r.side === 'sell'))
+        expect(sell.realizedPl).toBe(40)
+        expect(sell.holdingDays).toBe(4)
+    })
+
     it('returns empty array for empty input', () => {
         expect(calculateTradePnl([])).toEqual([])
     })
