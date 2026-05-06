@@ -3,9 +3,9 @@ import { convertToModelMessages, stepCountIs, streamText } from 'ai'
 import { assembleContextRequest } from './assembly'
 import { buildCachePlan } from './cache-plan'
 import {
+    attachAssembledContextSnapshot,
     attachCachePlanSnapshot,
     attachCacheResultSnapshot,
-    attachAssembledContextSnapshot,
     attachModelRequestSnapshot,
     attachPluginOutputsSnapshot,
     attachResultSnapshot,
@@ -27,6 +27,7 @@ import type {
     ChatOutput,
     ChatParams,
     ConsumedResult,
+    ContextManifest,
     RunContext,
     RuntimeOptions,
     ToolCallRecord,
@@ -68,6 +69,17 @@ function createRunId(): string {
     }
 
     return `run_${Math.random().toString(16).slice(2)}_${Date.now()}`
+}
+
+function createResponseMessageId(): string {
+    if (
+        typeof crypto !== 'undefined' &&
+        typeof crypto.randomUUID === 'function'
+    ) {
+        return crypto.randomUUID()
+    }
+
+    return `msg_${Math.random().toString(16).slice(2)}_${Date.now()}`
 }
 
 function validatePluginNames(plugins: RuntimeOptions['plugins']): void {
@@ -202,6 +214,129 @@ function resolveRolloutGateStatus(params: {
     return params.usedCacheRequest ? 'enabled' : 'observe-only'
 }
 
+function normalizeComparisonValue(value: unknown): unknown {
+    if (value === undefined) return undefined
+    if (
+        value === null ||
+        typeof value === 'string' ||
+        typeof value === 'number' ||
+        typeof value === 'boolean'
+    ) {
+        return value
+    }
+
+    if (Array.isArray(value)) {
+        return value.map((item) => {
+            const normalized = normalizeComparisonValue(item)
+            return normalized === undefined ? null : normalized
+        })
+    }
+
+    if (typeof value === 'object') {
+        const result: Record<string, unknown> = {}
+        for (const key of Object.keys(
+            value as Record<string, unknown>,
+        ).sort()) {
+            const normalized = normalizeComparisonValue(
+                (value as Record<string, unknown>)[key],
+            )
+            if (normalized !== undefined) {
+                result[key] = normalized
+            }
+        }
+        return result
+    }
+
+    return String(value)
+}
+
+function stableSerialize(value: unknown): string {
+    const normalized = normalizeComparisonValue(value)
+    if (normalized === undefined) return 'undefined'
+    return JSON.stringify(normalized)
+}
+
+function extractThinkingConfig(providerOptions: unknown): unknown {
+    if (
+        providerOptions == null ||
+        typeof providerOptions !== 'object' ||
+        Array.isArray(providerOptions)
+    ) {
+        return undefined
+    }
+
+    const anthropic = (providerOptions as Record<string, unknown>).anthropic
+    if (
+        anthropic == null ||
+        typeof anthropic !== 'object' ||
+        Array.isArray(anthropic)
+    ) {
+        return undefined
+    }
+
+    return (anthropic as Record<string, unknown>).thinking
+}
+
+function getPreviousContextManifest(
+    meta: RunContext['meta'],
+): ContextManifest | undefined {
+    const value = meta.get('previousContextManifest')
+    if (value != null && typeof value === 'object' && !Array.isArray(value)) {
+        return value as ContextManifest
+    }
+
+    return undefined
+}
+
+function buildProviderChangeFlags(params: {
+    previousContextManifest?: ContextManifest
+    providerOptions: Record<string, unknown>
+}): Record<string, boolean> {
+    const flags: Record<string, boolean> = {}
+    if (!params.previousContextManifest) return flags
+
+    const previousProviderOptions =
+        params.previousContextManifest?.modelRequest.providerOptions
+
+    if (
+        stableSerialize(extractThinkingConfig(previousProviderOptions)) !==
+        stableSerialize(extractThinkingConfig(params.providerOptions))
+    ) {
+        flags.thinkingConfigChanged = true
+    }
+
+    return flags
+}
+
+function hasObservedCacheUsage(totalUsage?: LanguageModelUsage): boolean {
+    const details = totalUsage?.inputTokenDetails
+    return (
+        (details?.cacheReadTokens ?? 0) > 0 ||
+        (details?.cacheWriteTokens ?? 0) > 0
+    )
+}
+
+function deriveMissDiagnosis(params: {
+    cachePlan?: ReturnType<typeof buildCachePlan>
+    usedCacheRequest: boolean
+    totalUsage?: LanguageModelUsage
+}): string[] | undefined {
+    if (!params.usedCacheRequest || !params.cachePlan) return undefined
+    if (hasObservedCacheUsage(params.totalUsage)) return undefined
+
+    const candidateReasons =
+        params.cachePlan.candidateInvalidationReasons.filter(
+            (reason) => reason !== 'no_previous_baseline',
+        )
+
+    if (candidateReasons.length > 0) return candidateReasons
+    if (params.cachePlan.candidateInvalidationReasons.length > 0) {
+        return [...params.cachePlan.candidateInvalidationReasons]
+    }
+
+    return ['ttl_or_provider_eviction_suspected']
+}
+
 export async function createAIRuntime(
     options: RuntimeOptions,
 ): Promise<AIRuntime> {
@@ -266,6 +401,13 @@ export async function createAIRuntime(
                 providerOptions,
                 resolvedMaxOutputTokens,
             }
+            const previousContextManifest = getPreviousContextManifest(
+                runCtx.meta,
+            )
+            const providerChangeFlags = buildProviderChangeFlags({
+                previousContextManifest,
+                providerOptions: assembled.providerOptions,
+            })
             const assembledSnapshot = {
                 segments: assembled.segments,
                 systemSegments: assembled.systemSegments,
@@ -277,9 +419,7 @@ export async function createAIRuntime(
                 totalEstimatedInputTokens: assembled.totalEstimatedInputTokens,
             }
             let cacheDisabledReason: string | undefined
-            let cachePlan:
-                | ReturnType<typeof buildCachePlan>
-                | undefined
+            let cachePlan: ReturnType<typeof buildCachePlan> | undefined
 
             if (rolloutState.disabled) {
                 cacheDisabledReason = 'circuit_breaker_open'
@@ -289,13 +429,13 @@ export async function createAIRuntime(
                         provider,
                         modelId: resolveModelId(model),
                         assembledContext: assembledSnapshot,
-                        providerChangeFlags: {},
+                        providerChangeFlags,
+                        previousPlan: previousContextManifest?.cachePlan,
                     })
                 } catch (error) {
                     rolloutState.plannerFailures += 1
                     if (
-                        rolloutState.plannerFailures >=
-                        CACHE_FAILURE_THRESHOLD
+                        rolloutState.plannerFailures >= CACHE_FAILURE_THRESHOLD
                     ) {
                         rolloutState.disabled = true
                         cacheDisabledReason = 'circuit_breaker_open'
@@ -317,7 +457,10 @@ export async function createAIRuntime(
             })
 
             manifest = attachPluginOutputsSnapshot(manifest, collectedOutputs)
-            manifest = attachAssembledContextSnapshot(manifest, assembledSnapshot)
+            manifest = attachAssembledContextSnapshot(
+                manifest,
+                assembledSnapshot,
+            )
             if (cachePlan) {
                 manifest = attachCachePlanSnapshot(manifest, cachePlan)
             }
@@ -329,6 +472,7 @@ export async function createAIRuntime(
                 system: assembled.systemText || undefined,
                 messages: convertedMessages,
                 providerOptions: assembled.providerOptions,
+                tools: assembled.aiTools,
             }
             let providerCacheRequest = fallbackProviderCacheRequest
             const shouldUseCacheRequest = Boolean(
@@ -348,13 +492,13 @@ export async function createAIRuntime(
                         systemSegments: assembled.systemSegments,
                         modelMessages: convertedMessages,
                         providerOptions: assembled.providerOptions,
+                        tools: assembled.aiTools,
                     })
                     preparedCacheRequest = true
                 } catch (error) {
                     rolloutState.adapterFailures += 1
                     if (
-                        rolloutState.adapterFailures >=
-                        CACHE_FAILURE_THRESHOLD
+                        rolloutState.adapterFailures >= CACHE_FAILURE_THRESHOLD
                     ) {
                         rolloutState.disabled = true
                         cacheDisabledReason = 'circuit_breaker_open'
@@ -375,7 +519,7 @@ export async function createAIRuntime(
                     model,
                     system: request.system,
                     messages: request.messages,
-                    tools: assembled.aiTools as never,
+                    tools: request.tools as never,
                     stopWhen: stepCountIs(
                         assembled.resolved.maxSteps ?? baseParams.maxSteps,
                     ) as never,
@@ -444,16 +588,16 @@ export async function createAIRuntime(
                 const rawStreamResult = streamResult as Record<string, unknown>
                 const [text, usage, steps, totalUsage, providerMetadata] =
                     await Promise.all([
-                    streamResult.text,
-                    streamResult.usage,
-                    streamResult.steps,
-                    resolveOptionalStreamValue<LanguageModelUsage>(
-                        rawStreamResult.totalUsage,
-                    ),
-                    resolveOptionalStreamValue<ProviderMetadata>(
-                        rawStreamResult.providerMetadata,
-                    ),
-                ])
+                        streamResult.text,
+                        streamResult.usage,
+                        streamResult.steps,
+                        resolveOptionalStreamValue<LanguageModelUsage>(
+                            rawStreamResult.totalUsage,
+                        ),
+                        resolveOptionalStreamValue<ProviderMetadata>(
+                            rawStreamResult.providerMetadata,
+                        ),
+                    ])
 
                 finalizedData = {
                     text,
@@ -473,13 +617,8 @@ export async function createAIRuntime(
                 if (finalized) return
                 finalized = true
 
-                const {
-                    text,
-                    usage,
-                    toolCalls,
-                    totalUsage,
-                    providerMetadata,
-                } = await resolveFinalizedData()
+                const { text, usage, toolCalls, totalUsage, providerMetadata } =
+                    await resolveFinalizedData()
                 const rolloutGateStatus = resolveRolloutGateStatus({
                     circuitBreakerOpen: rolloutState.disabled,
                     usedCacheRequest,
@@ -503,6 +642,11 @@ export async function createAIRuntime(
                             rolloutGateStatus,
                             circuitBreakerState,
                             cacheDisabledReason,
+                            missDiagnosis: deriveMissDiagnosis({
+                                cachePlan,
+                                usedCacheRequest,
+                                totalUsage,
+                            }),
                         }),
                     )
                 } catch (error) {
@@ -533,6 +677,7 @@ export async function createAIRuntime(
                 let capturedResponseMessage: UIMessage | null = null
 
                 const uiStream = streamResult.toUIMessageStream({
+                    generateMessageId: createResponseMessageId,
                     sendReasoning: true,
                     onFinish: ({ responseMessage }) => {
                         capturedResponseMessage = responseMessage

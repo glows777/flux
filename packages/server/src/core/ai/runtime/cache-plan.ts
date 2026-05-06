@@ -86,7 +86,9 @@ function classifySegments(segments: ContextSegmentSnapshot[]) {
 
 function classifyDynamicTail(segments: ContextSegmentSnapshot[]) {
     return {
-        historyTail: segments.filter((segment) => segment.kind === 'history.recent'),
+        historyTail: segments.filter(
+            (segment) => segment.kind === 'history.recent',
+        ),
         liveTail: segments.filter((segment) => segment.kind === 'live.runtime'),
         otherTail: segments.filter(
             (segment) =>
@@ -103,10 +105,15 @@ function hashTools(tools: ToolContributionSnapshot[]): string {
                 name: tool.name,
                 tool: tool.definition.tool,
                 description: tool.manifestSpec.description ?? '',
-                inputSchemaSummary: tool.manifestSpec.inputSchemaSummary ?? null,
+                inputSchemaSummary:
+                    tool.manifestSpec.inputSchemaSummary ?? null,
             })),
         ),
     )
+}
+
+function estimateTools(tools: ToolContributionSnapshot[]): number {
+    return tools.reduce((total, tool) => total + (tool.estimatedTokens ?? 0), 0)
 }
 
 function toSnakeCase(value: string): string {
@@ -132,23 +139,29 @@ export function buildCachePlan(input: {
     )
     const { historyTail, liveTail, otherTail } =
         classifyDynamicTail(dynamicTail)
+    const toolDefinitionsHash = hashTools(input.assembledContext.tools)
     const effectivePrefix = [...stableCore, ...cacheableSession]
-    const breakpoints = [
-        ...(stableCore.length > 0
-            ? [{ layer: 'stableCore' as const, segmentId: stableCore.at(-1)!.id }]
-            : []),
-        ...(cacheableSession.length > 0
-            ? [
-                  {
-                      layer: 'cacheableSession' as const,
-                      segmentId: cacheableSession.at(-1)!.id,
-                  },
-              ]
-            : []),
-    ]
+    const breakpoints: Array<{
+        layer: 'stableCore' | 'cacheableSession'
+        segmentId: string
+    }> = []
+    const lastStableCore = stableCore.at(-1)
+    if (lastStableCore) {
+        breakpoints.push({
+            layer: 'stableCore',
+            segmentId: lastStableCore.id,
+        })
+    }
+    const lastCacheableSession = cacheableSession.at(-1)
+    if (lastCacheableSession) {
+        breakpoints.push({
+            layer: 'cacheableSession',
+            segmentId: lastCacheableSession.id,
+        })
+    }
 
     const hashes = {
-        toolDefinitionsHash: hashTools(input.assembledContext.tools),
+        toolDefinitionsHash,
         systemHash: sha256(
             canonicalize(stableCore.map((segment) => segment.payload)),
         ),
@@ -159,6 +172,7 @@ export function buildCachePlan(input: {
     }
 
     const effectivePrefixEstimatedTokens =
+        estimateTools(input.assembledContext.tools) +
         effectivePrefix.reduce(
             (total, segment) => total + (segment.estimatedTokens ?? 0),
             0,
@@ -170,7 +184,9 @@ export function buildCachePlan(input: {
     if (!previous) {
         candidateInvalidationReasons.push('no_previous_baseline')
     } else {
-        if (previous.hashes.toolDefinitionsHash !== hashes.toolDefinitionsHash) {
+        if (
+            previous.hashes.toolDefinitionsHash !== hashes.toolDefinitionsHash
+        ) {
             uniquePush(candidateInvalidationReasons, 'tool_definitions_changed')
         }
 
@@ -213,7 +229,9 @@ export function buildCachePlan(input: {
     return {
         provider: input.provider,
         stableCoreSegmentIds: stableCore.map((segment) => segment.id),
-        cacheableSessionSegmentIds: cacheableSession.map((segment) => segment.id),
+        cacheableSessionSegmentIds: cacheableSession.map(
+            (segment) => segment.id,
+        ),
         dynamicTailSegmentIds: dynamicTail.map((segment) => segment.id),
         effectivePrefixSegmentIds: effectivePrefix.map((segment) => segment.id),
         effectivePrefixEstimatedTokens,
@@ -229,10 +247,15 @@ export function buildCachePlan(input: {
                     : 'below_cache_threshold'
                 : 'provider_not_supported',
             providerRuleAssumptions: providerSupportsPromptCache
-                ? ['anthropic.cacheControl.ephemeral', 'anthropic.minPrefix>=1024']
+                ? [
+                      'anthropic.cacheControl.ephemeral',
+                      'anthropic.minPrefix>=1024',
+                  ]
                 : ['provider_not_supported'],
         },
         providerChangeFlags: input.providerChangeFlags,
-        candidateInvalidationReasons: [...new Set(candidateInvalidationReasons)],
+        candidateInvalidationReasons: [
+            ...new Set(candidateInvalidationReasons),
+        ],
     }
 }

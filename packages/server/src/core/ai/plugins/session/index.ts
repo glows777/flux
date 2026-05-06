@@ -1,15 +1,17 @@
 import type { UIMessage } from 'ai'
 import { prisma as defaultPrisma } from '@/core/db'
-import type { AIPlugin, AfterRunContext } from '../../runtime/types'
+import type { AfterRunContext, AIPlugin } from '../../runtime/types'
 import {
     appendMessage as defaultAppendMessage,
     clearSessionError as defaultClearSessionError,
     createSession as defaultCreateSession,
+    loadMessageManifest as defaultLoadMessageManifest,
     loadMessages as defaultLoadMessages,
     saveMessageManifest as defaultSaveMessageManifest,
     saveSessionError as defaultSaveSessionError,
-    type SessionErrorRecord,
     touchSession as defaultTouchSession,
+    type MessageManifestRecord,
+    type SessionErrorRecord,
 } from '../../session'
 
 const DEFAULT_TRUNCATE_LIMIT = 20
@@ -20,6 +22,10 @@ interface SessionPluginDeps {
         firstMessage: string,
     ) => Promise<string>
     loadMessages: (sessionId: string) => Promise<UIMessage[]>
+    loadMessageManifest: (
+        sessionId: string,
+        messageId: string,
+    ) => Promise<MessageManifestRecord | null>
     appendMessage: (sessionId: string, message: UIMessage) => Promise<void>
     saveMessageManifest: (
         sessionId: string,
@@ -49,6 +55,13 @@ interface SessionPluginOptions {
 function getLastUserMessage(messages: UIMessage[]): UIMessage | undefined {
     for (let i = messages.length - 1; i >= 0; i--) {
         if (messages[i].role === 'user') return messages[i]
+    }
+    return undefined
+}
+
+function getLastAssistantMessage(messages: UIMessage[]): UIMessage | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant') return messages[i]
     }
     return undefined
 }
@@ -105,6 +118,7 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
             return session.id
         },
         loadMessages: defaultLoadMessages,
+        loadMessageManifest: defaultLoadMessageManifest,
         appendMessage: defaultAppendMessage,
         saveMessageManifest: defaultSaveMessageManifest,
         touchSession: defaultTouchSession,
@@ -159,7 +173,8 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
         async contribute(ctx) {
             // For discord/cron: load history from DB (already includes the just-appended user message)
             const sourceId = ctx.meta.get('sourceId') as string | undefined
-            const sessionId = (ctx.meta.get('sessionId') as string) || ctx.sessionId
+            const sessionId =
+                (ctx.meta.get('sessionId') as string) || ctx.sessionId
 
             const messages =
                 sourceId && sessionId
@@ -168,6 +183,32 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
 
             const recentMessages =
                 messages.length > limit ? messages.slice(-limit) : messages
+
+            const previousAssistantMessage = getLastAssistantMessage(messages)
+            if (sessionId && previousAssistantMessage) {
+                try {
+                    const previousManifest = await deps.loadMessageManifest(
+                        sessionId,
+                        previousAssistantMessage.id,
+                    )
+                    if (previousManifest?.manifest) {
+                        ctx.meta.set(
+                            'previousContextManifest',
+                            previousManifest.manifest,
+                        )
+                    } else {
+                        ctx.meta.delete('previousContextManifest')
+                    }
+                } catch (error) {
+                    ctx.meta.delete('previousContextManifest')
+                    console.warn(
+                        'Failed to load previous message manifest',
+                        error,
+                    )
+                }
+            } else {
+                ctx.meta.delete('previousContextManifest')
+            }
 
             return {
                 segments: [

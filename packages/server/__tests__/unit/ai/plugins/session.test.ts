@@ -72,6 +72,7 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
     return {
         createSession: mock(async () => 'new-session-id'),
         loadMessages: mock(async () => []),
+        loadMessageManifest: mock(async () => null),
         appendMessage: mock(async () => {}),
         saveMessageManifest: mock(async () => {}),
         touchSession: mock(async () => {}),
@@ -128,6 +129,101 @@ describe('sessionPlugin', () => {
             throw new Error('Expected history.recent messages payload')
         }
         expect(history.payload.messages[0].id).toBe('db-1')
+    })
+
+    test('contribute loads the previous assistant manifest into meta when available', async () => {
+        const previousManifest = {
+            runId: 'run-prev',
+            createdAt: new Date().toISOString(),
+            input: {
+                channel: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                rawMessages: [],
+                defaults: {},
+            },
+            pluginOutputs: [],
+            assembledContext: {
+                segments: [],
+                systemSegments: [],
+                tools: [],
+                params: { candidates: [], resolved: {} },
+                totalEstimatedInputTokens: 0,
+            },
+            modelRequest: {
+                systemText: 'base prompt',
+                modelMessages: [],
+                toolNames: [],
+                resolvedParams: {},
+                providerOptions: {},
+            },
+            cachePlan: {
+                provider: 'anthropic' as const,
+                stableCoreSegmentIds: ['base'],
+                cacheableSessionSegmentIds: ['memory'],
+                dynamicTailSegmentIds: ['history'],
+                effectivePrefixSegmentIds: ['base', 'memory'],
+                effectivePrefixEstimatedTokens: 1600,
+                breakpoints: [
+                    { layer: 'stableCore' as const, segmentId: 'base' },
+                    {
+                        layer: 'cacheableSession' as const,
+                        segmentId: 'memory',
+                    },
+                ],
+                hashes: {
+                    toolDefinitionsHash: 'tool-hash',
+                    systemHash: 'system-hash',
+                    memoryHash: 'memory-hash',
+                    dynamicTailHash: 'dynamic-tail-hash',
+                },
+                eligibility: {
+                    providerSupportsPromptCache: true,
+                    prefixAboveThreshold: true,
+                    cacheExpected: true,
+                    cacheExpectationReason: 'stable_prefix_ready',
+                    providerRuleAssumptions: [
+                        'anthropic.cacheControl.ephemeral',
+                    ],
+                },
+                providerChangeFlags: {},
+                candidateInvalidationReasons: [],
+            },
+        }
+        const deps = makeDeps({
+            loadMessages: async () => [
+                makeUserMessage('u-1', 'first'),
+                {
+                    id: 'assistant-prev',
+                    role: 'assistant',
+                    parts: [{ type: 'text', text: 'prev' }],
+                } as UIMessage,
+            ],
+            loadMessageManifest: mock(async () => ({
+                version: 1,
+                runId: 'run-prev',
+                manifest: previousManifest,
+            })),
+        })
+        const plugin = sessionPlugin({ deps })
+        const ctx = makeRunContext({
+            rawMessages: [],
+            channel: 'discord',
+            meta: new Map([
+                ['sessionId', 's1'],
+                ['sourceId', 'discord:1'],
+            ]),
+        })
+
+        await plugin.contribute?.(ctx as never)
+
+        expect(deps.loadMessageManifest).toHaveBeenCalledWith(
+            's1',
+            'assistant-prev',
+        )
+        expect(ctx.meta.get('previousContextManifest')).toEqual(
+            previousManifest,
+        )
     })
 
     test('beforeRun creates session when sessionId is empty', async () => {

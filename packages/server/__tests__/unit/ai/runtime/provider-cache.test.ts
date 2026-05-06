@@ -98,6 +98,31 @@ const systemSegments: SystemContextSegmentSnapshot[] = [
     },
 ]
 
+const tools = {
+    searchStock: {
+        description: 'Search stock by symbol',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                symbol: { type: 'string' },
+            },
+            required: ['symbol'],
+        },
+        execute: async () => undefined,
+    },
+    getQuote: {
+        description: 'Get quote',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                symbol: { type: 'string' },
+            },
+            required: ['symbol'],
+        },
+        execute: async () => undefined,
+    },
+}
+
 describe('buildProviderCacheRequest', () => {
     test('rewrites Anthropic system layers into separate cached system messages', async () => {
         const { buildProviderCacheRequest } = await loadProviderCacheModule()
@@ -116,6 +141,7 @@ describe('buildProviderCacheRequest', () => {
                     thinking: { type: 'enabled', budgetTokens: 2048 },
                 },
             },
+            tools,
         })
 
         expect(request.system).toBeUndefined()
@@ -148,6 +174,15 @@ describe('buildProviderCacheRequest', () => {
                 thinking: { type: 'enabled', budgetTokens: 2048 },
             },
         })
+        expect(request.tools).toEqual({
+            searchStock: tools.searchStock,
+            getQuote: {
+                ...tools.getQuote,
+                providerOptions: {
+                    anthropic: { cacheControl: { type: 'ephemeral' } },
+                },
+            },
+        })
     })
 
     test('leaves unsupported providers in standard system-plus-messages form', async () => {
@@ -176,6 +211,7 @@ describe('buildProviderCacheRequest', () => {
                     thinking: { type: 'enabled', budgetTokens: 2048 },
                 },
             },
+            tools,
         })
 
         expect(request.system).toBe(
@@ -187,6 +223,7 @@ describe('buildProviderCacheRequest', () => {
                 thinking: { type: 'enabled', budgetTokens: 2048 },
             },
         })
+        expect(request.tools).toEqual(tools)
     })
 
     test('leaves ineligible Anthropic requests in standard system-plus-messages form', async () => {
@@ -214,6 +251,7 @@ describe('buildProviderCacheRequest', () => {
                     thinking: { type: 'enabled', budgetTokens: 2048 },
                 },
             },
+            tools,
         })
 
         expect(request.system).toBe(
@@ -225,6 +263,7 @@ describe('buildProviderCacheRequest', () => {
                 thinking: { type: 'enabled', budgetTokens: 2048 },
             },
         })
+        expect(request.tools).toEqual(tools)
     })
 })
 

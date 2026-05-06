@@ -70,6 +70,69 @@ function createSystemMessage(content: string): ModelMessage {
     } as ModelMessage
 }
 
+function mergeAnthropicCacheControl(
+    providerOptions: unknown,
+): Record<string, unknown> {
+    const base =
+        providerOptions != null &&
+        typeof providerOptions === 'object' &&
+        !Array.isArray(providerOptions)
+            ? { ...(providerOptions as Record<string, unknown>) }
+            : {}
+
+    const anthropic =
+        base.anthropic != null &&
+        typeof base.anthropic === 'object' &&
+        !Array.isArray(base.anthropic)
+            ? { ...(base.anthropic as Record<string, unknown>) }
+            : {}
+
+    anthropic.cacheControl = { type: 'ephemeral' }
+    base.anthropic = anthropic
+    return base
+}
+
+function shapeAnthropicCachedTools(
+    tools: Record<string, unknown>,
+): Record<string, unknown> {
+    const toolEntries = Object.entries(tools)
+    if (toolEntries.length === 0) return tools
+
+    const lastToolIndex = toolEntries.findLastIndex(([, tool]) => {
+        if (tool == null || typeof tool !== 'object' || Array.isArray(tool)) {
+            return false
+        }
+
+        const type = (tool as { type?: unknown }).type
+        return type == null || type === 'function' || type === 'dynamic'
+    })
+
+    if (lastToolIndex === -1) return tools
+
+    return Object.fromEntries(
+        toolEntries.map(([name, tool], index) => {
+            if (index !== lastToolIndex) return [name, tool]
+            if (
+                tool == null ||
+                typeof tool !== 'object' ||
+                Array.isArray(tool)
+            ) {
+                return [name, tool]
+            }
+
+            return [
+                name,
+                {
+                    ...(tool as Record<string, unknown>),
+                    providerOptions: mergeAnthropicCacheControl(
+                        (tool as { providerOptions?: unknown }).providerOptions,
+                    ),
+                },
+            ]
+        }),
+    )
+}
+
 function pickAnthropicCacheUsage(
     providerMetadata?: ProviderMetadata,
 ): Record<string, unknown> | undefined {
@@ -101,7 +164,9 @@ function pickAnthropicCacheUsage(
             : undefined
 
     const cacheUsageEntries = Object.entries(usage ?? {}).filter(
-        ([key]) => key === 'cache_creation_input_tokens' || key === 'cache_read_input_tokens',
+        ([key]) =>
+            key === 'cache_creation_input_tokens' ||
+            key === 'cache_read_input_tokens',
     )
 
     if (cacheUsageEntries.length > 0) {
@@ -121,10 +186,12 @@ export function buildProviderCacheRequest(input: {
     systemSegments: SystemContextSegmentSnapshot[]
     modelMessages: ModelMessage[]
     providerOptions: Record<string, unknown>
+    tools: Record<string, unknown>
 }): {
     system: string | undefined
     messages: ModelMessage[]
     providerOptions: Record<string, unknown>
+    tools: Record<string, unknown>
 } {
     if (
         input.provider !== 'anthropic' ||
@@ -134,13 +201,12 @@ export function buildProviderCacheRequest(input: {
             system: buildCombinedSystemText(input.systemSegments),
             messages: input.modelMessages,
             providerOptions: input.providerOptions,
+            tools: input.tools,
         }
     }
 
-    const { stableText, sessionText, remainderText } = groupAnthropicSystemLayers(
-        input.systemSegments,
-        input.cachePlan,
-    )
+    const { stableText, sessionText, remainderText } =
+        groupAnthropicSystemLayers(input.systemSegments, input.cachePlan)
 
     return {
         system: undefined,
@@ -151,6 +217,7 @@ export function buildProviderCacheRequest(input: {
             ...input.modelMessages,
         ],
         providerOptions: input.providerOptions,
+        tools: shapeAnthropicCachedTools(input.tools),
     }
 }
 
@@ -176,7 +243,8 @@ export function normalizeProviderCacheResult(input: {
         (uncachedInputTokens ?? 0)
 
     return {
-        cacheObserved: (cacheReadTokens ?? 0) > 0 || (cacheWriteTokens ?? 0) > 0,
+        cacheObserved:
+            (cacheReadTokens ?? 0) > 0 || (cacheWriteTokens ?? 0) > 0,
         cacheReadTokens,
         cacheWriteTokens,
         uncachedInputTokens,

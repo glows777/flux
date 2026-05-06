@@ -140,7 +140,8 @@ function createPlan(
             systemSegments: system,
             tools: overrides.tools ?? tools,
             params: { candidates: [], resolved: {} },
-            totalEstimatedInputTokens: overrides.totalEstimatedInputTokens ?? 1420,
+            totalEstimatedInputTokens:
+                overrides.totalEstimatedInputTokens ?? 1420,
         },
         providerChangeFlags: overrides.providerChangeFlags ?? {},
         previousPlan: overrides.previousPlan,
@@ -276,7 +277,52 @@ describe('buildCachePlan', () => {
         )
     })
 
-    test('does not let tool tokens alone push anthropic cache eligibility above threshold', () => {
+    test('counts tool tokens while keeping dynamic tail outside the cache prefix threshold', () => {
+        const nearThresholdBase: SystemContextSegmentSnapshot = {
+            id: 'near-threshold-base',
+            target: 'system',
+            kind: 'system.base',
+            payload: { format: 'text', text: 'near threshold base' },
+            source: { plugin: 'prompt' },
+            priority: 'required',
+            cacheability: 'stable',
+            compactability: 'preserve',
+            included: true,
+            finalOrder: 0,
+            estimatedTokens: 900,
+        }
+
+        const plan = createPlan({
+            systemSegments: [nearThresholdBase],
+            segments: [
+                nearThresholdBase,
+                {
+                    id: 'session-history',
+                    target: 'messages',
+                    kind: 'history.recent',
+                    payload: { format: 'messages', messages: [] },
+                    source: { plugin: 'session' },
+                    priority: 'high',
+                    cacheability: 'session',
+                    compactability: 'summarize',
+                },
+            ],
+            tools: [
+                {
+                    ...tools[0],
+                    estimatedTokens: 300,
+                },
+            ],
+            totalEstimatedInputTokens: 1200,
+        })
+
+        expect(plan.effectivePrefixEstimatedTokens).toBe(1200)
+        expect(plan.eligibility.prefixAboveThreshold).toBe(true)
+        expect(plan.eligibility.cacheExpected).toBe(true)
+        expect(plan.dynamicTailSegmentIds).toContain('session-history')
+    })
+
+    test('counts stable tool definitions toward the anthropic cache threshold', () => {
         const nearThresholdBase: SystemContextSegmentSnapshot = {
             id: 'near-threshold-base',
             target: 'system',
@@ -297,17 +343,17 @@ describe('buildCachePlan', () => {
             tools: [
                 {
                     ...tools[0],
-                    estimatedTokens: 300,
+                    estimatedTokens: 140,
                 },
             ],
-            totalEstimatedInputTokens: 1200,
+            totalEstimatedInputTokens: 1040,
         })
 
-        expect(plan.effectivePrefixEstimatedTokens).toBe(900)
-        expect(plan.eligibility.prefixAboveThreshold).toBe(false)
-        expect(plan.eligibility.cacheExpected).toBe(false)
+        expect(plan.effectivePrefixEstimatedTokens).toBe(1040)
+        expect(plan.eligibility.prefixAboveThreshold).toBe(true)
+        expect(plan.eligibility.cacheExpected).toBe(true)
         expect(plan.eligibility.cacheExpectationReason).toBe(
-            'below_cache_threshold',
+            'stable_prefix_ready',
         )
     })
 

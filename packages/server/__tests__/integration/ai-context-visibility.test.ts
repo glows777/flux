@@ -16,7 +16,9 @@ const mockSessionCreate = mock(async () => ({
     updatedAt: new Date(),
 }))
 const mockSessionLoadMessages = mock(async () => [])
+const mockSessionLoadMessageManifest = mock(async () => null)
 const mockSessionAppendMessage = mock(async () => {})
+const mockSessionSaveMessageManifest = mock(async () => {})
 const mockSessionTouchSession = mock(async () => {})
 const mockSessionSaveSessionError = mock(async () => {})
 const mockSessionClearSessionError = mock(async () => {})
@@ -28,7 +30,9 @@ mock.module('../../src/core/ai/memory/loader', () => ({
 mock.module('../../src/core/ai/session', () => ({
     createSession: mockSessionCreate,
     loadMessages: mockSessionLoadMessages,
+    loadMessageManifest: mockSessionLoadMessageManifest,
     appendMessage: mockSessionAppendMessage,
+    saveMessageManifest: mockSessionSaveMessageManifest,
     touchSession: mockSessionTouchSession,
     saveSessionError: mockSessionSaveSessionError,
     clearSessionError: mockSessionClearSessionError,
@@ -161,7 +165,9 @@ describe('ai context visibility integration', () => {
         mockLoadMemoryContext.mockReset()
         mockSessionCreate.mockReset()
         mockSessionLoadMessages.mockReset()
+        mockSessionLoadMessageManifest.mockReset()
         mockSessionAppendMessage.mockReset()
+        mockSessionSaveMessageManifest.mockReset()
         mockSessionTouchSession.mockReset()
         mockSessionSaveSessionError.mockReset()
         mockSessionClearSessionError.mockReset()
@@ -178,7 +184,9 @@ describe('ai context visibility integration', () => {
             updatedAt: new Date(),
         })
         mockSessionLoadMessages.mockResolvedValue([])
+        mockSessionLoadMessageManifest.mockResolvedValue(null)
         mockSessionAppendMessage.mockResolvedValue(undefined)
+        mockSessionSaveMessageManifest.mockResolvedValue(undefined)
         mockSessionTouchSession.mockResolvedValue(undefined)
         mockSessionSaveSessionError.mockResolvedValue(undefined)
         mockSessionClearSessionError.mockResolvedValue(undefined)
@@ -297,14 +305,20 @@ describe('ai context visibility integration', () => {
         expect(manifest.modelRequest.resolvedParams.maxSteps).toBe(50)
         expect(manifest.modelRequest.maxOutputTokens).toBeUndefined()
         expect(manifest.cachePlan?.stableCoreSegmentIds).toContain('base')
-        expect(manifest.cachePlan?.cacheableSessionSegmentIds).toContain('memory')
+        expect(manifest.cachePlan?.cacheableSessionSegmentIds).toContain(
+            'memory',
+        )
         expect(manifest.cachePlan?.breakpoints).toEqual([
             { layer: 'stableCore', segmentId: 'base' },
             { layer: 'cacheableSession', segmentId: 'memory' },
         ])
+        expect(manifest.cachePlan?.eligibility.cacheExpected).toBe(false)
+        expect(manifest.cachePlan?.eligibility.cacheExpectationReason).toBe(
+            'below_cache_threshold',
+        )
         expect(manifest.result?.cacheResult).toMatchObject({
             cacheObserved: false,
-            rolloutGateStatus: 'enabled',
+            rolloutGateStatus: 'observe-only',
             circuitBreakerState: 'closed',
         })
         expect(mockStreamText).toHaveBeenCalledTimes(1)
