@@ -87,7 +87,6 @@ describe('saveMessageManifest', () => {
                     cacheExpectationReason: 'below_cache_threshold',
                     providerRuleAssumptions: ['anthropic>=1024'],
                 },
-                providerChangeFlags: {},
             },
             result: {
                 text: '',
@@ -215,7 +214,6 @@ describe('loadMessageManifest', () => {
                     cacheExpectationReason: 'below_cache_threshold',
                     providerRuleAssumptions: ['anthropic>=1024'],
                 },
-                providerChangeFlags: {},
             },
             result: {
                 text: '',
@@ -253,6 +251,75 @@ describe('loadMessageManifest', () => {
             runId: 'run-2',
             manifest,
         })
+    })
+
+    it('loads historical cache plans with providerChangeFlags', async () => {
+        const { loadMessageManifest } = await importActualSessionModule()
+        const db = createMockDb()
+        const deps = { db } as unknown as SessionDeps
+        const manifest = {
+            runId: 'run-legacy-provider-flags',
+            createdAt: '2024-06-04T00:00:00.000Z',
+            input: {
+                channel: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                rawMessages: [],
+                defaults: {},
+            },
+            pluginOutputs: [],
+            assembledContext: {
+                segments: [],
+                systemSegments: [],
+                tools: [],
+                params: { candidates: [], resolved: {} },
+                totalEstimatedInputTokens: 0,
+            },
+            modelRequest: {
+                systemText: '',
+                modelMessages: [],
+                toolNames: [],
+                resolvedParams: {},
+                providerOptions: {},
+            },
+            cachePlan: {
+                provider: 'anthropic',
+                stableCoreSegmentIds: [],
+                cacheableSessionSegmentIds: [],
+                dynamicTailSegmentIds: [],
+                effectivePrefixSegmentIds: [],
+                effectivePrefixEstimatedTokens: 0,
+                breakpoints: [],
+                hashes: {
+                    toolDefinitionsHash: 'tool-hash',
+                    systemHash: 'system-hash',
+                    memoryHash: 'memory-hash',
+                    dynamicTailHash: 'tail-hash',
+                },
+                eligibility: {
+                    providerSupportsPromptCache: true,
+                    prefixAboveThreshold: false,
+                    cacheExpected: false,
+                    cacheExpectationReason: 'below_cache_threshold',
+                    providerRuleAssumptions: ['anthropic>=1024'],
+                },
+                providerChangeFlags: {
+                    thinkingConfigChanged: true,
+                },
+            },
+        }
+
+        db.chatMessageManifest.findUnique = mock(() =>
+            Promise.resolve({
+                version: 1,
+                runId: manifest.runId,
+                manifest: JSON.stringify(manifest),
+            }),
+        ) as typeof db.chatMessageManifest.findUnique
+
+        const result = await loadMessageManifest('session-1', 'message-1', deps)
+
+        expect(result?.manifest.cachePlan?.provider).toBe('anthropic')
     })
 
     it('loads legacy cache results without evidenceSource', async () => {
