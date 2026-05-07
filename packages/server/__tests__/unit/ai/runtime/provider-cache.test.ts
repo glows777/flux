@@ -39,7 +39,6 @@ const cachePlan: CachePlanSnapshot = {
         cacheExpectationReason: 'stable_prefix_ready',
         providerRuleAssumptions: ['anthropic.cacheControl.ephemeral'],
     },
-    providerChangeFlags: {},
 }
 
 const systemSegments: SystemContextSegmentSnapshot[] = [

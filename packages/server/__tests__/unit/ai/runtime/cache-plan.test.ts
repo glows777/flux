@@ -122,7 +122,6 @@ const historySegment: ContextSegmentSnapshot = {
 function createPlan(
     overrides: Partial<{
         provider: 'anthropic' | 'openai' | 'unknown'
-        providerChangeFlags: Record<string, boolean>
         segments: ContextSegmentSnapshot[]
         systemSegments: SystemContextSegmentSnapshot[]
         tools: ToolContributionSnapshot[]
@@ -142,7 +141,6 @@ function createPlan(
             totalEstimatedInputTokens:
                 overrides.totalEstimatedInputTokens ?? 1420,
         },
-        providerChangeFlags: overrides.providerChangeFlags ?? {},
     })
 }
 
@@ -171,6 +169,7 @@ describe('buildCachePlan', () => {
             'systemHash',
             'toolDefinitionsHash',
         ])
+        expect('providerChangeFlags' in plan).toBe(false)
         expect(plan.eligibility.cacheExpected).toBe(true)
         expect(plan.eligibility.prefixAboveThreshold).toBe(true)
         expect(plan.eligibility.cacheExpectationReason).toBe(
@@ -209,7 +208,6 @@ describe('buildCachePlan', () => {
                 params: { candidates: [], resolved: {} },
                 totalEstimatedInputTokens: 1420,
             },
-            providerChangeFlags: {},
         })
 
         expect(current.hashes.toolDefinitionsHash).not.toBe(
