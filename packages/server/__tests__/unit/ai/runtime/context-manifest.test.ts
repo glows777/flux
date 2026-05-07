@@ -45,10 +45,6 @@ describe('context-manifest cache snapshots', () => {
                 cacheExpectationReason: 'stable_prefix_ready',
                 providerRuleAssumptions: ['anthropic>=1024'],
             },
-            providerChangeFlags: {
-                modelChanged: false,
-                toolChoiceChanged: false,
-            },
         })
 
         manifest = attachCacheResultSnapshot(manifest, {

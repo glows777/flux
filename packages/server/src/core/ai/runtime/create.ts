@@ -27,7 +27,6 @@ import type {
     ChatOutput,
     ChatParams,
     ConsumedResult,
-    ContextManifest,
     RunContext,
     RuntimeOptions,
     ToolCallRecord,
@@ -214,100 +213,6 @@ function resolveRolloutGateStatus(params: {
     return params.usedCacheRequest ? 'enabled' : 'observe-only'
 }
 
-function normalizeComparisonValue(value: unknown): unknown {
-    if (value === undefined) return undefined
-    if (
-        value === null ||
-        typeof value === 'string' ||
-        typeof value === 'number' ||
-        typeof value === 'boolean'
-    ) {
-        return value
-    }
-
-    if (Array.isArray(value)) {
-        return value.map((item) => {
-            const normalized = normalizeComparisonValue(item)
-            return normalized === undefined ? null : normalized
-        })
-    }
-
-    if (typeof value === 'object') {
-        const result: Record<string, unknown> = {}
-        for (const key of Object.keys(
-            value as Record<string, unknown>,
-        ).sort()) {
-            const normalized = normalizeComparisonValue(
-                (value as Record<string, unknown>)[key],
-            )
-            if (normalized !== undefined) {
-                result[key] = normalized
-            }
-        }
-        return result
-    }
-
-    return String(value)
-}
-
-function stableSerialize(value: unknown): string {
-    const normalized = normalizeComparisonValue(value)
-    if (normalized === undefined) return 'undefined'
-    return JSON.stringify(normalized)
-}
-
-function extractThinkingConfig(providerOptions: unknown): unknown {
-    if (
-        providerOptions == null ||
-        typeof providerOptions !== 'object' ||
-        Array.isArray(providerOptions)
-    ) {
-        return undefined
-    }
-
-    const anthropic = (providerOptions as Record<string, unknown>).anthropic
-    if (
-        anthropic == null ||
-        typeof anthropic !== 'object' ||
-        Array.isArray(anthropic)
-    ) {
-        return undefined
-    }
-
-    return (anthropic as Record<string, unknown>).thinking
-}
-
-function getPreviousContextManifest(
-    meta: RunContext['meta'],
-): ContextManifest | undefined {
-    const value = meta.get('previousContextManifest')
-    if (value != null && typeof value === 'object' && !Array.isArray(value)) {
-        return value as ContextManifest
-    }
-
-    return undefined
-}
-
-function buildProviderChangeFlags(params: {
-    previousContextManifest?: ContextManifest
-    providerOptions: Record<string, unknown>
-}): Record<string, boolean> {
-    const flags: Record<string, boolean> = {}
-    if (!params.previousContextManifest) return flags
-
-    const previousProviderOptions =
-        params.previousContextManifest?.modelRequest.providerOptions
-
-    if (
-        stableSerialize(extractThinkingConfig(previousProviderOptions)) !==
-        stableSerialize(extractThinkingConfig(params.providerOptions))
-    ) {
-        flags.thinkingConfigChanged = true
-    }
-
-    return flags
-}
-
 export async function createAIRuntime(
     options: RuntimeOptions,
 ): Promise<AIRuntime> {
@@ -372,13 +277,6 @@ export async function createAIRuntime(
                 providerOptions,
                 resolvedMaxOutputTokens,
             }
-            const previousContextManifest = getPreviousContextManifest(
-                runCtx.meta,
-            )
-            const providerChangeFlags = buildProviderChangeFlags({
-                previousContextManifest,
-                providerOptions: assembled.providerOptions,
-            })
             const assembledSnapshot = {
                 segments: assembled.segments,
                 systemSegments: assembled.systemSegments,
@@ -400,7 +298,6 @@ export async function createAIRuntime(
                         provider,
                         modelId: resolveModelId(model),
                         assembledContext: assembledSnapshot,
-                        providerChangeFlags,
                     })
                 } catch (error) {
                     rolloutState.plannerFailures += 1

@@ -86,7 +86,6 @@ function createCachePlanFixture(
             cacheExpectationReason: 'stable_prefix_ready',
             providerRuleAssumptions: ['anthropic.cacheControl.ephemeral'],
         },
-        providerChangeFlags: {},
         ...overrides,
     }
 }
@@ -616,7 +615,7 @@ describe('createAIRuntime', () => {
         )
     })
 
-    test('chat forwards provider change flags into cache planning without previous cache baseline', async () => {
+    test('chat builds cache plan from current request inputs only', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const previousManifest = createPreviousManifestFixture()
 
@@ -646,14 +645,20 @@ describe('createAIRuntime', () => {
         })
 
         expect(mockBuildCachePlan).toHaveBeenCalledTimes(1)
-        expect(mockBuildCachePlan.mock.calls[0]?.[0]).toMatchObject({
-            providerChangeFlags: {
-                thinkingConfigChanged: true,
-            },
+
+        const cachePlanInput = mockBuildCachePlan.mock.calls[0]?.[0] as Record<
+            string,
+            unknown
+        >
+
+        expect(cachePlanInput).toMatchObject({
+            provider: 'anthropic',
+            modelId: 'claude-sonnet-4-6',
         })
-        expect(mockBuildCachePlan.mock.calls[0]?.[0]).not.toHaveProperty(
-            'previousPlan',
-        )
+        expect(cachePlanInput.assembledContext).toBeDefined()
+        expect(cachePlanInput).not.toHaveProperty('providerChangeFlags')
+        expect(cachePlanInput).not.toHaveProperty('previousPlan')
+        expect(cachePlanInput).not.toHaveProperty('previousContextManifest')
     })
 
     test('consumeStream normalizes cache usage into manifest.result.cacheResult', async () => {

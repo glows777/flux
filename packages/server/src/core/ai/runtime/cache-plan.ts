@@ -106,7 +106,6 @@ export function buildCachePlan(input: {
     provider: 'anthropic' | 'openai' | 'unknown'
     modelId?: string
     assembledContext: AssembledContextSnapshot
-    providerChangeFlags: Record<string, boolean>
 }): CachePlanSnapshot {
     const { stableCore, cacheableSession, dynamicTail } = classifySegments(
         input.assembledContext.segments,
@@ -182,6 +181,5 @@ export function buildCachePlan(input: {
                   ]
                 : ['provider_not_supported'],
         },
-        providerChangeFlags: input.providerChangeFlags,
     }
 }

@@ -198,7 +198,6 @@ export interface CachePlanSnapshot {
     readonly breakpoints: CacheBreakpointSnapshot[]
     readonly hashes: CachePlanHashesSnapshot
     readonly eligibility: CacheEligibilitySnapshot
-    readonly providerChangeFlags: Record<string, boolean>
 }
 
 export interface CacheResultSnapshot {

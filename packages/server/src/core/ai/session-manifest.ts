@@ -91,8 +91,7 @@ function isCachePlanShape(value: unknown): value is Record<string, unknown> {
         typeof value.effectivePrefixEstimatedTokens === 'number' &&
         hasArrayKey(value, 'breakpoints') &&
         hasObjectKey(value, 'hashes') &&
-        hasObjectKey(value, 'eligibility') &&
-        hasObjectKey(value, 'providerChangeFlags')
+        hasObjectKey(value, 'eligibility')
     )
 }
 
