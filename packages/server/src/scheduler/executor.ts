@@ -32,7 +32,7 @@ export class TaskExecutor {
         const payload = job.taskPayload as { prompt?: string }
         if (!payload.prompt) {
             const error = new Error('Job payload missing prompt')
-            await this.deps.agentRunStore.createFailedRun({
+            await this.recordFailedRun({
                 runId,
                 source: 'cron',
                 mode: 'trigger',
@@ -70,7 +70,7 @@ export class TaskExecutor {
             const message =
                 error instanceof Error ? error.message : 'Unknown error'
             if (message === 'Execution timed out') {
-                await this.deps.agentRunStore.createFailedRun({
+                await this.recordFailedRun({
                     runId,
                     source: 'cron',
                     mode: 'trigger',
@@ -90,7 +90,7 @@ export class TaskExecutor {
                 }
             }
 
-            await this.deps.agentRunStore.createFailedRun({
+            await this.recordFailedRun({
                 runId,
                 source: 'cron',
                 mode: 'trigger',
@@ -137,7 +137,7 @@ export class TaskExecutor {
         const triggerRunId = triggerResult.runId || runId
 
         if (!triggerResult.success) {
-            await this.deps.agentRunStore.createFailedRun({
+            await this.recordFailedRun({
                 runId: triggerRunId,
                 source: 'cron',
                 mode: 'trigger',
@@ -155,6 +155,16 @@ export class TaskExecutor {
             runId: triggerRunId,
             output: triggerResult.text?.trim() || '(no response)',
             ...(triggerResult.error ? { error: triggerResult.error } : {}),
+        }
+    }
+
+    private async recordFailedRun(
+        input: Parameters<AgentRunStore['createFailedRun']>[0],
+    ): Promise<void> {
+        try {
+            await this.deps.agentRunStore.createFailedRun(input)
+        } catch (error) {
+            console.error('Failed to record agent run failure:', error)
         }
     }
 }
