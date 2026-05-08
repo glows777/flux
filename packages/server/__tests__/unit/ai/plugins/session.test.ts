@@ -279,6 +279,10 @@ describe('sessionPlugin', () => {
             console.error = originalConsoleError
         }
 
+        expect(deps.appendMessage).toHaveBeenCalledWith(
+            's1',
+            ctx.responseMessage,
+        )
         expect(deps.touchSession).toHaveBeenCalledWith('s1')
         expect(deps.clearSessionError).toHaveBeenCalledWith('s1')
         expect(errorSpy).toHaveBeenCalledTimes(1)

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, mock, test } from 'bun:test'
 import { InvalidPluginOutputError } from '../../../../src/core/ai/runtime/errors'
 import {
     collectPluginOutputs,
@@ -583,14 +583,20 @@ describe('runAfterRunHooks', () => {
     })
 
     test('returns warnings when a hook fails', async () => {
+        const order: string[] = []
+        const badHook = mock(async () => {
+            order.push('bad')
+            throw new Error('fail')
+        })
+        const goodHook = mock(async () => {
+            order.push('good')
+        })
         const plugins: AIPlugin[] = [
             {
                 name: 'bad',
-                afterRun: async () => {
-                    throw new Error('fail')
-                },
+                afterRun: badHook,
             },
-            { name: 'good', afterRun: async () => {} },
+            { name: 'good', afterRun: goodHook },
         ]
 
         const ctx = {
@@ -604,9 +610,9 @@ describe('runAfterRunHooks', () => {
 
         const warnings = await runAfterRunHooks(plugins, ctx)
 
-        expect(warnings).toEqual([
-            { source: 'bad.afterRun', message: 'fail' },
-        ])
+        expect(order).toEqual(['bad', 'good'])
+        expect(goodHook).toHaveBeenCalledTimes(1)
+        expect(warnings).toEqual([{ source: 'bad.afterRun', message: 'fail' }])
     })
 })
 
