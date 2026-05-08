@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import { Prisma } from '@prisma/client'
 import { createPrismaAgentRunStore } from '@/core/ai/agent-run/store'
 
 type AgentRunRow = {
@@ -157,6 +158,10 @@ describe('AgentRunStore', () => {
 
         expect(fixture.rows.get('run-1')?.status).toBe('running')
         expect(fixture.rows.get('run-1')?.cronJobId).toBe('job-1')
+        const createData = fixture.db.agentRun.create.mock.calls[0]?.[0].data
+        expect(createData?.error).toBe(Prisma.JsonNull)
+        expect(createData?.usage).toBe(Prisma.JsonNull)
+        expect(createData?.warnings).toBe(Prisma.JsonNull)
     })
 
     test('createFailedRun uses supplied run id', async () => {
@@ -176,6 +181,9 @@ describe('AgentRunStore', () => {
             message: 'missing prompt',
             name: 'Error',
         })
+        const createData = fixture.db.agentRun.create.mock.calls[0]?.[0].data
+        expect(createData?.usage).toBe(Prisma.JsonNull)
+        expect(createData?.warnings).toBe(Prisma.JsonNull)
     })
 
     test('createFailedRun tolerates duplicate create races for missing rows', async () => {
@@ -241,6 +249,28 @@ describe('AgentRunStore', () => {
 
         expect(fixture.rows.get('run-2')?.status).toBe('failed')
         expect(fixture.rows.get('run-2')?.messageId).toBeNull()
+    })
+
+    test('succeedIfRunning writes JsonNull when usage is absent', async () => {
+        const store = createPrismaAgentRunStore(fixture.db as never)
+        await store.createRunningRun({
+            runId: 'run-success',
+            source: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+        })
+
+        await store.succeedIfRunning('run-success', {
+            messageId: 'msg-1',
+            outputSummary: 'completed',
+        })
+
+        const updateCall = fixture.db.agentRun.updateMany.mock.calls.find(
+            ([input]) =>
+                input.where.id === 'run-success' &&
+                input.data.status === 'succeeded',
+        )
+        expect(updateCall?.[0].data.usage).toBe(Prisma.JsonNull)
     })
 
     test('recordWarnings merges warnings', async () => {
@@ -460,7 +490,7 @@ describe('AgentRunStore', () => {
 
         expect(result.count).toBe(1)
         expect(fixture.rows.get('old-running')?.status).toBe('failed')
-        expect(fixture.rows.get('old-running')?.durationMs).toBe(0)
+        expect(fixture.rows.get('old-running')?.durationMs).toBeNull()
         expect(fixture.rows.get('fresh-running')?.status).toBe('running')
         expect(fixture.rows.get('old-failed')?.status).toBe('failed')
         expect(fixture.rows.get('old-failed')?.error).toEqual({

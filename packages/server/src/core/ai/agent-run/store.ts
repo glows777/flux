@@ -1,3 +1,5 @@
+import { Prisma } from '@prisma/client'
+
 import { createRunId } from './id'
 import type {
     AgentRunErrorRecord,
@@ -174,9 +176,9 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
                     ...nullableRunFields(input),
                     inputSummary: trimText(input.inputSummary, 500),
                     outputSummary: null,
-                    error: null,
-                    usage: null,
-                    warnings: null,
+                    error: Prisma.JsonNull,
+                    usage: Prisma.JsonNull,
+                    warnings: Prisma.JsonNull,
                     startedAt: new Date(),
                     finishedAt: null,
                     durationMs: null,
@@ -229,8 +231,8 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
                         inputSummary: trimText(input.inputSummary, 500),
                         outputSummary: null,
                         error,
-                        usage: null,
-                        warnings: null,
+                        usage: Prisma.JsonNull,
+                        warnings: Prisma.JsonNull,
                         startedAt: finishedAt,
                         finishedAt,
                         durationMs: 0,
@@ -277,7 +279,7 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
                     status: 'succeeded',
                     messageId: input.messageId ?? null,
                     outputSummary: trimText(input.outputSummary, 1000),
-                    usage: input.usage ?? null,
+                    usage: input.usage ?? Prisma.JsonNull,
                     finishedAt,
                     durationMs: durationSince(existing.startedAt, finishedAt),
                 },
@@ -362,7 +364,6 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
                         code: 'STALE_RUN_RECONCILED',
                     },
                     finishedAt: new Date(),
-                    durationMs: 0,
                 },
             })
         },
