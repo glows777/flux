@@ -1,7 +1,30 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { UIMessage } from 'ai'
 import type { Gateway } from '@/gateway/gateway'
-import { createHonoApp } from '@/routes/index'
-import { mockRuntimeChat, mockRuntimeFinalize } from './helpers/mock-boundaries'
+import {
+    mockConvertToModelMessages,
+    mockGenerateId,
+    mockGenerateText,
+    mockRuntimeChat,
+    mockRuntimeFinalize,
+    mockStepCountIs,
+    mockStreamText,
+    mockTool,
+} from './helpers/mock-boundaries'
+
+const mockConsumeSseStream = mock(() => Promise.resolve())
+
+mock.module('ai', () => ({
+    generateText: mockGenerateText,
+    streamText: mockStreamText,
+    tool: mockTool,
+    convertToModelMessages: mockConvertToModelMessages,
+    stepCountIs: mockStepCountIs,
+    generateId: mockGenerateId,
+    consumeStream: mockConsumeSseStream,
+}))
+
+const { createHonoApp } = await import('@/routes/index')
 
 // Create a mock gateway that delegates to mockRuntimeChat
 const mockGatewayChat = mock(() => mockRuntimeChat())
@@ -22,8 +45,10 @@ describe('POST /api/chat', () => {
         mockRuntimeChat.mockReset()
         mockRuntimeFinalize.mockReset()
         mockGatewayChat.mockReset()
+        mockConsumeSseStream.mockReset()
 
         mockRuntimeChat.mockResolvedValue({
+            runId: 'run-1',
             streamResult: {
                 text: Promise.resolve('mock pipeline response'),
                 usage: Promise.resolve({ inputTokens: 100, outputTokens: 50 }),
@@ -58,14 +83,15 @@ describe('POST /api/chat', () => {
                     },
                 }),
             finalize: mockRuntimeFinalize,
-            getContextManifest: () => ({
+            recordFailure: mock(() => Promise.resolve()),
+            getContextManifest: mock(() => ({
                 runId: 'run-1',
                 createdAt: new Date().toISOString(),
                 input: {} as never,
                 pluginOutputs: [],
                 assembledContext: {} as never,
                 modelRequest: {} as never,
-            }),
+            })),
         })
 
         mockGatewayChat.mockImplementation((_input: unknown) =>
@@ -137,5 +163,120 @@ describe('POST /api/chat', () => {
         expect(res.status).toBe(500)
         const body = await res.json()
         expect(body.success).toBe(false)
+    })
+
+    test('passes stream onError that records run failure', async () => {
+        const recordFailure = mock(() => Promise.resolve())
+        let capturedOnError: ((error: unknown) => string) | undefined
+        let capturedOptions: Record<string, unknown> | undefined
+
+        mockGatewayChat.mockResolvedValueOnce({
+            runId: 'run-1',
+            sessionId: 'session-1',
+            streamResult: {
+                toUIMessageStreamResponse: mock(
+                    (opts: {
+                        onError?: (error: unknown) => string
+                        consumeSseStream?: unknown
+                    }) => {
+                        capturedOptions = opts as Record<string, unknown>
+                        capturedOnError = opts.onError
+                        return new Response('stream')
+                    },
+                ),
+            },
+            finalize: mock(() => Promise.resolve()),
+            recordFailure,
+            consumeStream: mock(() => Promise.resolve({})),
+            getContextManifest: mock(() => ({
+                runId: 'run-1',
+                createdAt: new Date().toISOString(),
+                input: {} as never,
+                pluginOutputs: [],
+                assembledContext: {} as never,
+                modelRequest: {} as never,
+            })),
+        } as never)
+
+        const res = await app.request('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [
+                    {
+                        id: 'u1',
+                        role: 'user',
+                        parts: [{ type: 'text', text: 'hi' }],
+                    },
+                ],
+            }),
+        })
+
+        expect(res.status).toBe(200)
+        const message = capturedOnError?.(new Error('stream failed'))
+        expect(message).toBe('Failed to generate chat response')
+        expect(recordFailure).toHaveBeenCalledWith(expect.any(Error))
+        expect(capturedOptions?.consumeSseStream).toBeDefined()
+    })
+
+    test('records aborted UI stream before finalize', async () => {
+        const finalize = mock(() => Promise.resolve())
+        const recordFailure = mock(() => Promise.resolve())
+        let capturedOnFinish:
+            | ((input: {
+                  responseMessage: UIMessage
+                  isAborted: boolean
+              }) => Promise<void>)
+            | undefined
+
+        mockGatewayChat.mockResolvedValueOnce({
+            runId: 'run-1',
+            sessionId: 'session-1',
+            streamResult: {
+                toUIMessageStreamResponse: mock(
+                    (opts: {
+                        onFinish?: (input: {
+                            responseMessage: UIMessage
+                            isAborted: boolean
+                        }) => Promise<void>
+                    }) => {
+                        capturedOnFinish = opts.onFinish
+                        return new Response('stream')
+                    },
+                ),
+            },
+            finalize,
+            recordFailure,
+            consumeStream: mock(() => Promise.resolve({})),
+            getContextManifest: mock(() => ({ runId: 'run-1' }) as never),
+        } as never)
+
+        await app.request('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [
+                    {
+                        id: 'u1',
+                        role: 'user',
+                        parts: [{ type: 'text', text: 'hi' }],
+                    },
+                ],
+            }),
+        })
+
+        await capturedOnFinish?.({
+            responseMessage: {
+                id: 'assistant-1',
+                role: 'assistant',
+                parts: [],
+            },
+            isAborted: true,
+        })
+
+        expect(recordFailure).toHaveBeenCalledWith(
+            expect.objectContaining({ code: 'ABORTED' }),
+        )
+        expect(finalize).not.toHaveBeenCalled()
     })
 })
