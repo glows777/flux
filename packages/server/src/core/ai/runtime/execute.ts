@@ -474,23 +474,43 @@ export async function collectPluginOutputs(
 }
 
 /**
- * Run afterRun hooks (parallel, best-effort). Failures are swallowed.
+ * Run afterRun hooks (parallel, best-effort). Failures are returned as warnings.
  */
 export async function runAfterRunHooks(
     plugins: AIPlugin[],
     ctx: AfterRunContext,
-): Promise<void> {
-    await Promise.allSettled(
+): Promise<Array<{ source: string; message: string }>> {
+    const settled = await Promise.allSettled(
         plugins
             .filter((p) => p.afterRun != null)
             .map(async (p) => {
                 try {
                     await p.afterRun?.(ctx)
+                    return null
                 } catch (error) {
                     console.error(`[${p.name}] afterRun failed:`, error)
+                    const message =
+                        error instanceof Error ? error.message : String(error)
+                    return { source: `${p.name}.afterRun`, message }
                 }
             }),
     )
+
+    const warnings: Array<{ source: string; message: string }> = []
+    for (const result of settled) {
+        if (result.status !== 'fulfilled') {
+            warnings.push({
+                source: 'runtime.afterRun',
+                message:
+                    result.reason instanceof Error
+                        ? result.reason.message
+                        : String(result.reason),
+            })
+            continue
+        }
+        if (result.value) warnings.push(result.value)
+    }
+    return warnings
 }
 
 /**

@@ -272,7 +272,9 @@ describe('sessionPlugin', () => {
         console.error = errorSpy as typeof console.error
 
         try {
-            await plugin.afterRun?.(ctx)
+            await expect(plugin.afterRun?.(ctx)).rejects.toThrow(
+                'manifest write failed',
+            )
         } finally {
             console.error = originalConsoleError
         }

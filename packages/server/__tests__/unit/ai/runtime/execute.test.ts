@@ -582,7 +582,7 @@ describe('runAfterRunHooks', () => {
         expect(order).toContain('b')
     })
 
-    test('does not throw when a hook fails', async () => {
+    test('returns warnings when a hook fails', async () => {
         const plugins: AIPlugin[] = [
             {
                 name: 'bad',
@@ -602,7 +602,11 @@ describe('runAfterRunHooks', () => {
             contextManifest: {} as AfterRunContext['contextManifest'],
         } satisfies AfterRunContext
 
-        await runAfterRunHooks(plugins, ctx)
+        const warnings = await runAfterRunHooks(plugins, ctx)
+
+        expect(warnings).toEqual([
+            { source: 'bad.afterRun', message: 'fail' },
+        ])
     })
 })
 
