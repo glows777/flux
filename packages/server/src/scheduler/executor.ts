@@ -1,38 +1,65 @@
 import type { CronJob } from '@prisma/client'
+import { type AgentRunStore, createRunId } from '@/core/ai/agent-run'
 import type { AgentType } from '@/core/ai/runtime/types'
 import type { Gateway } from '@/gateway/gateway'
 import type { TriggerResult } from '@/gateway/router'
 
 export interface ExecutionResult {
+    readonly status: 'success' | 'error' | 'timeout'
     readonly success: boolean
+    readonly runId: string
     readonly output?: string
     readonly error?: string
 }
 
 interface ExecutorDeps {
     readonly gateway: Gateway
+    readonly agentRunStore: AgentRunStore
+    readonly timeoutMs?: number
 }
 
 const EXECUTION_TIMEOUT_MS = 20 * 60 * 1000 // 20 minutes
 
 export class TaskExecutor {
-    constructor(private readonly deps: ExecutorDeps) {}
+    private readonly timeoutMs: number
+
+    constructor(private readonly deps: ExecutorDeps) {
+        this.timeoutMs = deps.timeoutMs ?? EXECUTION_TIMEOUT_MS
+    }
 
     async execute(job: CronJob): Promise<ExecutionResult> {
+        const runId = createRunId()
         const payload = job.taskPayload as { prompt?: string }
         if (!payload.prompt) {
-            return { success: false, error: 'Job payload missing prompt' }
+            const error = new Error('Job payload missing prompt')
+            await this.deps.agentRunStore.createFailedRun({
+                runId,
+                source: 'cron',
+                mode: 'trigger',
+                agentType: job.taskType as AgentType,
+                cronJobId: job.id,
+                userId: job.userId,
+                sourceId: `cron:${job.id}`,
+                error,
+            })
+            return {
+                status: 'error',
+                success: false,
+                runId,
+                error: error.message,
+            }
         }
 
+        const controller = new AbortController()
         let timer: Timer | undefined
         try {
             const result = await Promise.race([
-                this.run(job, payload.prompt),
+                this.run(job, payload.prompt, runId, controller.signal),
                 new Promise<never>((_, reject) => {
-                    timer = setTimeout(
-                        () => reject(new Error('Execution timed out')),
-                        EXECUTION_TIMEOUT_MS,
-                    )
+                    timer = setTimeout(() => {
+                        controller.abort()
+                        reject(new Error('Execution timed out'))
+                    }, this.timeoutMs)
                 }),
             ])
             clearTimeout(timer)
@@ -42,32 +69,90 @@ export class TaskExecutor {
 
             const message =
                 error instanceof Error ? error.message : 'Unknown error'
+            if (message === 'Execution timed out') {
+                await this.deps.agentRunStore.createFailedRun({
+                    runId,
+                    source: 'cron',
+                    mode: 'trigger',
+                    agentType: job.taskType as AgentType,
+                    cronJobId: job.id,
+                    userId: job.userId,
+                    sourceId: `cron:${job.id}`,
+                    error,
+                    code: 'TIMEOUT',
+                })
+                return {
+                    status: 'timeout',
+                    success: false,
+                    runId,
+                    output: `Cron job timed out: ${message}`,
+                    error: message,
+                }
+            }
+
+            await this.deps.agentRunStore.createFailedRun({
+                runId,
+                source: 'cron',
+                mode: 'trigger',
+                agentType: job.taskType as AgentType,
+                cronJobId: job.id,
+                userId: job.userId,
+                sourceId: `cron:${job.id}`,
+                error,
+            })
             return {
+                status: 'error',
                 success: false,
+                runId,
                 output: `Cron job failed: ${message}`,
                 error: message,
             }
         }
     }
 
-    private async run(job: CronJob, prompt: string): Promise<ExecutionResult> {
+    private async run(
+        job: CronJob,
+        prompt: string,
+        runId: string,
+        abortSignal: AbortSignal,
+    ): Promise<ExecutionResult> {
         const channelTarget = job.channelTarget as {
             type: string
             channelId: string
         } | null
 
         const triggerResult: TriggerResult = await this.deps.gateway.chat({
+            runId,
             channel: 'cron',
             mode: 'trigger',
             agentType: job.taskType as AgentType,
             content: prompt,
             sourceId: `cron:${job.id}`,
             userId: job.userId,
+            cronJobId: job.id,
+            abortSignal,
             ...(channelTarget ? { channelTarget } : {}),
         })
 
+        const triggerRunId = triggerResult.runId || runId
+
+        if (!triggerResult.success) {
+            await this.deps.agentRunStore.createFailedRun({
+                runId: triggerRunId,
+                source: 'cron',
+                mode: 'trigger',
+                agentType: job.taskType as AgentType,
+                cronJobId: job.id,
+                userId: job.userId,
+                sourceId: `cron:${job.id}`,
+                error: new Error(triggerResult.error ?? 'Cron trigger failed'),
+            })
+        }
+
         return {
+            status: triggerResult.success ? 'success' : 'error',
             success: triggerResult.success,
+            runId: triggerRunId,
             output: triggerResult.text?.trim() || '(no response)',
             ...(triggerResult.error ? { error: triggerResult.error } : {}),
         }
