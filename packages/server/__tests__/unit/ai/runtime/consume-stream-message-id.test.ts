@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'bun:test'
+import type { AgentRunStore } from '@/core/ai/agent-run'
 
 const mockConvertToModelMessages = mock(async (messages: unknown[]) => messages)
 const mockStepCountIs = mock((_count: number) => () => false)
@@ -42,6 +43,20 @@ mock.module('ai', async () => ({
     streamText: mockStreamText,
 }))
 
+function createFakeAgentRunStore(): AgentRunStore {
+    return {
+        createRunningRun: mock(() => Promise.resolve()),
+        createFailedRun: mock(async (input) => ({
+            runId: input.runId ?? 'generated-failed-run',
+        })),
+        attachSession: mock(() => Promise.resolve()),
+        succeedIfRunning: mock(() => Promise.resolve()),
+        failIfRunning: mock(() => Promise.resolve()),
+        recordWarnings: mock(() => Promise.resolve()),
+        reconcileStaleRunningRuns: mock(() => Promise.resolve({ count: 0 })),
+    }
+}
+
 async function loadCreateAIRuntime() {
     return (await import('../../../../src/core/ai/runtime/create'))
         .createAIRuntime
@@ -53,6 +68,7 @@ describe('consumeStream message ids', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'gpt-4.1-mini' } as never,
             plugins: [],
+            agentRunStore: createFakeAgentRunStore(),
         })
 
         const output = await runtime.chat({

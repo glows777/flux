@@ -7,6 +7,7 @@ import {
     mock,
     test,
 } from 'bun:test'
+import type { AgentRunStore } from '../../../../src/core/ai/agent-run'
 import type {
     AIPlugin,
     CachePlanSnapshot,
@@ -58,6 +59,20 @@ function createMockStreamResult(overrides: StreamResultOverrides = {}) {
 }
 
 const mockStreamText = mock(() => createMockStreamResult())
+
+function createFakeAgentRunStore(): AgentRunStore {
+    return {
+        createRunningRun: mock(() => Promise.resolve()),
+        createFailedRun: mock(async (input) => ({
+            runId: input.runId ?? 'generated-failed-run',
+        })),
+        attachSession: mock(() => Promise.resolve()),
+        succeedIfRunning: mock(() => Promise.resolve()),
+        failIfRunning: mock(() => Promise.resolve()),
+        recordWarnings: mock(() => Promise.resolve()),
+        reconcileStaleRunningRuns: mock(() => Promise.resolve({ count: 0 })),
+    }
+}
 
 function createCachePlanFixture(
     overrides: Partial<CachePlanSnapshot> = {},
@@ -258,9 +273,13 @@ describe('createAIRuntime', () => {
     test('rejects duplicate plugin names', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const plugins: AIPlugin[] = [{ name: 'dup' }, { name: 'dup' }]
-        expect(createAIRuntime({ model: mockModel, plugins })).rejects.toThrow(
-            'Duplicate plugin name: "dup"',
-        )
+        expect(
+            createAIRuntime({
+                model: mockModel,
+                plugins,
+                agentRunStore: createFakeAgentRunStore(),
+            }),
+        ).rejects.toThrow('Duplicate plugin name: "dup"')
     })
 
     test('calls init() on all plugins in order', async () => {
@@ -280,7 +299,11 @@ describe('createAIRuntime', () => {
                 },
             },
         ]
-        await createAIRuntime({ model: mockModel, plugins })
+        await createAIRuntime({
+            model: mockModel,
+            plugins,
+            agentRunStore: createFakeAgentRunStore(),
+        })
         expect(order).toEqual(['a', 'b'])
     })
 
@@ -294,14 +317,22 @@ describe('createAIRuntime', () => {
                 },
             },
         ]
-        expect(createAIRuntime({ model: mockModel, plugins })).rejects.toThrow(
-            'init failed',
-        )
+        expect(
+            createAIRuntime({
+                model: mockModel,
+                plugins,
+                agentRunStore: createFakeAgentRunStore(),
+            }),
+        ).rejects.toThrow('init failed')
     })
 
     test('returns runtime with chat and dispose', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
-        const runtime = await createAIRuntime({ model: mockModel, plugins: [] })
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            plugins: [],
+            agentRunStore: createFakeAgentRunStore(),
+        })
         expect(typeof runtime.chat).toBe('function')
         expect(typeof runtime.dispose).toBe('function')
     })
@@ -310,6 +341,7 @@ describe('createAIRuntime', () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const runtime = await createAIRuntime({
             model: mockModel,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -350,6 +382,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'gpt-4.1' } as never,
             defaults: { maxTokens: 2048 },
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'low',
@@ -423,6 +456,7 @@ describe('createAIRuntime', () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const runtime = await createAIRuntime({
             model: { modelId: 'gpt-4.1' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [],
         })
 
@@ -449,6 +483,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -535,6 +570,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             defaults: { thinkingBudget: 256 },
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -666,6 +702,7 @@ describe('createAIRuntime', () => {
                 modelId: 'claude-sonnet-4-6',
             } as never,
             defaults: { thinkingBudget: 256 },
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'seed-previous-manifest',
@@ -743,6 +780,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [],
         })
 
@@ -797,6 +835,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -858,6 +897,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -930,6 +970,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1050,6 +1091,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             defaults: { thinkingBudget: 256 },
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1141,6 +1183,7 @@ describe('createAIRuntime', () => {
                 provider: 'anthropic',
                 modelId: 'claude-sonnet-4-6',
             } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [],
         })
 
@@ -1191,6 +1234,7 @@ describe('createAIRuntime', () => {
                 provider: 'anthropic',
                 modelId: 'claude-sonnet-4-6',
             } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1265,6 +1309,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [],
         })
 
@@ -1310,7 +1355,11 @@ describe('createAIRuntime', () => {
                 },
             },
         ]
-        const runtime = await createAIRuntime({ model: mockModel, plugins })
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            plugins,
+            agentRunStore: createFakeAgentRunStore(),
+        })
         await runtime.dispose()
         expect(destroyed).toEqual(['a', 'b'])
     })
@@ -1325,7 +1374,11 @@ describe('createAIRuntime', () => {
                 },
             },
         ]
-        const runtime = await createAIRuntime({ model: mockModel, plugins })
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            plugins,
+            agentRunStore: createFakeAgentRunStore(),
+        })
         // Should not throw
         await runtime.dispose()
     })
