@@ -15,6 +15,7 @@ type AgentRunRow = {
     status: AgentRunStatus | string
     startedAt: Date
     warnings?: unknown
+    updatedAt?: Date
 }
 
 type AgentRunData = Record<string, unknown>
@@ -30,6 +31,7 @@ type AgentRunDelegate = {
             id?: string
             status?: AgentRunStatus
             startedAt?: { lt: Date }
+            updatedAt?: Date
         }
         data: AgentRunData
     }): Promise<{ count: number }>
@@ -45,6 +47,10 @@ function getStringProperty(value: unknown, key: string): string | undefined {
 
     const property = (value as Record<string, unknown>)[key]
     return typeof property === 'string' ? property : undefined
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+    return getStringProperty(error, 'code') === 'P2002'
 }
 
 function normalizeError(error: unknown, code?: string): AgentRunErrorRecord {
@@ -153,6 +159,8 @@ function mergeWarnings(
     ]
 }
 
+const WARNING_UPDATE_ATTEMPTS = 3
+
 export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
     return {
         async createRunningRun(input: CreateRunningRunInput): Promise<void> {
@@ -185,16 +193,19 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
             })
             const finishedAt = new Date()
             const error = normalizeError(input.error, input.code)
+            const failedData: AgentRunData = {
+                ...definedRunFields(input),
+                status: 'failed',
+                error,
+                finishedAt,
+            }
 
             if (existing) {
                 if (existing.status === 'running') {
                     await db.agentRun.updateMany({
                         where: { id: runId, status: 'running' },
                         data: {
-                            ...definedRunFields(input),
-                            status: 'failed',
-                            error,
-                            finishedAt,
+                            ...failedData,
                             durationMs: durationSince(
                                 existing.startedAt,
                                 finishedAt,
@@ -206,24 +217,36 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
                 return { runId }
             }
 
-            await db.agentRun.create({
-                data: {
-                    id: runId,
-                    status: 'failed',
-                    source: input.source,
-                    mode: input.mode,
-                    agentType: input.agentType,
-                    ...nullableRunFields(input),
-                    inputSummary: trimText(input.inputSummary, 500),
-                    outputSummary: null,
-                    error,
-                    usage: null,
-                    warnings: null,
-                    startedAt: finishedAt,
-                    finishedAt,
-                    durationMs: 0,
-                },
-            })
+            try {
+                await db.agentRun.create({
+                    data: {
+                        id: runId,
+                        status: 'failed',
+                        source: input.source,
+                        mode: input.mode,
+                        agentType: input.agentType,
+                        ...nullableRunFields(input),
+                        inputSummary: trimText(input.inputSummary, 500),
+                        outputSummary: null,
+                        error,
+                        usage: null,
+                        warnings: null,
+                        startedAt: finishedAt,
+                        finishedAt,
+                        durationMs: 0,
+                    },
+                })
+            } catch (createError) {
+                if (!isUniqueConstraintError(createError)) throw createError
+
+                await db.agentRun.updateMany({
+                    where: { id: runId, status: 'running' },
+                    data: {
+                        ...failedData,
+                        durationMs: 0,
+                    },
+                })
+            }
 
             return { runId }
         },
@@ -286,17 +309,38 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
         ): Promise<void> {
             if (warnings.length === 0) return
 
-            const existing = await db.agentRun.findUnique({
-                where: { id: runId },
-            })
-            if (!existing) return
+            for (
+                let attempt = 0;
+                attempt < WARNING_UPDATE_ATTEMPTS;
+                attempt++
+            ) {
+                const existing = await db.agentRun.findUnique({
+                    where: { id: runId },
+                })
+                if (!existing) return
 
-            await db.agentRun.update({
-                where: { id: runId },
-                data: {
-                    warnings: mergeWarnings(existing.warnings, warnings),
-                },
-            })
+                const mergedWarnings = mergeWarnings(
+                    existing.warnings,
+                    warnings,
+                )
+                if (!(existing.updatedAt instanceof Date)) {
+                    await db.agentRun.update({
+                        where: { id: runId },
+                        data: { warnings: mergedWarnings },
+                    })
+                    return
+                }
+
+                const result = await db.agentRun.updateMany({
+                    where: { id: runId, updatedAt: existing.updatedAt },
+                    data: { warnings: mergedWarnings },
+                })
+                if (result.count > 0) return
+            }
+
+            throw new Error(
+                `Failed to record warnings for agent run ${runId} after ${WARNING_UPDATE_ATTEMPTS} concurrent update attempts.`,
+            )
         },
 
         async reconcileStaleRunningRuns(input: {
@@ -318,6 +362,7 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
                         code: 'STALE_RUN_RECONCILED',
                     },
                     finishedAt: new Date(),
+                    durationMs: 0,
                 },
             })
         },

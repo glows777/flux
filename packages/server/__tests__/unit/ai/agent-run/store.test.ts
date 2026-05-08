@@ -21,13 +21,33 @@ type AgentRunRow = {
     startedAt: Date
     finishedAt: Date | null
     durationMs: number | null
+    updatedAt: Date
 }
 
 function createDb() {
     const rows = new Map<string, AgentRunRow>()
+    let timestamp = new Date('2026-05-08T00:00:00.000Z').getTime()
+    const nextUpdatedAt = () => {
+        timestamp += 1
+        return new Date(timestamp)
+    }
+    const touchRow = (id: string, data: Partial<AgentRunRow>) => {
+        const existing = rows.get(id)
+        if (!existing) throw new Error('not found')
+        const updated = { ...existing, ...data, updatedAt: nextUpdatedAt() }
+        rows.set(id, updated)
+        return updated
+    }
     const db = {
         agentRun: {
             create: mock(async ({ data }: { data: AgentRunRow }) => {
+                if (rows.has(data.id)) {
+                    throw Object.assign(
+                        new Error('Unique constraint failed on AgentRun.id'),
+                        { code: 'P2002' },
+                    )
+                }
+
                 const startedAt = data.startedAt ?? new Date()
                 rows.set(data.id, {
                     ...data,
@@ -45,6 +65,7 @@ function createDb() {
                     warnings: data.warnings ?? null,
                     finishedAt: data.finishedAt ?? null,
                     durationMs: data.durationMs ?? null,
+                    updatedAt: data.updatedAt ?? nextUpdatedAt(),
                 })
                 return rows.get(data.id)
             }),
@@ -58,8 +79,7 @@ function createDb() {
                 }) => {
                     const existing = rows.get(where.id)
                     if (!existing) throw new Error('not found')
-                    rows.set(where.id, { ...existing, ...data })
-                    return rows.get(where.id)
+                    return touchRow(where.id, data)
                 },
             ),
             updateMany: mock(
@@ -71,6 +91,7 @@ function createDb() {
                         id?: string
                         status?: string
                         startedAt?: { lt: Date }
+                        updatedAt?: Date
                     }
                     data: Partial<AgentRunRow>
                 }) => {
@@ -85,12 +106,19 @@ function createDb() {
                         if (where.status && existing.status !== where.status)
                             continue
                         if (
+                            where.updatedAt &&
+                            existing.updatedAt.getTime() !==
+                                where.updatedAt.getTime()
+                        ) {
+                            continue
+                        }
+                        if (
                             where.startedAt?.lt &&
                             existing.startedAt >= where.startedAt.lt
                         ) {
                             continue
                         }
-                        rows.set(id, { ...existing, ...data })
+                        touchRow(id, data)
                         count++
                     }
 
@@ -103,7 +131,7 @@ function createDb() {
             ),
         },
     }
-    return { db, rows }
+    return { db, rows, touchRow }
 }
 
 describe('AgentRunStore', () => {
@@ -150,6 +178,51 @@ describe('AgentRunStore', () => {
         })
     })
 
+    test('createFailedRun tolerates duplicate create races for missing rows', async () => {
+        const originalFindUnique = fixture.db.agentRun.findUnique
+        let findUniqueCalls = 0
+        let resolveBothFindUnique: () => void = () => {}
+        const bothFindUniqueCalls = new Promise<void>((resolve) => {
+            resolveBothFindUnique = resolve
+        })
+        fixture.db.agentRun.findUnique = mock(
+            async ({ where }: { where: { id: string } }) => {
+                if (where.id !== 'run-race') {
+                    return originalFindUnique({ where })
+                }
+
+                findUniqueCalls++
+                if (findUniqueCalls === 2) resolveBothFindUnique()
+
+                await bothFindUniqueCalls
+                return null
+            },
+        )
+        const store = createPrismaAgentRunStore(fixture.db as never)
+
+        const first = store.createFailedRun({
+            runId: 'run-race',
+            source: 'cron',
+            mode: 'trigger',
+            agentType: 'trading-agent',
+            error: new Error('first failure'),
+        })
+        const second = store.createFailedRun({
+            runId: 'run-race',
+            source: 'cron',
+            mode: 'trigger',
+            agentType: 'trading-agent',
+            error: new Error('second failure'),
+        })
+
+        await expect(Promise.all([first, second])).resolves.toEqual([
+            { runId: 'run-race' },
+            { runId: 'run-race' },
+        ])
+        expect(fixture.db.agentRun.create).toHaveBeenCalledTimes(2)
+        expect(fixture.rows.get('run-race')?.status).toBe('failed')
+    })
+
     test('terminal guards do not overwrite failed runs', async () => {
         const store = createPrismaAgentRunStore(fixture.db as never)
         await store.createFailedRun({
@@ -189,6 +262,95 @@ describe('AgentRunStore', () => {
         expect(fixture.rows.get('run-3')?.warnings).toEqual([
             { source: 'session.afterRun', message: 'manifest failed' },
             { source: 'session.afterRun', message: 'tool skipped' },
+        ])
+    })
+
+    test('recordWarnings retries after a lost optimistic warning update', async () => {
+        const store = createPrismaAgentRunStore(fixture.db as never)
+        const initialWarning = {
+            source: 'session.afterRun',
+            message: 'manifest failed',
+        }
+        const concurrentWarning = {
+            source: 'session.afterRun',
+            message: 'rate limit warning',
+        }
+        const newWarning = {
+            source: 'session.afterRun',
+            message: 'tool skipped',
+        }
+
+        await store.createRunningRun({
+            runId: 'run-warning-race',
+            source: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+        })
+        await store.recordWarnings('run-warning-race', [initialWarning])
+
+        const originalUpdate = fixture.db.agentRun.update
+        const originalUpdateMany = fixture.db.agentRun.updateMany
+        let injectedConcurrentWarning = false
+        const injectConcurrentWarning = () => {
+            if (injectedConcurrentWarning) return
+
+            const existing = fixture.rows.get('run-warning-race')
+            if (!existing) throw new Error('missing run-warning-race fixture')
+            const existingWarnings = Array.isArray(existing.warnings)
+                ? existing.warnings
+                : []
+            fixture.touchRow('run-warning-race', {
+                warnings: [...existingWarnings, concurrentWarning],
+            })
+            injectedConcurrentWarning = true
+        }
+
+        fixture.db.agentRun.update = mock(
+            async (input: {
+                where: { id: string }
+                data: Partial<AgentRunRow>
+            }) => {
+                if (
+                    input.where.id === 'run-warning-race' &&
+                    'warnings' in input.data
+                ) {
+                    injectConcurrentWarning()
+                }
+
+                return originalUpdate(input)
+            },
+        )
+        fixture.db.agentRun.updateMany = mock(
+            async (input: {
+                where: {
+                    id?: string
+                    status?: string
+                    startedAt?: { lt: Date }
+                    updatedAt?: Date
+                }
+                data: Partial<AgentRunRow>
+            }) => {
+                if (
+                    input.where.id === 'run-warning-race' &&
+                    input.where.updatedAt &&
+                    'warnings' in input.data &&
+                    !injectedConcurrentWarning
+                ) {
+                    injectConcurrentWarning()
+                    return { count: 0 }
+                }
+
+                return originalUpdateMany(input)
+            },
+        )
+
+        await store.recordWarnings('run-warning-race', [newWarning])
+
+        expect(fixture.db.agentRun.updateMany).toHaveBeenCalledTimes(2)
+        expect(fixture.rows.get('run-warning-race')?.warnings).toEqual([
+            initialWarning,
+            concurrentWarning,
+            newWarning,
         ])
     })
 
@@ -272,6 +434,7 @@ describe('AgentRunStore', () => {
             startedAt: oldDate,
             finishedAt: null,
             durationMs: null,
+            updatedAt: new Date('2026-05-08T00:00:00.000Z'),
         })
         const oldRunning = fixture.rows.get('old-running')
         if (!oldRunning) throw new Error('missing old running fixture')
@@ -297,6 +460,7 @@ describe('AgentRunStore', () => {
 
         expect(result.count).toBe(1)
         expect(fixture.rows.get('old-running')?.status).toBe('failed')
+        expect(fixture.rows.get('old-running')?.durationMs).toBe(0)
         expect(fixture.rows.get('fresh-running')?.status).toBe('running')
         expect(fixture.rows.get('old-failed')?.status).toBe('failed')
         expect(fixture.rows.get('old-failed')?.error).toEqual({
