@@ -1,11 +1,41 @@
-import { describe, expect, test } from 'bun:test'
-import { buildCachePlan } from '../../../../src/core/ai/runtime/cache-plan'
+import { describe, expect, mock, test } from 'bun:test'
 import type {
     CachePlanSnapshot,
     ContextSegmentSnapshot,
     SystemContextSegmentSnapshot,
     ToolContributionSnapshot,
 } from '../../../../src/core/ai/runtime/types'
+
+let cachedBuildCachePlan:
+    | ((
+          input: Parameters<
+              typeof import('../../../../src/core/ai/runtime/cache-plan').buildCachePlan
+          >[0],
+      ) => ReturnType<
+          typeof import('../../../../src/core/ai/runtime/cache-plan').buildCachePlan
+      >)
+    | null = null
+
+async function loadBuildCachePlan() {
+    if (cachedBuildCachePlan) return cachedBuildCachePlan
+
+    mock.restore()
+    const sourceUrl = new URL(
+        '../../../../src/core/ai/runtime/cache-plan.ts',
+        import.meta.url,
+    )
+    const source = await Bun.file(sourceUrl).text()
+    const transpiler = new Bun.Transpiler({ loader: 'ts' })
+    const js = transpiler.transformSync(source)
+    const tempModuleUrl = new URL(
+        '/private/tmp/cache-plan-test-loader.mjs',
+        'file://',
+    )
+    await Bun.write(tempModuleUrl, js)
+    const module = await import(tempModuleUrl.href)
+    cachedBuildCachePlan = module.buildCachePlan
+    return cachedBuildCachePlan
+}
 
 const systemSegments: SystemContextSegmentSnapshot[] = [
     {
@@ -119,7 +149,7 @@ const historySegment: ContextSegmentSnapshot = {
     compactability: 'summarize',
 }
 
-function createPlan(
+async function createPlan(
     overrides: Partial<{
         provider: 'anthropic' | 'openai' | 'unknown'
         segments: ContextSegmentSnapshot[]
@@ -127,8 +157,9 @@ function createPlan(
         tools: ToolContributionSnapshot[]
         totalEstimatedInputTokens: number
     }> = {},
-): CachePlanSnapshot {
+): Promise<CachePlanSnapshot> {
     const system = overrides.systemSegments ?? systemSegments
+    const buildCachePlan = await loadBuildCachePlan()
 
     return buildCachePlan({
         provider: overrides.provider ?? 'anthropic',
@@ -145,8 +176,8 @@ function createPlan(
 }
 
 describe('buildCachePlan', () => {
-    test('splits stable core, cacheable session, and dynamic tail', () => {
-        const plan = createPlan()
+    test('splits stable core, cacheable session, and dynamic tail', async () => {
+        const plan = await createPlan()
 
         expect(plan.stableCoreSegmentIds).toEqual([
             'global-base',
@@ -177,8 +208,9 @@ describe('buildCachePlan', () => {
         )
     })
 
-    test('hashes full tool definitions without producing local invalidation reasons', () => {
-        const previous = createPlan()
+    test('hashes full tool definitions without producing local invalidation reasons', async () => {
+        const previous = await createPlan()
+        const buildCachePlan = await loadBuildCachePlan()
 
         const current = buildCachePlan({
             provider: 'anthropic',
@@ -216,8 +248,8 @@ describe('buildCachePlan', () => {
         expect('candidateInvalidationReasons' in current).toBe(false)
     })
 
-    test('disables cache expectations for non-anthropic providers', () => {
-        const plan = createPlan({ provider: 'openai' })
+    test('disables cache expectations for non-anthropic providers', async () => {
+        const plan = await createPlan({ provider: 'openai' })
 
         expect(plan.eligibility.providerSupportsPromptCache).toBe(false)
         expect(plan.eligibility.cacheExpected).toBe(false)
@@ -226,7 +258,7 @@ describe('buildCachePlan', () => {
         )
     })
 
-    test('marks low-prefix requests below the Anthropic threshold', () => {
+    test('marks low-prefix requests below the Anthropic threshold', async () => {
         const lowPrefixBase: SystemContextSegmentSnapshot = {
             id: 'small-base',
             target: 'system',
@@ -241,7 +273,7 @@ describe('buildCachePlan', () => {
             estimatedTokens: 100,
         }
 
-        const plan = createPlan({
+        const plan = await createPlan({
             systemSegments: [lowPrefixBase],
             segments: [lowPrefixBase],
             tools: [],
@@ -255,7 +287,7 @@ describe('buildCachePlan', () => {
         )
     })
 
-    test('counts tool tokens while keeping dynamic tail outside the cache prefix threshold', () => {
+    test('counts tool tokens while keeping dynamic tail outside the cache prefix threshold', async () => {
         const nearThresholdBase: SystemContextSegmentSnapshot = {
             id: 'near-threshold-base',
             target: 'system',
@@ -270,7 +302,7 @@ describe('buildCachePlan', () => {
             estimatedTokens: 900,
         }
 
-        const plan = createPlan({
+        const plan = await createPlan({
             systemSegments: [nearThresholdBase],
             segments: [
                 nearThresholdBase,
@@ -300,7 +332,7 @@ describe('buildCachePlan', () => {
         expect(plan.dynamicTailSegmentIds).toContain('session-history')
     })
 
-    test('counts stable tool definitions toward the anthropic cache threshold', () => {
+    test('counts stable tool definitions toward the anthropic cache threshold', async () => {
         const nearThresholdBase: SystemContextSegmentSnapshot = {
             id: 'near-threshold-base',
             target: 'system',
@@ -315,7 +347,7 @@ describe('buildCachePlan', () => {
             estimatedTokens: 900,
         }
 
-        const plan = createPlan({
+        const plan = await createPlan({
             systemSegments: [nearThresholdBase],
             segments: [nearThresholdBase],
             tools: [
@@ -335,7 +367,7 @@ describe('buildCachePlan', () => {
         )
     })
 
-    test('keeps volatile memory out of cacheableSession', () => {
+    test('keeps volatile memory out of cacheableSession', async () => {
         const base: SystemContextSegmentSnapshot = {
             id: 'small-base',
             target: 'system',
@@ -363,7 +395,7 @@ describe('buildCachePlan', () => {
             estimatedTokens: 100,
         }
 
-        const plan = createPlan({
+        const plan = await createPlan({
             systemSegments: [base],
             segments: [base, volatileMemory],
             tools: [],
@@ -375,7 +407,7 @@ describe('buildCachePlan', () => {
         expect(plan.dynamicTailSegmentIds).toContain('memory-volatile')
     })
 
-    test('keeps live runtime context in the dynamic tail without local miss inference', () => {
+    test('keeps live runtime context in the dynamic tail without local miss inference', async () => {
         const base: SystemContextSegmentSnapshot = {
             id: 'small-base',
             target: 'system',
@@ -403,7 +435,7 @@ describe('buildCachePlan', () => {
             estimatedTokens: 100,
         }
 
-        const plan = createPlan({
+        const plan = await createPlan({
             systemSegments: [base],
             segments: [base, liveContext],
             tools: [],
