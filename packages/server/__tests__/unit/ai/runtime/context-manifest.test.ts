@@ -6,6 +6,40 @@ import {
 } from '../../../../src/core/ai/runtime/context-manifest'
 
 describe('context-manifest cache snapshots', () => {
+    test('initializes provider request observability with safe defaults', () => {
+        const manifest = createBaseManifest({
+            runId: 'run-observe-defaults',
+            input: {
+                messages: [],
+                channel: 'web',
+                mode: 'conversation',
+            },
+            defaults: { maxSteps: 20 },
+        })
+
+        expect(manifest.modelRequest).toMatchObject({
+            systemText: '',
+            modelMessages: [],
+            toolNames: [],
+            resolvedParams: {},
+            providerOptions: {},
+            provider: 'unknown',
+            preparedCacheRequest: false,
+            usedCacheRequest: false,
+            providerMessages: [],
+            cachedToolNames: [],
+            cachedToolCount: 0,
+            cacheControlBreakpoints: {
+                count: 0,
+                sources: {
+                    providerMessages: 0,
+                    tools: 0,
+                    cachePlan: 0,
+                },
+            },
+        })
+    })
+
     test('does not invent a result when cacheResult is attached before finalization', () => {
         let manifest = createBaseManifest({
             runId: 'run-cache-1',

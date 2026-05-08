@@ -27,6 +27,7 @@ import type {
     ChatOutput,
     ChatParams,
     ConsumedResult,
+    ModelRequestSnapshot,
     RunContext,
     RuntimeOptions,
     ToolCallRecord,
@@ -46,6 +47,36 @@ interface StepWithToolCalls {
 type ProviderKind = 'anthropic' | 'openai' | 'unknown'
 
 const CACHE_FAILURE_THRESHOLD = 3
+
+interface ProviderMessageSummary {
+    readonly index: number
+    readonly role: string
+    readonly contentType: string
+    readonly contentLength?: number
+    readonly contentPartCount?: number
+    readonly hasAnthropicCacheControl: boolean
+    readonly anthropicCacheControl?: unknown
+}
+
+interface CacheControlBreakpointsSummary {
+    readonly count: number
+    readonly sources: {
+        readonly providerMessages: number
+        readonly tools: number
+        readonly cachePlan: number
+    }
+}
+
+interface ObservedModelRequestSnapshot extends ModelRequestSnapshot {
+    readonly provider: ProviderKind
+    readonly modelId?: string
+    readonly preparedCacheRequest: boolean
+    readonly usedCacheRequest: boolean
+    readonly providerMessages: ProviderMessageSummary[]
+    readonly cachedToolNames: string[]
+    readonly cachedToolCount: number
+    readonly cacheControlBreakpoints: CacheControlBreakpointsSummary
+}
 
 interface CacheRolloutState {
     plannerFailures: number
@@ -213,6 +244,100 @@ function resolveRolloutGateStatus(params: {
     return params.usedCacheRequest ? 'enabled' : 'observe-only'
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+    return value != null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function getAnthropicCacheControl(value: unknown): unknown | undefined {
+    if (!isPlainRecord(value)) return undefined
+
+    const anthropic = value.anthropic
+    if (!isPlainRecord(anthropic)) return undefined
+
+    return anthropic.cacheControl
+}
+
+function summarizeContent(value: unknown): {
+    contentType: string
+    contentLength?: number
+    contentPartCount?: number
+} {
+    if (typeof value === 'string') {
+        return { contentType: 'string', contentLength: value.length }
+    }
+
+    if (Array.isArray(value)) {
+        return { contentType: 'array', contentPartCount: value.length }
+    }
+
+    if (value == null) {
+        return { contentType: 'none' }
+    }
+
+    return { contentType: typeof value }
+}
+
+function summarizeProviderMessages(
+    messages: unknown[],
+): ProviderMessageSummary[] {
+    return messages.map((message, index) => {
+        if (!isPlainRecord(message)) {
+            return {
+                index,
+                role: 'unknown',
+                contentType: typeof message,
+                hasAnthropicCacheControl: false,
+            }
+        }
+
+        const anthropicCacheControl = getAnthropicCacheControl(
+            message.providerOptions,
+        )
+
+        return {
+            index,
+            role: typeof message.role === 'string' ? message.role : 'unknown',
+            ...summarizeContent(message.content),
+            hasAnthropicCacheControl: anthropicCacheControl != null,
+            ...(anthropicCacheControl != null ? { anthropicCacheControl } : {}),
+        }
+    })
+}
+
+function listCachedToolNames(
+    tools: Record<string, unknown> | undefined,
+): string[] {
+    if (!tools) return []
+
+    return Object.entries(tools)
+        .filter(([, tool]) => {
+            if (!isPlainRecord(tool)) return false
+
+            return getAnthropicCacheControl(tool.providerOptions) != null
+        })
+        .map(([name]) => name)
+}
+
+function summarizeCacheControlBreakpoints(params: {
+    providerMessages: ProviderMessageSummary[]
+    cachedToolNames: string[]
+    cachePlan?: ReturnType<typeof buildCachePlan>
+}): CacheControlBreakpointsSummary {
+    const providerMessageCount = params.providerMessages.filter(
+        (message) => message.hasAnthropicCacheControl,
+    ).length
+    const cachedToolCount = params.cachedToolNames.length
+
+    return {
+        count: providerMessageCount + cachedToolCount,
+        sources: {
+            providerMessages: providerMessageCount,
+            tools: cachedToolCount,
+            cachePlan: params.cachePlan?.breakpoints.length ?? 0,
+        },
+    }
+}
+
 export async function createAIRuntime(
     options: RuntimeOptions,
 ): Promise<AIRuntime> {
@@ -342,20 +467,22 @@ export async function createAIRuntime(
                 tools: assembled.aiTools,
             }
             let providerCacheRequest = fallbackProviderCacheRequest
-            const shouldUseCacheRequest = Boolean(
-                cachePlan &&
-                    !cacheDisabledReason &&
-                    cachePlan.eligibility.providerSupportsPromptCache &&
-                    cachePlan.eligibility.cacheExpected,
-            )
+            const shouldUseCacheRequest =
+                cachePlan != null &&
+                !cacheDisabledReason &&
+                cachePlan.eligibility.providerSupportsPromptCache &&
+                cachePlan.eligibility.cacheExpected
+            const activeCachePlan = shouldUseCacheRequest
+                ? cachePlan
+                : undefined
             let preparedCacheRequest = false
             let usedCacheRequest = false
 
-            if (shouldUseCacheRequest) {
+            if (activeCachePlan) {
                 try {
                     providerCacheRequest = buildProviderCacheRequest({
                         provider,
-                        cachePlan,
+                        cachePlan: activeCachePlan,
                         systemSegments: assembled.systemSegments,
                         modelMessages: convertedMessages,
                         providerOptions: assembled.providerOptions,
@@ -429,14 +556,36 @@ export async function createAIRuntime(
                 streamResult = startStream(providerCacheRequest)
             }
 
-            manifest = attachModelRequestSnapshot(manifest, {
-                systemText: (providerCacheRequest.system ?? '') as never,
-                modelMessages: assembled.modelMessages as never,
+            const providerMessages = summarizeProviderMessages(
+                providerCacheRequest.messages,
+            )
+            const cachedToolNames = listCachedToolNames(
+                providerCacheRequest.tools,
+            )
+            const modelRequestSnapshot: ObservedModelRequestSnapshot = {
+                systemText: providerCacheRequest.system ?? '',
+                modelMessages: assembled.modelMessages,
                 toolNames: Object.keys(assembled.aiTools),
                 resolvedParams: assembled.resolved,
                 maxOutputTokens: assembled.resolvedMaxOutputTokens,
                 providerOptions: providerCacheRequest.providerOptions,
-            })
+                provider,
+                modelId: resolveModelId(model),
+                preparedCacheRequest,
+                usedCacheRequest,
+                providerMessages,
+                cachedToolNames,
+                cachedToolCount: cachedToolNames.length,
+                cacheControlBreakpoints: summarizeCacheControlBreakpoints({
+                    providerMessages,
+                    cachedToolNames,
+                    cachePlan,
+                }),
+            }
+            manifest = attachModelRequestSnapshot(
+                manifest,
+                modelRequestSnapshot,
+            )
 
             let finalized = false
             let finalizedData:
@@ -452,7 +601,10 @@ export async function createAIRuntime(
             async function resolveFinalizedData() {
                 if (finalizedData) return finalizedData
 
-                const rawStreamResult = streamResult as Record<string, unknown>
+                const rawStreamResult = streamResult as unknown as Record<
+                    string,
+                    unknown
+                >
                 const [text, usage, steps, totalUsage, providerMetadata] =
                     await Promise.all([
                         streamResult.text,
@@ -519,6 +671,10 @@ export async function createAIRuntime(
                     manifest = attachCacheResultSnapshot(manifest, {
                         cacheObserved: false,
                         evidenceSource: 'none',
+                        cacheReadObserved: false,
+                        cacheWriteObserved: false,
+                        cacheReadEvidenceSource: 'none',
+                        cacheWriteEvidenceSource: 'none',
                         cacheDisabledReason:
                             'cache_result_normalization_failed',
                         rolloutGateStatus,

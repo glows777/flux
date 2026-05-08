@@ -30,6 +30,27 @@ function hasObjectKey(value: Record<string, unknown>, key: string): boolean {
     return isPlainObject(value[key])
 }
 
+function hasOptionalStringKey(
+    value: Record<string, unknown>,
+    key: string,
+): boolean {
+    return !(key in value) || typeof value[key] === 'string'
+}
+
+function hasOptionalNumberKey(
+    value: Record<string, unknown>,
+    key: string,
+): boolean {
+    return !(key in value) || typeof value[key] === 'number'
+}
+
+function hasOptionalBooleanKey(
+    value: Record<string, unknown>,
+    key: string,
+): boolean {
+    return !(key in value) || typeof value[key] === 'boolean'
+}
+
 function isCacheEvidenceSource(value: unknown): boolean {
     return (
         value === 'totalUsage' ||
@@ -37,6 +58,13 @@ function isCacheEvidenceSource(value: unknown): boolean {
         value === 'both' ||
         value === 'none'
     )
+}
+
+function hasOptionalCacheEvidenceSourceKey(
+    value: Record<string, unknown>,
+    key: string,
+): boolean {
+    return !(key in value) || isCacheEvidenceSource(value[key])
 }
 
 function isManifestInputShape(
@@ -81,6 +109,12 @@ function isModelRequestShape(value: unknown): value is Record<string, unknown> {
 
 function isCachePlanShape(value: unknown): value is Record<string, unknown> {
     if (!isPlainObject(value)) return false
+    if (!hasOptionalStringKey(value, 'modelId')) return false
+    if (!hasOptionalNumberKey(value, 'minCacheablePrefixTokens')) return false
+    if (!isPlainObject(value.eligibility)) return false
+    if (!hasOptionalNumberKey(value.eligibility, 'minCacheablePrefixTokens')) {
+        return false
+    }
 
     return (
         hasStringKey(value, 'provider') &&
@@ -90,8 +124,7 @@ function isCachePlanShape(value: unknown): value is Record<string, unknown> {
         hasArrayKey(value, 'effectivePrefixSegmentIds') &&
         typeof value.effectivePrefixEstimatedTokens === 'number' &&
         hasArrayKey(value, 'breakpoints') &&
-        hasObjectKey(value, 'hashes') &&
-        hasObjectKey(value, 'eligibility')
+        hasObjectKey(value, 'hashes')
     )
 }
 
@@ -113,6 +146,31 @@ function isCacheResultShape(value: unknown): value is Record<string, unknown> {
         !isCacheEvidenceSource(value.evidenceSource)
     ) {
         return false
+    }
+
+    const hasDirectionalEvidence =
+        'cacheReadObserved' in value ||
+        'cacheWriteObserved' in value ||
+        'cacheReadEvidenceSource' in value ||
+        'cacheWriteEvidenceSource' in value
+
+    if (hasDirectionalEvidence) {
+        return (
+            hasOptionalBooleanKey(value, 'cacheReadObserved') &&
+            hasOptionalBooleanKey(value, 'cacheWriteObserved') &&
+            hasOptionalCacheEvidenceSourceKey(
+                value,
+                'cacheReadEvidenceSource',
+            ) &&
+            hasOptionalCacheEvidenceSourceKey(
+                value,
+                'cacheWriteEvidenceSource',
+            ) &&
+            'cacheReadObserved' in value &&
+            'cacheWriteObserved' in value &&
+            'cacheReadEvidenceSource' in value &&
+            'cacheWriteEvidenceSource' in value
+        )
     }
 
     return true

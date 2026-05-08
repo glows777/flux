@@ -201,6 +201,17 @@ v0.03           v0.04                          v0.05
 | 数据隐私 | 自部署，数据不离开自有基础设施 |
 | 测试覆盖 | 单元 80%+，集成覆盖所有 API，E2E 覆盖关键流程 |
 
+### Prompt Cache Chat Flow 验收标准 C
+
+Anthropic prompt cache 与完整聊天链路采用 **server-only mandatory + web UI smoke** 验收：
+
+- 必跑 server-only verifier：在本地 server 已启动后，执行 `cd packages/server && bun run verify:prompt-cache-chat-flow`；默认请求 `http://localhost:3001`，可通过 `SERVER_URL` 或 `FLUX_SERVER_URL` 覆盖。
+- verifier 必须完成两轮真实 `POST /api/chat` 流式请求，第二轮使用同一 session 并发送完整 `UIMessage` history，随后读取两个 assistant message 的 context manifest。
+- verifier 必须确认 prompt cache rollout 已启用、第一轮有 cache write 证据、第二轮有 cache read 证据、provider/model 与稳定前缀 hash 一致、cache plan 预期可缓存且 prefix token 达到 manifest 阈值。
+- web UI smoke：在 web 与 server 均启动后，手动在同一 chat session 连续发送两条消息，确认流式回复、session 续接、历史不丢失，并能打开 assistant message 的 context detail。
+
+完整执行清单见 [Prompt Cache Chat Flow 验收清单](./prompt-cache-acceptance-checklist.md)。
+
 ---
 
 ## 7. 文档索引
@@ -220,6 +231,7 @@ v0.03           v0.04                          v0.05
 |------|------|------|
 | 架构指南 | `CLAUDE.md` | 技术栈、目录结构、API、数据模型、设计模式 |
 | Docker 部署 | `DOCKER.md` | Docker Compose 部署指南 |
+| Prompt Cache 验收清单 | `docs/prompt-cache-acceptance-checklist.md` | Anthropic prompt cache 与完整 chat flow 的验收标准 |
 
 ### v0.01 — MVP UI
 

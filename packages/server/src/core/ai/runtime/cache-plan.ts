@@ -102,6 +102,131 @@ function estimateTools(tools: ToolContributionSnapshot[]): number {
     return tools.reduce((total, tool) => total + (tool.estimatedTokens ?? 0), 0)
 }
 
+function estimateSegment(segment: ContextSegmentSnapshot): number {
+    return 'estimatedTokens' in segment ? segment.estimatedTokens : 0
+}
+
+interface AnthropicMinPrefixRule {
+    readonly modelRule: string
+    readonly minCacheablePrefixTokens: number
+    readonly aliases?: string[]
+    readonly matchKind: 'specific' | 'family'
+}
+
+const ANTHROPIC_MIN_PREFIX_RULES: AnthropicMinPrefixRule[] = [
+    {
+        modelRule: 'claude-sonnet-4-6',
+        minCacheablePrefixTokens: 2048,
+        matchKind: 'specific',
+    },
+    {
+        modelRule: 'claude-opus-4-6',
+        minCacheablePrefixTokens: 4096,
+        matchKind: 'specific',
+    },
+    {
+        modelRule: 'claude-opus-4-5',
+        minCacheablePrefixTokens: 4096,
+        matchKind: 'specific',
+    },
+    {
+        modelRule: 'claude-haiku-4-5',
+        minCacheablePrefixTokens: 4096,
+        matchKind: 'specific',
+    },
+    {
+        modelRule: 'claude-haiku-3-5',
+        minCacheablePrefixTokens: 2048,
+        matchKind: 'specific',
+    },
+    {
+        modelRule: 'claude-opus-4-1',
+        minCacheablePrefixTokens: 1024,
+        matchKind: 'specific',
+    },
+    {
+        modelRule: 'claude-sonnet-4-5',
+        minCacheablePrefixTokens: 1024,
+        matchKind: 'specific',
+    },
+    {
+        modelRule: 'claude-sonnet-3-7',
+        aliases: ['claude-3-7-sonnet'],
+        minCacheablePrefixTokens: 1024,
+        matchKind: 'specific',
+    },
+    {
+        modelRule: 'claude-opus-4',
+        minCacheablePrefixTokens: 1024,
+        matchKind: 'family',
+    },
+    {
+        modelRule: 'claude-sonnet-4',
+        minCacheablePrefixTokens: 1024,
+        matchKind: 'family',
+    },
+    {
+        modelRule: 'claude-opus-3',
+        aliases: ['claude-3-opus'],
+        minCacheablePrefixTokens: 1024,
+        matchKind: 'family',
+    },
+]
+
+function normalizeModelIdForRuleMatch(modelId: string): string {
+    const normalized = modelId.trim().toLowerCase().replaceAll('_', '-')
+    const claudeIndex = normalized.indexOf('claude-')
+
+    return claudeIndex >= 0 ? normalized.slice(claudeIndex) : normalized
+}
+
+function matchesAnthropicPattern(
+    modelId: string,
+    pattern: string,
+    matchKind: AnthropicMinPrefixRule['matchKind'],
+): boolean {
+    if (modelId === pattern) return true
+    if (!modelId.startsWith(`${pattern}-`)) return false
+
+    if (matchKind === 'specific') return true
+
+    const suffix = modelId.slice(pattern.length + 1)
+    return /^\d{8}(?:$|-)/.test(suffix) || /^(latest|v\d+)(?:$|-)/.test(suffix)
+}
+
+function resolveAnthropicMinPrefixRule(modelId?: string): {
+    minCacheablePrefixTokens: number
+    modelRule: string
+} {
+    const normalizedModelId =
+        modelId == null ? undefined : normalizeModelIdForRuleMatch(modelId)
+
+    if (normalizedModelId) {
+        for (const rule of ANTHROPIC_MIN_PREFIX_RULES) {
+            const patterns = [rule.modelRule, ...(rule.aliases ?? [])]
+            if (
+                patterns.some((pattern) =>
+                    matchesAnthropicPattern(
+                        normalizedModelId,
+                        pattern,
+                        rule.matchKind,
+                    ),
+                )
+            ) {
+                return {
+                    minCacheablePrefixTokens: rule.minCacheablePrefixTokens,
+                    modelRule: rule.modelRule,
+                }
+            }
+        }
+    }
+
+    return {
+        minCacheablePrefixTokens: 4096,
+        modelRule: 'unknown_conservative',
+    }
+}
+
 export function buildCachePlan(input: {
     provider: 'anthropic' | 'openai' | 'unknown'
     modelId?: string
@@ -145,17 +270,26 @@ export function buildCachePlan(input: {
     const effectivePrefixEstimatedTokens =
         estimateTools(input.assembledContext.tools) +
         effectivePrefix.reduce(
-            (total, segment) => total + (segment.estimatedTokens ?? 0),
+            (total, segment) => total + estimateSegment(segment),
             0,
         )
 
     const providerSupportsPromptCache = input.provider === 'anthropic'
+    const anthropicMinPrefixRule = providerSupportsPromptCache
+        ? resolveAnthropicMinPrefixRule(input.modelId)
+        : undefined
+    const minCacheablePrefixTokens =
+        anthropicMinPrefixRule?.minCacheablePrefixTokens
     const prefixAboveThreshold =
-        providerSupportsPromptCache && effectivePrefixEstimatedTokens >= 1024
+        providerSupportsPromptCache &&
+        minCacheablePrefixTokens != null &&
+        effectivePrefixEstimatedTokens >= minCacheablePrefixTokens
     const cacheExpected = prefixAboveThreshold
 
     return {
         provider: input.provider,
+        modelId: input.modelId,
+        minCacheablePrefixTokens,
         stableCoreSegmentIds: stableCore.map((segment) => segment.id),
         cacheableSessionSegmentIds: cacheableSession.map(
             (segment) => segment.id,
@@ -168,6 +302,7 @@ export function buildCachePlan(input: {
         eligibility: {
             providerSupportsPromptCache,
             prefixAboveThreshold,
+            minCacheablePrefixTokens,
             cacheExpected,
             cacheExpectationReason: providerSupportsPromptCache
                 ? prefixAboveThreshold
@@ -177,7 +312,8 @@ export function buildCachePlan(input: {
             providerRuleAssumptions: providerSupportsPromptCache
                 ? [
                       'anthropic.cacheControl.ephemeral',
-                      'anthropic.minPrefix>=1024',
+                      `anthropic.minPrefix>=${minCacheablePrefixTokens}`,
+                      `anthropic.modelRule=${anthropicMinPrefixRule?.modelRule}`,
                   ]
                 : ['provider_not_supported'],
         },

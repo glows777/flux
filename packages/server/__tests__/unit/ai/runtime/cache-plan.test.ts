@@ -152,6 +152,7 @@ const historySegment: ContextSegmentSnapshot = {
 async function createPlan(
     overrides: Partial<{
         provider: 'anthropic' | 'openai' | 'unknown'
+        modelId: string
         segments: ContextSegmentSnapshot[]
         systemSegments: SystemContextSegmentSnapshot[]
         tools: ToolContributionSnapshot[]
@@ -163,7 +164,7 @@ async function createPlan(
 
     return buildCachePlan({
         provider: overrides.provider ?? 'anthropic',
-        modelId: 'claude-sonnet-4-6',
+        modelId: overrides.modelId ?? 'claude-sonnet-4',
         assembledContext: {
             segments: overrides.segments ?? [...system, historySegment],
             systemSegments: system,
@@ -203,6 +204,12 @@ describe('buildCachePlan', () => {
         expect('providerChangeFlags' in plan).toBe(false)
         expect(plan.eligibility.cacheExpected).toBe(true)
         expect(plan.eligibility.prefixAboveThreshold).toBe(true)
+        expect(plan.modelId).toBe('claude-sonnet-4')
+        expect(plan.minCacheablePrefixTokens).toBe(1024)
+        expect(plan.eligibility.minCacheablePrefixTokens).toBe(1024)
+        expect(plan.eligibility.providerRuleAssumptions).toContain(
+            'anthropic.minPrefix>=1024',
+        )
         expect(plan.eligibility.cacheExpectationReason).toBe(
             'stable_prefix_ready',
         )
@@ -284,6 +291,76 @@ describe('buildCachePlan', () => {
         expect(plan.eligibility.cacheExpected).toBe(false)
         expect(plan.eligibility.cacheExpectationReason).toBe(
             'below_cache_threshold',
+        )
+    })
+
+    test('uses the Sonnet 4.6 documented 2048 token threshold', async () => {
+        const plan = await createPlan({
+            modelId: 'claude-sonnet-4-6',
+        })
+
+        expect(plan.effectivePrefixEstimatedTokens).toBe(1420)
+        expect(plan.minCacheablePrefixTokens).toBe(2048)
+        expect(plan.eligibility.minCacheablePrefixTokens).toBe(2048)
+        expect(plan.eligibility.prefixAboveThreshold).toBe(false)
+        expect(plan.eligibility.cacheExpected).toBe(false)
+        expect(plan.eligibility.providerRuleAssumptions).toContain(
+            'anthropic.minPrefix>=2048',
+        )
+        expect(plan.eligibility.providerRuleAssumptions).toContain(
+            'anthropic.modelRule=claude-sonnet-4-6',
+        )
+    })
+
+    test('uses 4096 for Opus 4.6 instead of falling through to the Opus 4 threshold', async () => {
+        const plan = await createPlan({
+            modelId: 'claude-opus-4-6',
+            systemSegments,
+            segments: [...systemSegments, historySegment],
+            tools: [
+                {
+                    ...tools[0],
+                    estimatedTokens: 3000,
+                },
+            ],
+            totalEstimatedInputTokens: 4220,
+        })
+
+        expect(plan.effectivePrefixEstimatedTokens).toBe(4220)
+        expect(plan.minCacheablePrefixTokens).toBe(4096)
+        expect(plan.eligibility.prefixAboveThreshold).toBe(true)
+        expect(plan.eligibility.cacheExpected).toBe(true)
+        expect(plan.eligibility.providerRuleAssumptions).toContain(
+            'anthropic.minPrefix>=4096',
+        )
+        expect(plan.eligibility.providerRuleAssumptions).toContain(
+            'anthropic.modelRule=claude-opus-4-6',
+        )
+    })
+
+    test('uses a conservative 4096 threshold for unknown Anthropic models', async () => {
+        const plan = await createPlan({
+            modelId: 'claude-mystery-5',
+            systemSegments,
+            segments: [...systemSegments, historySegment],
+            tools: [
+                {
+                    ...tools[0],
+                    estimatedTokens: 2400,
+                },
+            ],
+            totalEstimatedInputTokens: 3620,
+        })
+
+        expect(plan.effectivePrefixEstimatedTokens).toBe(3620)
+        expect(plan.minCacheablePrefixTokens).toBe(4096)
+        expect(plan.eligibility.prefixAboveThreshold).toBe(false)
+        expect(plan.eligibility.cacheExpected).toBe(false)
+        expect(plan.eligibility.providerRuleAssumptions).toContain(
+            'anthropic.minPrefix>=4096',
+        )
+        expect(plan.eligibility.providerRuleAssumptions).toContain(
+            'anthropic.modelRule=unknown_conservative',
         )
     })
 

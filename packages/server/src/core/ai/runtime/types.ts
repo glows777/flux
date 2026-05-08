@@ -177,6 +177,7 @@ export interface CachePlanHashesSnapshot {
 export interface CacheEligibilitySnapshot {
     readonly providerSupportsPromptCache: boolean
     readonly prefixAboveThreshold: boolean
+    readonly minCacheablePrefixTokens?: number
     readonly cacheExpected: boolean
     readonly cacheExpectationReason: string
     readonly providerRuleAssumptions: string[]
@@ -190,6 +191,8 @@ export type CacheEvidenceSource =
 
 export interface CachePlanSnapshot {
     readonly provider: 'anthropic' | 'openai' | 'unknown'
+    readonly modelId?: string
+    readonly minCacheablePrefixTokens?: number
     readonly stableCoreSegmentIds: string[]
     readonly cacheableSessionSegmentIds: string[]
     readonly dynamicTailSegmentIds: string[]
@@ -203,6 +206,10 @@ export interface CachePlanSnapshot {
 export interface CacheResultSnapshot {
     readonly cacheObserved: boolean
     readonly evidenceSource: CacheEvidenceSource
+    readonly cacheReadObserved: boolean
+    readonly cacheWriteObserved: boolean
+    readonly cacheReadEvidenceSource: CacheEvidenceSource
+    readonly cacheWriteEvidenceSource: CacheEvidenceSource
     readonly cacheReadTokens?: number
     readonly cacheWriteTokens?: number
     readonly uncachedInputTokens?: number

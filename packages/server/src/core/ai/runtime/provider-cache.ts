@@ -187,43 +187,42 @@ function toPositiveNumber(value: unknown): number | undefined {
         : undefined
 }
 
-function hasPositiveTotalUsageCacheEvidence(
-    totalUsage?: LanguageModelUsage,
-): boolean {
-    const details = totalUsage?.inputTokenDetails
-    return (
-        toPositiveNumber(details?.cacheReadTokens) != null ||
-        toPositiveNumber(details?.cacheWriteTokens) != null
-    )
+function toNonNegativeNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0
+        ? value
+        : undefined
 }
 
-function hasPositiveProviderCacheEvidence(
+function getInputTokenDetails(
+    totalUsage?: LanguageModelUsage,
+): Record<string, unknown> | undefined {
+    const details = totalUsage?.inputTokenDetails
+    return details != null && typeof details === 'object'
+        ? (details as Record<string, unknown>)
+        : undefined
+}
+
+function getAnthropicProviderCacheUsage(
     providerRawCacheUsage?: Record<string, unknown>,
-): boolean {
+):
+    | { record: Record<string, unknown>; usage?: Record<string, unknown> }
+    | undefined {
     const anthropic = providerRawCacheUsage?.anthropic
     if (
         anthropic == null ||
         typeof anthropic !== 'object' ||
         Array.isArray(anthropic)
     ) {
-        return false
+        return undefined
     }
 
     const record = anthropic as Record<string, unknown>
-    if (toPositiveNumber(record.cacheCreationInputTokens) != null) {
-        return true
-    }
-
     const usage = record.usage
     if (usage == null || typeof usage !== 'object' || Array.isArray(usage)) {
-        return false
+        return { record }
     }
 
-    const usageRecord = usage as Record<string, unknown>
-    return (
-        toPositiveNumber(usageRecord.cache_creation_input_tokens) != null ||
-        toPositiveNumber(usageRecord.cache_read_input_tokens) != null
-    )
+    return { record, usage: usage as Record<string, unknown> }
 }
 
 function resolveCacheEvidenceSource(params: {
@@ -236,6 +235,42 @@ function resolveCacheEvidenceSource(params: {
     if (params.totalUsagePositive) return 'totalUsage'
     if (params.providerMetadataPositive) return 'providerMetadata'
     return 'none'
+}
+
+function collectDirectionalCacheEvidence(params: {
+    totalUsage?: LanguageModelUsage
+    providerRawCacheUsage?: Record<string, unknown>
+}): {
+    readSource: CacheEvidenceSource
+    writeSource: CacheEvidenceSource
+} {
+    const details = getInputTokenDetails(params.totalUsage)
+    const totalUsageReadPositive =
+        toPositiveNumber(details?.cacheReadTokens) != null
+    const totalUsageWritePositive =
+        toPositiveNumber(details?.cacheWriteTokens) != null
+
+    const providerUsage = getAnthropicProviderCacheUsage(
+        params.providerRawCacheUsage,
+    )
+    const providerMetadataReadPositive =
+        toPositiveNumber(providerUsage?.usage?.cache_read_input_tokens) != null
+    const providerMetadataWritePositive =
+        toPositiveNumber(providerUsage?.record.cacheCreationInputTokens) !=
+            null ||
+        toPositiveNumber(providerUsage?.usage?.cache_creation_input_tokens) !=
+            null
+
+    return {
+        readSource: resolveCacheEvidenceSource({
+            totalUsagePositive: totalUsageReadPositive,
+            providerMetadataPositive: providerMetadataReadPositive,
+        }),
+        writeSource: resolveCacheEvidenceSource({
+            totalUsagePositive: totalUsageWritePositive,
+            providerMetadataPositive: providerMetadataWritePositive,
+        }),
+    }
 }
 
 export function buildProviderCacheRequest(input: {
@@ -289,21 +324,31 @@ export function normalizeProviderCacheResult(input: {
 }): CacheResultSnapshot {
     void input.cachePlan
 
-    const cacheReadTokens = input.totalUsage?.inputTokenDetails?.cacheReadTokens
-    const cacheWriteTokens =
-        input.totalUsage?.inputTokenDetails?.cacheWriteTokens
-    const uncachedInputTokens =
-        input.totalUsage?.inputTokenDetails?.noCacheTokens
+    const details = getInputTokenDetails(input.totalUsage)
+    const cacheReadTokens = toNonNegativeNumber(details?.cacheReadTokens)
+    const cacheWriteTokens = toNonNegativeNumber(details?.cacheWriteTokens)
+    const uncachedInputTokens = toNonNegativeNumber(details?.noCacheTokens)
     const totalInput =
         (cacheReadTokens ?? 0) +
         (cacheWriteTokens ?? 0) +
         (uncachedInputTokens ?? 0)
-    const providerRawCacheUsage = pickAnthropicCacheUsage(input.providerMetadata)
-    const totalUsagePositive = hasPositiveTotalUsageCacheEvidence(
-        input.totalUsage,
+    const providerRawCacheUsage = pickAnthropicCacheUsage(
+        input.providerMetadata,
     )
+    const { readSource, writeSource } = collectDirectionalCacheEvidence({
+        totalUsage: input.totalUsage,
+        providerRawCacheUsage,
+    })
+    const totalUsagePositive =
+        readSource === 'totalUsage' ||
+        readSource === 'both' ||
+        writeSource === 'totalUsage' ||
+        writeSource === 'both'
     const providerMetadataPositive =
-        hasPositiveProviderCacheEvidence(providerRawCacheUsage)
+        readSource === 'providerMetadata' ||
+        readSource === 'both' ||
+        writeSource === 'providerMetadata' ||
+        writeSource === 'both'
     const evidenceSource = resolveCacheEvidenceSource({
         totalUsagePositive,
         providerMetadataPositive,
@@ -312,11 +357,17 @@ export function normalizeProviderCacheResult(input: {
     return {
         cacheObserved: evidenceSource !== 'none',
         evidenceSource,
+        cacheReadObserved: readSource !== 'none',
+        cacheWriteObserved: writeSource !== 'none',
+        cacheReadEvidenceSource: readSource,
+        cacheWriteEvidenceSource: writeSource,
         cacheReadTokens,
         cacheWriteTokens,
         uncachedInputTokens,
         cachedTokenRatio:
-            totalInput > 0 ? (cacheReadTokens ?? 0) / totalInput : undefined,
+            cacheReadTokens != null && totalInput > 0
+                ? cacheReadTokens / totalInput
+                : undefined,
         providerRawCacheUsage,
         cacheDisabledReason: input.cacheDisabledReason,
         rolloutGateStatus: input.rolloutGateStatus,

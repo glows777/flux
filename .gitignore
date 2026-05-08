@@ -48,7 +48,9 @@ next-env.d.ts
 # dev docs (internal design specs, plans, version docs)
 .dev-docs/
 
-playwright-report/*
+playwright-report/
+test-results/
+.playwright-mcp/
 
 # worktrees
 .worktrees/

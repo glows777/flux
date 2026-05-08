@@ -253,6 +253,106 @@ describe('loadMessageManifest', () => {
         })
     })
 
+    it('loads manifests with model-aware plan fields and directional cache evidence', async () => {
+        const { loadMessageManifest } = await importActualSessionModule()
+        const db = createMockDb()
+        const deps = { db } as unknown as SessionDeps
+        const manifest = {
+            runId: 'run-directional-cache',
+            createdAt: '2024-06-04T00:00:00.000Z',
+            input: {
+                channel: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                rawMessages: [],
+                defaults: {},
+            },
+            pluginOutputs: [],
+            assembledContext: {
+                segments: [],
+                systemSegments: [],
+                tools: [],
+                params: { candidates: [], resolved: {} },
+                totalEstimatedInputTokens: 0,
+            },
+            modelRequest: {
+                systemText: '',
+                modelMessages: [],
+                toolNames: [],
+                resolvedParams: {},
+                providerOptions: {},
+            },
+            cachePlan: {
+                provider: 'anthropic',
+                modelId: 'claude-sonnet-4-6',
+                minCacheablePrefixTokens: 2048,
+                stableCoreSegmentIds: [],
+                cacheableSessionSegmentIds: [],
+                dynamicTailSegmentIds: [],
+                effectivePrefixSegmentIds: [],
+                effectivePrefixEstimatedTokens: 0,
+                breakpoints: [],
+                hashes: {
+                    toolDefinitionsHash: 'tool-hash',
+                    systemHash: 'system-hash',
+                    memoryHash: 'memory-hash',
+                    dynamicTailHash: 'tail-hash',
+                },
+                eligibility: {
+                    providerSupportsPromptCache: true,
+                    prefixAboveThreshold: false,
+                    minCacheablePrefixTokens: 2048,
+                    cacheExpected: false,
+                    cacheExpectationReason: 'below_cache_threshold',
+                    providerRuleAssumptions: [
+                        'anthropic.cacheControl.ephemeral',
+                        'anthropic.minPrefix>=2048',
+                    ],
+                },
+            },
+            result: {
+                text: '',
+                responseMessage: { id: 'a1', role: 'assistant', parts: [] },
+                toolCalls: [],
+                usage: { inputTokens: 0, outputTokens: 0 },
+                cacheResult: {
+                    cacheObserved: true,
+                    evidenceSource: 'both',
+                    cacheReadObserved: true,
+                    cacheWriteObserved: true,
+                    cacheReadEvidenceSource: 'providerMetadata',
+                    cacheWriteEvidenceSource: 'both',
+                    rolloutGateStatus: 'enabled',
+                    circuitBreakerState: 'closed',
+                },
+            },
+        }
+
+        db.chatMessageManifest.findUnique = mock(() =>
+            Promise.resolve({
+                version: 1,
+                runId: manifest.runId,
+                manifest: JSON.stringify(manifest),
+            }),
+        ) as typeof db.chatMessageManifest.findUnique
+
+        const result = await loadMessageManifest('session-1', 'message-1', deps)
+
+        expect(result?.manifest.cachePlan?.modelId).toBe(
+            'claude-sonnet-4-6',
+        )
+        expect(result?.manifest.cachePlan?.minCacheablePrefixTokens).toBe(2048)
+        expect(
+            result?.manifest.cachePlan?.eligibility.minCacheablePrefixTokens,
+        ).toBe(2048)
+        expect(result?.manifest.result?.cacheResult?.cacheReadObserved).toBe(
+            true,
+        )
+        expect(result?.manifest.result?.cacheResult?.cacheWriteObserved).toBe(
+            true,
+        )
+    })
+
     it('loads historical cache plans with providerChangeFlags', async () => {
         const { loadMessageManifest } = await importActualSessionModule()
         const db = createMockDb()
@@ -417,6 +517,149 @@ describe('loadMessageManifest', () => {
                     evidenceSource: 'localGuess',
                     rolloutGateStatus: 'observe-only',
                     circuitBreakerState: 'closed',
+                },
+            },
+        }
+
+        db.chatMessageManifest.findUnique = mock(() =>
+            Promise.resolve({
+                version: 1,
+                runId: manifest.runId,
+                manifest: JSON.stringify(manifest),
+            }),
+        ) as typeof db.chatMessageManifest.findUnique
+
+        try {
+            await loadMessageManifest('session-1', 'message-1', deps)
+            expect.unreachable('Should have thrown')
+        } catch (error) {
+            expect(error).toBeInstanceOf(SessionError)
+            expect((error as InstanceType<typeof SessionError>).code).toBe(
+                'INVALID_INPUT',
+            )
+        }
+    })
+
+    it('rejects cache results with malformed directional evidence fields', async () => {
+        const { loadMessageManifest } = await importActualSessionModule()
+        const { SessionError } = await importActualSessionErrors()
+        const db = createMockDb()
+        const deps = { db } as unknown as SessionDeps
+        const manifest = {
+            runId: 'run-invalid-directional-evidence',
+            createdAt: '2024-06-04T00:00:00.000Z',
+            input: {
+                channel: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                rawMessages: [],
+                defaults: {},
+            },
+            pluginOutputs: [],
+            assembledContext: {
+                segments: [],
+                systemSegments: [],
+                tools: [],
+                params: { candidates: [], resolved: {} },
+                totalEstimatedInputTokens: 0,
+            },
+            modelRequest: {
+                systemText: '',
+                modelMessages: [],
+                toolNames: [],
+                resolvedParams: {},
+                providerOptions: {},
+            },
+            result: {
+                text: '',
+                responseMessage: { id: 'a1', role: 'assistant', parts: [] },
+                toolCalls: [],
+                usage: { inputTokens: 0, outputTokens: 0 },
+                cacheResult: {
+                    cacheObserved: true,
+                    evidenceSource: 'providerMetadata',
+                    cacheReadObserved: 'yes',
+                    cacheWriteObserved: false,
+                    cacheReadEvidenceSource: 'providerMetadata',
+                    cacheWriteEvidenceSource: 'none',
+                    rolloutGateStatus: 'enabled',
+                    circuitBreakerState: 'closed',
+                },
+            },
+        }
+
+        db.chatMessageManifest.findUnique = mock(() =>
+            Promise.resolve({
+                version: 1,
+                runId: manifest.runId,
+                manifest: JSON.stringify(manifest),
+            }),
+        ) as typeof db.chatMessageManifest.findUnique
+
+        try {
+            await loadMessageManifest('session-1', 'message-1', deps)
+            expect.unreachable('Should have thrown')
+        } catch (error) {
+            expect(error).toBeInstanceOf(SessionError)
+            expect((error as InstanceType<typeof SessionError>).code).toBe(
+                'INVALID_INPUT',
+            )
+        }
+    })
+
+    it('rejects cache plans with malformed model-aware threshold fields', async () => {
+        const { loadMessageManifest } = await importActualSessionModule()
+        const { SessionError } = await importActualSessionErrors()
+        const db = createMockDb()
+        const deps = { db } as unknown as SessionDeps
+        const manifest = {
+            runId: 'run-invalid-cache-plan-threshold',
+            createdAt: '2024-06-04T00:00:00.000Z',
+            input: {
+                channel: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                rawMessages: [],
+                defaults: {},
+            },
+            pluginOutputs: [],
+            assembledContext: {
+                segments: [],
+                systemSegments: [],
+                tools: [],
+                params: { candidates: [], resolved: {} },
+                totalEstimatedInputTokens: 0,
+            },
+            modelRequest: {
+                systemText: '',
+                modelMessages: [],
+                toolNames: [],
+                resolvedParams: {},
+                providerOptions: {},
+            },
+            cachePlan: {
+                provider: 'anthropic',
+                modelId: 'claude-sonnet-4-6',
+                minCacheablePrefixTokens: '2048',
+                stableCoreSegmentIds: [],
+                cacheableSessionSegmentIds: [],
+                dynamicTailSegmentIds: [],
+                effectivePrefixSegmentIds: [],
+                effectivePrefixEstimatedTokens: 0,
+                breakpoints: [],
+                hashes: {
+                    toolDefinitionsHash: 'tool-hash',
+                    systemHash: 'system-hash',
+                    memoryHash: 'memory-hash',
+                    dynamicTailHash: 'tail-hash',
+                },
+                eligibility: {
+                    providerSupportsPromptCache: true,
+                    prefixAboveThreshold: false,
+                    minCacheablePrefixTokens: 2048,
+                    cacheExpected: false,
+                    cacheExpectationReason: 'below_cache_threshold',
+                    providerRuleAssumptions: ['anthropic.minPrefix>=2048'],
                 },
             },
         }

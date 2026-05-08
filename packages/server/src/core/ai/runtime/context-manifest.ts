@@ -17,6 +17,29 @@ export function createBaseManifest(params: {
     resolvedSessionId?: string
     defaults: Record<string, unknown>
 }): ContextManifest {
+    const modelRequest = {
+        systemText: '',
+        modelMessages: [],
+        toolNames: [],
+        resolvedParams: {},
+        maxOutputTokens: undefined,
+        providerOptions: {},
+        provider: 'unknown',
+        preparedCacheRequest: false,
+        usedCacheRequest: false,
+        providerMessages: [],
+        cachedToolNames: [],
+        cachedToolCount: 0,
+        cacheControlBreakpoints: {
+            count: 0,
+            sources: {
+                providerMessages: 0,
+                tools: 0,
+                cachePlan: 0,
+            },
+        },
+    } as ModelRequestSnapshot & Record<string, unknown>
+
     return {
         runId: params.runId,
         createdAt: new Date().toISOString(),
@@ -37,14 +60,7 @@ export function createBaseManifest(params: {
             params: { candidates: [], resolved: {} },
             totalEstimatedInputTokens: 0,
         },
-        modelRequest: {
-            systemText: '',
-            modelMessages: [],
-            toolNames: [],
-            resolvedParams: {},
-            maxOutputTokens: undefined,
-            providerOptions: {},
-        },
+        modelRequest,
     }
 }
 

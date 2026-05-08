@@ -613,6 +613,47 @@ describe('createAIRuntime', () => {
         expect(manifest.modelRequest.providerOptions).toEqual(
             streamArgs.providerOptions,
         )
+        expect(manifest.modelRequest).toMatchObject({
+            provider: 'anthropic',
+            modelId: 'claude-3-7-sonnet',
+            preparedCacheRequest: true,
+            usedCacheRequest: true,
+            cachedToolNames: ['searchStock'],
+            cachedToolCount: 1,
+            cacheControlBreakpoints: {
+                count: 2,
+                sources: {
+                    providerMessages: 1,
+                    tools: 1,
+                    cachePlan: 2,
+                },
+            },
+        })
+        expect(
+            (manifest.modelRequest as Record<string, unknown>).providerMessages,
+        ).toEqual([
+            {
+                index: 0,
+                role: 'system',
+                contentType: 'string',
+                contentLength: 'cached stable prompt'.length,
+                hasAnthropicCacheControl: true,
+                anthropicCacheControl: { type: 'ephemeral' },
+            },
+            {
+                index: 1,
+                role: 'user',
+                contentType: 'string',
+                contentLength: 'hello'.length,
+                hasAnthropicCacheControl: false,
+            },
+        ])
+        expect(
+            (
+                (manifest.modelRequest as Record<string, unknown>)
+                    .providerMessages as Array<Record<string, unknown>>
+            )[0],
+        ).not.toHaveProperty('content')
     })
 
     test('chat builds cache plan from current request inputs only', async () => {
@@ -1074,6 +1115,18 @@ describe('createAIRuntime', () => {
                 },
             },
         })
+        expect(consumed.contextManifest.modelRequest).toMatchObject({
+            preparedCacheRequest: true,
+            usedCacheRequest: false,
+            cacheControlBreakpoints: {
+                count: 0,
+                sources: {
+                    providerMessages: 0,
+                    tools: 0,
+                    cachePlan: 2,
+                },
+            },
+        })
     })
 
     test('opens the cache rollout guard after repeated planner failures', async () => {
@@ -1226,6 +1279,10 @@ describe('createAIRuntime', () => {
         expect(consumed.contextManifest.result?.cacheResult).toEqual({
             cacheObserved: false,
             evidenceSource: 'none',
+            cacheReadObserved: false,
+            cacheWriteObserved: false,
+            cacheReadEvidenceSource: 'none',
+            cacheWriteEvidenceSource: 'none',
             cacheDisabledReason: 'cache_result_normalization_failed',
             rolloutGateStatus: 'enabled',
             circuitBreakerState: 'closed',

@@ -15,6 +15,7 @@
         "build": "bun build src/index.ts --outdir dist --target bun",
         "start": "bun run dist/index.js",
         "normalize:stock-history": "bun run scripts/normalize-stock-history.ts",
+        "verify:prompt-cache-chat-flow": "bun run scripts/verify-prompt-cache-chat-flow.ts",
         "db:push": "bunx prisma db push",
         "db:push:accept-data-loss": "bunx prisma db push --accept-data-loss",
         "db:generate": "bunx prisma generate",
