@@ -72,11 +72,10 @@ export class Gateway {
 
         if (normalizedInput.abortSignal?.aborted) {
             return {
-                text: '',
+                text,
                 sessionId: output.sessionId,
                 runId: output.runId,
-                success: false,
-                error: 'Execution aborted',
+                success: true,
             }
         }
 

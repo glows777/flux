@@ -248,11 +248,10 @@ describe('Gateway', () => {
         })
 
         expect(result).toEqual({
-            text: '',
+            text: 'do not send',
             sessionId: 'session-123',
             runId: 'run-abort',
-            success: false,
-            error: 'Execution aborted',
+            success: true,
         })
         expect(adapter.send).not.toHaveBeenCalled()
     })
