@@ -26,6 +26,8 @@ import {
     mockBuildAgentSystemPrompt,
     mockBuildGlobalSystemPrompt,
     mockClearChannelSession,
+    mockClearSessionError,
+    mockConsumeStream,
     mockConvertToModelMessages,
     // runtime mocks
     mockCreateAIRuntime,
@@ -75,18 +77,17 @@ import {
     mockListAllSessions,
     mockListCronJobRuns,
     mockListCronJobs,
-    mockClearSessionError,
     mockListSessions,
     mockLoadMemoryContext,
-    mockLoadMessages,
     mockLoadMessageManifest,
+    mockLoadMessages,
     // session — loadMessagesForTranscript
     mockLoadMessagesForTranscript,
     mockLoadSessionError,
-    mockSaveSessionError,
-    mockSaveMessageManifest,
     mockRemoveFromWatchlist,
     mockRenameSession,
+    mockSaveMessageManifest,
+    mockSaveSessionError,
     // search mock
     mockSearchStocks,
     mockStepCountIs,
@@ -305,7 +306,7 @@ mock.module('@/core/ai/research', () => ({
     X_SEARCH_SYSTEM_PROMPT: 'mock prompt',
 }))
 
-    mock.module('@/core/ai/session', () => ({
+mock.module('@/core/ai/session', () => ({
     SessionError: MockSessionError,
     listSessions: mockListSessions,
     listAllSessions: mockListAllSessions,
@@ -326,6 +327,7 @@ mock.module('@/core/ai/research', () => ({
 }))
 
 mock.module('ai', () => ({
+    consumeStream: mockConsumeStream,
     generateText: mockGenerateText,
     streamText: mockStreamText,
     tool: mockTool,

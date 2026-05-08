@@ -272,6 +272,7 @@ export const mockCreateTools = mock(() => ({}))
 export const mockGenerateText = mock(() =>
     Promise.resolve({ text: 'mock report content' }),
 )
+export const mockConsumeStream = mock(() => Promise.resolve())
 
 // streamText mock — must return object with toUIMessageStreamResponse for chat endpoint
 export const mockStreamText = mock(() => ({
