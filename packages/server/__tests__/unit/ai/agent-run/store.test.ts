@@ -182,9 +182,13 @@ describe('AgentRunStore', () => {
         await store.recordWarnings('run-3', [
             { source: 'session.afterRun', message: 'manifest failed' },
         ])
+        await store.recordWarnings('run-3', [
+            { source: 'session.afterRun', message: 'tool skipped' },
+        ])
 
         expect(fixture.rows.get('run-3')?.warnings).toEqual([
             { source: 'session.afterRun', message: 'manifest failed' },
+            { source: 'session.afterRun', message: 'tool skipped' },
         ])
     })
 
@@ -208,6 +212,27 @@ describe('AgentRunStore', () => {
         })
 
         expect(fixture.rows.get('run-4')?.status).toBe('failed')
+        expect(fixture.rows.get('run-4')?.error).toEqual({
+            message: 'timed out',
+            name: 'Error',
+            code: 'TIMEOUT',
+        })
+
+        await store.createFailedRun({
+            runId: 'run-4',
+            source: 'cron',
+            mode: 'trigger',
+            agentType: 'trading-agent',
+            sessionId: 'session-late',
+            messageId: 'msg-overwrite',
+            error: Object.assign(new Error('late overwrite'), {
+                code: 'OVERWRITE',
+            }),
+        })
+
+        expect(fixture.rows.get('run-4')?.status).toBe('failed')
+        expect(fixture.rows.get('run-4')?.sessionId).toBeNull()
+        expect(fixture.rows.get('run-4')?.messageId).toBeNull()
         expect(fixture.rows.get('run-4')?.error).toEqual({
             message: 'timed out',
             name: 'Error',
@@ -256,6 +281,15 @@ describe('AgentRunStore', () => {
             id: 'fresh-running',
             startedAt: freshDate,
         })
+        fixture.rows.set('old-failed', {
+            ...oldRunning,
+            id: 'old-failed',
+            status: 'failed',
+            error: { message: 'already failed', name: 'Error' },
+            startedAt: oldDate,
+            finishedAt: oldDate,
+            durationMs: 0,
+        })
 
         const result = await store.reconcileStaleRunningRuns({
             olderThan: new Date('2026-05-08T00:30:00.000Z'),
@@ -264,5 +298,10 @@ describe('AgentRunStore', () => {
         expect(result.count).toBe(1)
         expect(fixture.rows.get('old-running')?.status).toBe('failed')
         expect(fixture.rows.get('fresh-running')?.status).toBe('running')
+        expect(fixture.rows.get('old-failed')?.status).toBe('failed')
+        expect(fixture.rows.get('old-failed')?.error).toEqual({
+            message: 'already failed',
+            name: 'Error',
+        })
     })
 })
