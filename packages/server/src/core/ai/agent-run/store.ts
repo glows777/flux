@@ -241,13 +241,21 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
             } catch (createError) {
                 if (!isUniqueConstraintError(createError)) throw createError
 
-                await db.agentRun.updateMany({
-                    where: { id: runId, status: 'running' },
-                    data: {
-                        ...failedData,
-                        durationMs: 0,
-                    },
+                const raced = await db.agentRun.findUnique({
+                    where: { id: runId },
                 })
+                if (raced?.status === 'running') {
+                    await db.agentRun.updateMany({
+                        where: { id: runId, status: 'running' },
+                        data: {
+                            ...failedData,
+                            durationMs: durationSince(
+                                raced.startedAt,
+                                finishedAt,
+                            ),
+                        },
+                    })
+                }
             }
 
             return { runId }
@@ -273,16 +281,18 @@ export function createPrismaAgentRunStore(db: AgentRunDb): AgentRunStore {
             if (existing?.status !== 'running') return
 
             const finishedAt = new Date()
+            const data: AgentRunData = {
+                status: 'succeeded',
+                outputSummary: trimText(input.outputSummary, 1000),
+                usage: input.usage ?? Prisma.JsonNull,
+                finishedAt,
+                durationMs: durationSince(existing.startedAt, finishedAt),
+            }
+            if (input.messageId !== undefined) data.messageId = input.messageId
+
             await db.agentRun.updateMany({
                 where: { id: runId, status: 'running' },
-                data: {
-                    status: 'succeeded',
-                    messageId: input.messageId ?? null,
-                    outputSummary: trimText(input.outputSummary, 1000),
-                    usage: input.usage ?? Prisma.JsonNull,
-                    finishedAt,
-                    durationMs: durationSince(existing.startedAt, finishedAt),
-                },
+                data,
             })
         },
 

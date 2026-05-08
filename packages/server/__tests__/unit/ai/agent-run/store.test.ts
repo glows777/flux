@@ -231,6 +231,64 @@ describe('AgentRunStore', () => {
         expect(fixture.rows.get('run-race')?.status).toBe('failed')
     })
 
+    test('createFailedRun P2002 fallback computes duration from raced running row', async () => {
+        const store = createPrismaAgentRunStore(fixture.db as never)
+        const originalCreate = fixture.db.agentRun.create
+        const runningStartedAt = new Date(Date.now() - 1234)
+
+        fixture.db.agentRun.create = mock(
+            async (input: { data: AgentRunRow }) => {
+                if (input.data.id === 'run-running-race') {
+                    fixture.rows.set('run-running-race', {
+                        id: 'run-running-race',
+                        status: 'running',
+                        source: 'cron',
+                        mode: 'trigger',
+                        agentType: 'trading-agent',
+                        sessionId: null,
+                        messageId: null,
+                        cronJobId: null,
+                        parentRunId: null,
+                        userId: null,
+                        sourceId: null,
+                        inputSummary: null,
+                        outputSummary: null,
+                        error: null,
+                        usage: null,
+                        warnings: null,
+                        startedAt: runningStartedAt,
+                        finishedAt: null,
+                        durationMs: null,
+                        updatedAt: new Date(),
+                    })
+                    throw Object.assign(
+                        new Error('Unique constraint failed on AgentRun.id'),
+                        { code: 'P2002' },
+                    )
+                }
+
+                return originalCreate(input)
+            },
+        )
+
+        await store.createFailedRun({
+            runId: 'run-running-race',
+            source: 'cron',
+            mode: 'trigger',
+            agentType: 'trading-agent',
+            error: new Error('raced failure'),
+        })
+
+        const row = fixture.rows.get('run-running-race')
+        expect(row?.status).toBe('failed')
+        expect(row?.durationMs).toBe(
+            row?.finishedAt
+                ? row.finishedAt.getTime() - runningStartedAt.getTime()
+                : null,
+        )
+        expect(row?.durationMs).toBeGreaterThan(0)
+    })
+
     test('terminal guards do not overwrite failed runs', async () => {
         const store = createPrismaAgentRunStore(fixture.db as never)
         await store.createFailedRun({
@@ -271,6 +329,31 @@ describe('AgentRunStore', () => {
                 input.data.status === 'succeeded',
         )
         expect(updateCall?.[0].data.usage).toBe(Prisma.JsonNull)
+    })
+
+    test('succeedIfRunning preserves existing messageId when omitted', async () => {
+        const store = createPrismaAgentRunStore(fixture.db as never)
+        await store.createRunningRun({
+            runId: 'run-success-preserve-message',
+            source: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            messageId: 'msg-existing',
+        })
+
+        await store.succeedIfRunning('run-success-preserve-message', {
+            outputSummary: 'completed',
+        })
+
+        const row = fixture.rows.get('run-success-preserve-message')
+        expect(row?.status).toBe('succeeded')
+        expect(row?.messageId).toBe('msg-existing')
+        const updateCall = fixture.db.agentRun.updateMany.mock.calls.find(
+            ([input]) =>
+                input.where.id === 'run-success-preserve-message' &&
+                input.data.status === 'succeeded',
+        )
+        expect(updateCall?.[0].data).not.toHaveProperty('messageId')
     })
 
     test('recordWarnings merges warnings', async () => {
