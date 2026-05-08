@@ -45,7 +45,7 @@ export class Gateway {
                 error instanceof Error ? error.message : 'Unknown error'
             return {
                 text: '',
-                sessionId: '',
+                sessionId: normalizedInput.sessionId ?? '',
                 runId,
                 success: false,
                 error: message,

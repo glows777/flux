@@ -283,6 +283,33 @@ describe('Gateway', () => {
         })
     })
 
+    test('trigger mode AI failure returns input sessionId and runId', async () => {
+        const router = makeMockRouter({
+            chat: mock(() => Promise.reject(new Error('AI service down'))),
+        })
+        const gateway = new Gateway({
+            router: router as unknown as Router,
+            channels: new Map(),
+        })
+
+        const input: GatewayInput = {
+            channel: 'cron',
+            mode: 'trigger',
+            content: 'run analysis',
+            sessionId: 'session-input',
+            runId: 'run-ai-fail',
+        }
+
+        const result = await gateway.chat(input)
+        expect(result).toEqual({
+            text: '',
+            sessionId: 'session-input',
+            runId: 'run-ai-fail',
+            success: false,
+            error: 'AI service down',
+        })
+    })
+
     test('trigger mode stream failure returns success: false', async () => {
         const chatOutput = makeMockChatOutput('unused', 'run-stream-fail')
         chatOutput.consumeStream = mock(() =>
