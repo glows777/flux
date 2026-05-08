@@ -404,6 +404,9 @@ export async function createAIRuntime(
 
     async function chat(input: ChatInput): Promise<ChatOutput> {
         const runId = input.runId ?? createRunId()
+        let runCreated = false
+        let streamAbortError: Error | undefined
+        const recordedFailures = new WeakSet<object>()
         const runCtx: RunContext = {
             sessionId: input.sessionId ?? '',
             symbol: input.symbol,
@@ -421,6 +424,16 @@ export async function createAIRuntime(
             error: unknown,
             code?: string,
         ): Promise<void> {
+            if (!runCreated) return
+
+            if (
+                error != null &&
+                (typeof error === 'object' || typeof error === 'function')
+            ) {
+                if (recordedFailures.has(error)) return
+                recordedFailures.add(error)
+            }
+
             const metaSessionId = runCtx.meta.get('sessionId')
             const sessionId =
                 typeof metaSessionId === 'string' && metaSessionId.length > 0
@@ -452,6 +465,7 @@ export async function createAIRuntime(
                 ...(input.sourceId ? { sourceId: input.sourceId } : {}),
                 inputSummary: buildInputSummary(input),
             })
+            runCreated = true
 
             await runBeforeRunHooks(plugins, runCtx)
 
@@ -617,10 +631,8 @@ export async function createAIRuntime(
                         void recordFailure(error)
                     },
                     onAbort: () => {
-                        void recordFailure(
-                            new Error('Stream aborted'),
-                            'ABORTED',
-                        )
+                        streamAbortError ??= new Error('Stream aborted')
+                        void recordFailure(streamAbortError, 'ABORTED')
                     },
                 } as never) as unknown as ChatOutput['streamResult']
             }
@@ -784,6 +796,11 @@ export async function createAIRuntime(
                                 rolloutGateStatus,
                                 circuitBreakerState,
                             })
+                        }
+
+                        if (streamAbortError) {
+                            await recordFailure(streamAbortError, 'ABORTED')
+                            throw streamAbortError
                         }
 
                         await safeLedgerUpdate('succeedIfRunning', () =>

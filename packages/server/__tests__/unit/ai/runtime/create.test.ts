@@ -454,6 +454,7 @@ describe('createAIRuntime', () => {
             output.runId,
             expect.objectContaining({ error: expect.any(Error) }),
         )
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledTimes(1)
     })
 
     test('does not execute the model when createRunningRun fails', async () => {
@@ -477,6 +478,90 @@ describe('createAIRuntime', () => {
             }),
         ).rejects.toThrow('ledger unavailable')
         expect(mockStreamText).not.toHaveBeenCalled()
+        expect(agentRunStore.failIfRunning).not.toHaveBeenCalled()
+    })
+
+    test('passes the supplied abortSignal to streamText', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const abortController = new AbortController()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+            abortSignal: abortController.signal,
+        })
+
+        expect(
+            (mockStreamText.mock.calls[0][0] as { abortSignal?: AbortSignal })
+                .abortSignal,
+        ).toBe(abortController.signal)
+    })
+
+    test('records stream callback errors as failed agent runs', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const streamOptions = mockStreamText.mock.calls[0][0] as {
+            onError?: (input: { error: unknown }) => void
+        }
+        const streamError = new Error('provider failed')
+
+        expect(typeof streamOptions.onError).toBe('function')
+        streamOptions.onError?.({ error: streamError })
+
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(output.runId, {
+            error: streamError,
+        })
+    })
+
+    test('records aborted streams as failed and does not mark success', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const streamOptions = mockStreamText.mock.calls[0][0] as {
+            onAbort?: () => void
+        }
+
+        expect(typeof streamOptions.onAbort).toBe('function')
+        streamOptions.onAbort?.()
+
+        await expect(output.consumeStream()).rejects.toThrow('Stream aborted')
+        expect(agentRunStore.succeedIfRunning).not.toHaveBeenCalled()
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
+            output.runId,
+            expect.objectContaining({
+                error: expect.any(Error),
+                code: 'ABORTED',
+            }),
+        )
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledTimes(1)
     })
 
     test('records afterRun warnings after success', async () => {
