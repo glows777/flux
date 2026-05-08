@@ -390,6 +390,7 @@ export const mockChatGenerate = mock(() =>
 // ─── @/core/ai/runtime ───
 
 export const mockRuntimeFinalize = mock(() => Promise.resolve())
+export const mockRuntimeRecordFailure = mock(() => Promise.resolve())
 
 export const mockRuntimeConsumeStream = mock(() =>
     Promise.resolve({
@@ -415,6 +416,7 @@ export const mockRuntimeConsumeStream = mock(() =>
 
 export const mockRuntimeChat = mock(() =>
     Promise.resolve({
+        runId: 'run-1',
         streamResult: {
             text: Promise.resolve('mock pipeline response'),
             usage: Promise.resolve({ inputTokens: 100, outputTokens: 50 }),
@@ -428,6 +430,7 @@ export const mockRuntimeChat = mock(() =>
         sessionId: 'session-1',
         consumeStream: mockRuntimeConsumeStream,
         finalize: mockRuntimeFinalize,
+        recordFailure: mockRuntimeRecordFailure,
         getContextManifest: () => ({
             runId: 'run-1',
             createdAt: new Date().toISOString(),

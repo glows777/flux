@@ -16,6 +16,7 @@ import {
     mockAutoTradingAgentPreset,
     mockCancelOrder,
     mockClosePosition,
+    mockConsumeStream,
     mockConvertToModelMessages,
     // runtime mocks
     mockCreateAIRuntime,
@@ -126,6 +127,7 @@ mock.module('ai', () => ({
     stepCountIs: mockStepCountIs,
     isToolUIPart: mockIsToolUIPart,
     getToolName: mockGetToolName,
+    consumeStream: mockConsumeStream,
     generateId: mockGenerateId,
 }))
 
