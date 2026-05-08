@@ -46,6 +46,10 @@ async function main() {
     const model = getModel('main')
     const defaults = { thinkingBudget: THINKING_BUDGET }
     const agentRunStore = createPrismaAgentRunStore(prisma)
+    await agentRunStore.reconcileStaleRunningRuns({
+        olderThan: new Date(Date.now() - 30 * 60 * 1000),
+        reason: 'Server startup reconciled stale running run',
+    })
 
     const tradingRuntime = await createAIRuntime({
         model,
@@ -117,7 +121,7 @@ async function main() {
         console.error('Failed to seed cron jobs:', error)
     }
 
-    scheduler = new CronScheduler({ gateway, prisma })
+    scheduler = new CronScheduler({ gateway, prisma, agentRunStore })
     await scheduler.start()
 
     // 5. Health monitor

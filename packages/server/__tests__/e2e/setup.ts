@@ -81,6 +81,24 @@ if (!process.env.OPENAI_BASE_URL) {
     process.env.OPENAI_BASE_URL = 'http://localhost'
 }
 
+// ─── DB delegate mocks ───
+
+export const mockAgentRunCreate = mock(() => Promise.resolve({ id: 'run-1' }))
+export const mockAgentRunUpdate = mock(() => Promise.resolve({ id: 'run-1' }))
+export const mockAgentRunUpdateMany = mock(() => Promise.resolve({ count: 1 }))
+export const mockAgentRunFindUnique = mock(() =>
+    Promise.resolve({ id: 'run-1', startedAt: new Date(), warnings: [] }),
+)
+export const mockAgentRunDelegate = {
+    create: mockAgentRunCreate,
+    update: mockAgentRunUpdate,
+    updateMany: mockAgentRunUpdateMany,
+    findUnique: mockAgentRunFindUnique,
+}
+export const mockPrisma = {
+    agentRun: mockAgentRunDelegate,
+}
+
 // ─── Module mocks (must be in preload or test file for bun) ───
 
 mock.module('yahoo-finance2', () => ({

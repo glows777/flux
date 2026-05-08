@@ -21,7 +21,7 @@ const ROOT_DIR = join(import.meta.dir, '../..')
 
 describe('P2-02: Data Model Integration Tests', () => {
     describe('T02-06: Schema Validation', () => {
-        it('should have prisma/schema.prisma with all 5 models', () => {
+        it('should have prisma/schema.prisma with core models including AgentRun', () => {
             const schemaPath = join(ROOT_DIR, 'prisma/schema.prisma')
             expect(existsSync(schemaPath)).toBe(true)
 
@@ -31,6 +31,21 @@ describe('P2-02: Data Model Integration Tests', () => {
             expect(schemaContent).toContain('model Watchlist {')
             expect(schemaContent).toContain('model StockHistory {')
             expect(schemaContent).toContain('model StockInfo {')
+            expect(schemaContent).toContain('model ChatSession {')
+            expect(schemaContent).toContain('model ChatMessageManifest {')
+            expect(schemaContent).toContain('model CronJobRun {')
+            expect(schemaContent).toContain('model AgentRun {')
+
+            const manifestModel = schemaContent.match(
+                /model ChatMessageManifest \{[\s\S]*?\n\}/,
+            )?.[0]
+            expect(manifestModel).toContain('runId     String   @unique')
+            expect(manifestModel).toContain(
+                '@@index([sessionId, messageId, createdAt])',
+            )
+            expect(manifestModel).not.toContain(
+                '@@unique([sessionId, messageId])',
+            )
         })
 
         it('should have Watchlist model with correct fields', () => {
@@ -272,6 +287,40 @@ describe('P2-02: Real Database Operations', () => {
                     },
                 })
                 await prisma.$disconnect()
+            },
+            { timeout: 10000 },
+        )
+
+        testOrSkip(
+            'should create and query AgentRun records',
+            async () => {
+                const { prisma } = await import('@/core/db')
+
+                const id = `run-test-${Date.now()}`
+                try {
+                    await prisma.agentRun.create({
+                        data: {
+                            id,
+                            status: 'running',
+                            source: 'web',
+                            mode: 'conversation',
+                            agentType: 'trading-agent',
+                        },
+                    })
+
+                    const row = await prisma.agentRun.findUnique({
+                        where: { id },
+                    })
+                    expect(row?.id).toBe(id)
+                    expect(row?.status).toBe('running')
+                } finally {
+                    await prisma.agentRun
+                        .delete({ where: { id } })
+                        .catch(() => {
+                            // Ignore if create failed before the row was inserted.
+                        })
+                    await prisma.$disconnect()
+                }
             },
             { timeout: 10000 },
         )
