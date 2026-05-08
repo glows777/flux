@@ -18,7 +18,7 @@ const mockConvertToModelMessages = mock(async (messages: unknown[]) => messages)
 const mockStepCountIs = mock((_count: number) => () => false)
 
 type StreamResultOverrides = {
-    text?: string
+    text?: string | Promise<string>
     usage?: { inputTokens?: number; outputTokens?: number }
     totalUsage?: Record<string, unknown>
     providerMetadata?: Record<string, unknown>
@@ -26,10 +26,12 @@ type StreamResultOverrides = {
 }
 
 function createMockStreamResult(overrides: StreamResultOverrides = {}) {
+    const text =
+        typeof overrides.text === 'string' ? overrides.text : 'mock text'
     const responseMessage = {
         id: 'assistant-1',
         role: 'assistant',
-        parts: [{ type: 'text', text: overrides.text ?? 'mock text' }],
+        parts: [{ type: 'text', text }],
     }
 
     return {
@@ -373,6 +375,171 @@ describe('createAIRuntime', () => {
         })
 
         expect(output.getContextManifest().pluginOutputs).toHaveLength(1)
+    })
+
+    test('records the successful agent run lifecycle', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [
+                {
+                    name: 'session',
+                    beforeRun(ctx) {
+                        ctx.meta.set('sessionId', 'session-1')
+                    },
+                },
+            ],
+        })
+
+        const output = await runtime.chat({
+            messages: [
+                {
+                    id: 'u1',
+                    role: 'user',
+                    parts: [{ type: 'text', text: 'Hi' }],
+                },
+            ],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const consumed = await output.consumeStream()
+
+        expect(output.runId).toBe(consumed.contextManifest.runId)
+        expect(agentRunStore.createRunningRun).toHaveBeenCalledWith(
+            expect.objectContaining({
+                runId: output.runId,
+                source: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                inputSummary: expect.stringContaining('Hi'),
+            }),
+        )
+        expect(agentRunStore.attachSession).toHaveBeenCalledWith(
+            output.runId,
+            'session-1',
+        )
+        expect(agentRunStore.succeedIfRunning).toHaveBeenCalledWith(
+            output.runId,
+            {
+                messageId: 'assistant-1',
+                outputSummary: 'mock text',
+                usage: { inputTokens: 10, outputTokens: 5 },
+            },
+        )
+    })
+
+    test('records failure when stream consumption fails', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const streamError = new Error('stream broke')
+        const agentRunStore = createFakeAgentRunStore()
+        mockStreamText.mockImplementationOnce(() =>
+            createMockStreamResult({ text: Promise.reject(streamError) }),
+        )
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+
+        await expect(output.consumeStream()).rejects.toThrow('stream broke')
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
+            output.runId,
+            expect.objectContaining({ error: expect.any(Error) }),
+        )
+    })
+
+    test('does not execute the model when createRunningRun fails', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const ledgerError = new Error('ledger unavailable')
+        const agentRunStore = createFakeAgentRunStore()
+        agentRunStore.createRunningRun = mock(() =>
+            Promise.reject(ledgerError),
+        ) as AgentRunStore['createRunningRun']
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        await expect(
+            runtime.chat({
+                messages: [],
+                channel: 'web',
+                mode: 'conversation',
+            }),
+        ).rejects.toThrow('ledger unavailable')
+        expect(mockStreamText).not.toHaveBeenCalled()
+    })
+
+    test('records afterRun warnings after success', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [
+                {
+                    name: 'bad',
+                    afterRun() {
+                        throw new Error('manifest failed')
+                    },
+                },
+            ],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        await output.consumeStream()
+
+        expect(agentRunStore.succeedIfRunning).toHaveBeenCalled()
+        expect(agentRunStore.recordWarnings).toHaveBeenCalledWith(
+            output.runId,
+            [{ source: 'bad.afterRun', message: 'manifest failed' }],
+        )
+    })
+
+    test('records failure with resolved session id when beforeRun fails', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [
+                {
+                    name: 'session',
+                    beforeRun(ctx) {
+                        ctx.meta.set('sessionId', 'session-before-fail')
+                        throw new Error('append failed')
+                    },
+                },
+            ],
+        })
+
+        await expect(
+            runtime.chat({
+                messages: [],
+                channel: 'web',
+                mode: 'conversation',
+            }),
+        ).rejects.toThrow('append failed')
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
+            expect.any(String),
+            {
+                error: expect.any(Error),
+                sessionId: 'session-before-fail',
+            },
+        )
     })
 
     test('chat manifest stores normalized segments and the resolved max output cap', async () => {

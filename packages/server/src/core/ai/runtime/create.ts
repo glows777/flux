@@ -1,5 +1,6 @@
 import type { LanguageModelUsage, ProviderMetadata, UIMessage } from 'ai'
 import { convertToModelMessages, stepCountIs, streamText } from 'ai'
+import { createRunId } from '@/core/ai/agent-run'
 import { assembleContextRequest } from './assembly'
 import { buildCachePlan } from './cache-plan'
 import {
@@ -88,17 +89,6 @@ const cacheRolloutStates = new Map<string, CacheRolloutState>()
 
 export function __resetCacheRolloutStatesForTests(): void {
     cacheRolloutStates.clear()
-}
-
-function createRunId(): string {
-    if (
-        typeof crypto !== 'undefined' &&
-        typeof crypto.randomUUID === 'function'
-    ) {
-        return crypto.randomUUID()
-    }
-
-    return `run_${Math.random().toString(16).slice(2)}_${Date.now()}`
 }
 
 function createResponseMessageId(): string {
@@ -257,6 +247,62 @@ function getAnthropicCacheControl(value: unknown): unknown | undefined {
     return anthropic.cacheControl
 }
 
+function extractLastUserText(messages: UIMessage[]): string | undefined {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const message = messages[i]
+        if (message.role !== 'user') continue
+
+        const textParts: string[] = []
+        for (const part of message.parts) {
+            if (!isPlainRecord(part) || part.type !== 'text') continue
+            if (typeof part.text === 'string') textParts.push(part.text)
+        }
+
+        const text = textParts.join(' ').replace(/\s+/g, ' ').trim()
+        if (text.length > 0) return text
+    }
+
+    return undefined
+}
+
+function trimSummaryText(text: string): string {
+    const normalized = text.replace(/\s+/g, ' ').trim()
+    if (normalized.length <= 500) return normalized
+    return `${normalized.slice(0, 500)}...`
+}
+
+function buildInputSummary(input: ChatInput): string {
+    const agentType = input.agentType ?? 'trading-agent'
+    const parts = [
+        `channel=${input.channel}`,
+        `mode=${input.mode}`,
+        `agent=${agentType}`,
+        `messages=${input.messages.length}`,
+    ]
+
+    if (input.symbol) parts.push(`symbol=${input.symbol}`)
+
+    const lastUserText = extractLastUserText(input.messages)
+    if (lastUserText) {
+        parts.push(
+            `lastUser="${trimSummaryText(lastUserText).replaceAll('"', '\\"')}"`,
+        )
+    }
+
+    return parts.join(' ')
+}
+
+async function safeLedgerUpdate(
+    action: string,
+    fn: () => Promise<void>,
+): Promise<void> {
+    try {
+        await fn()
+    } catch (error) {
+        console.error(`[ai-runtime][agent-run:${action}] failed`, error)
+    }
+}
+
 function summarizeContent(value: unknown): {
     contentType: string
     contentLength?: number
@@ -341,7 +387,7 @@ function summarizeCacheControlBreakpoints(params: {
 export async function createAIRuntime(
     options: RuntimeOptions,
 ): Promise<AIRuntime> {
-    const { model, plugins, defaults } = options
+    const { model, plugins, defaults, agentRunStore } = options
 
     validatePluginNames(plugins)
 
@@ -357,7 +403,7 @@ export async function createAIRuntime(
     }
 
     async function chat(input: ChatInput): Promise<ChatOutput> {
-        const runId = createRunId()
+        const runId = input.runId ?? createRunId()
         const runCtx: RunContext = {
             sessionId: input.sessionId ?? '',
             symbol: input.symbol,
@@ -371,11 +417,53 @@ export async function createAIRuntime(
         if (input.sourceId) runCtx.meta.set('sourceId', input.sourceId)
         if (input.userId) runCtx.meta.set('userId', input.userId)
 
+        async function recordFailure(
+            error: unknown,
+            code?: string,
+        ): Promise<void> {
+            const metaSessionId = runCtx.meta.get('sessionId')
+            const sessionId =
+                typeof metaSessionId === 'string' && metaSessionId.length > 0
+                    ? metaSessionId
+                    : runCtx.sessionId || undefined
+            const failureInput: {
+                error: unknown
+                code?: string
+                sessionId?: string
+            } = { error }
+
+            if (code) failureInput.code = code
+            if (sessionId) failureInput.sessionId = sessionId
+
+            await safeLedgerUpdate('failIfRunning', () =>
+                agentRunStore.failIfRunning(runId, failureInput),
+            )
+        }
+
         try {
+            await agentRunStore.createRunningRun({
+                runId,
+                source: input.channel,
+                mode: input.mode,
+                agentType: input.agentType ?? 'trading-agent',
+                ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+                ...(input.cronJobId ? { cronJobId: input.cronJobId } : {}),
+                ...(input.userId ? { userId: input.userId } : {}),
+                ...(input.sourceId ? { sourceId: input.sourceId } : {}),
+                inputSummary: buildInputSummary(input),
+            })
+
             await runBeforeRunHooks(plugins, runCtx)
 
-            if (runCtx.meta.has('sessionId')) {
-                runCtx.sessionId = runCtx.meta.get('sessionId') as string
+            const resolvedSessionId = runCtx.meta.get('sessionId')
+            if (
+                typeof resolvedSessionId === 'string' &&
+                resolvedSessionId.length > 0
+            ) {
+                runCtx.sessionId = resolvedSessionId
+                await safeLedgerUpdate('attachSession', () =>
+                    agentRunStore.attachSession(runId, resolvedSessionId),
+                )
             }
 
             const collectedOutputs = await collectPluginOutputs(plugins, runCtx)
@@ -524,6 +612,16 @@ export async function createAIRuntime(
                     ...(Object.keys(request.providerOptions).length > 0
                         ? { providerOptions: request.providerOptions }
                         : {}),
+                    abortSignal: input.abortSignal,
+                    onError: ({ error }: { error: unknown }) => {
+                        void recordFailure(error)
+                    },
+                    onAbort: () => {
+                        void recordFailure(
+                            new Error('Stream aborted'),
+                            'ABORTED',
+                        )
+                    },
                 } as never) as unknown as ChatOutput['streamResult']
             }
 
@@ -587,7 +685,7 @@ export async function createAIRuntime(
                 modelRequestSnapshot,
             )
 
-            let finalized = false
+            let finalizePromise: Promise<void> | undefined
             let finalizedData:
                 | {
                       text: string
@@ -633,115 +731,151 @@ export async function createAIRuntime(
             }
 
             async function finalize(responseMessage: UIMessage): Promise<void> {
-                if (finalized) return
-                finalized = true
+                if (finalizePromise) return finalizePromise
 
-                const { text, usage, toolCalls, totalUsage, providerMetadata } =
-                    await resolveFinalizedData()
-                const rolloutGateStatus = resolveRolloutGateStatus({
-                    circuitBreakerOpen: rolloutState.disabled,
-                    usedCacheRequest,
-                })
-                const circuitBreakerState = rolloutState.disabled
-                    ? 'open'
-                    : 'closed'
-                manifest = attachResultSnapshot(manifest, {
-                    text,
-                    responseMessage,
-                    toolCalls,
-                    usage,
-                })
-                try {
-                    manifest = attachCacheResultSnapshot(
-                        manifest,
-                        normalizeProviderCacheResult({
-                            cachePlan,
+                finalizePromise = (async () => {
+                    try {
+                        const {
+                            text,
+                            usage,
+                            toolCalls,
                             totalUsage,
                             providerMetadata,
-                            rolloutGateStatus,
-                            circuitBreakerState,
-                            cacheDisabledReason,
-                        }),
-                    )
-                } catch (error) {
-                    console.error(
-                        '[ai-runtime][cache normalization] failed; attaching fallback cache result',
-                        error,
-                    )
-                    manifest = attachCacheResultSnapshot(manifest, {
-                        cacheObserved: false,
-                        evidenceSource: 'none',
-                        cacheReadObserved: false,
-                        cacheWriteObserved: false,
-                        cacheReadEvidenceSource: 'none',
-                        cacheWriteEvidenceSource: 'none',
-                        cacheDisabledReason:
-                            'cache_result_normalization_failed',
-                        rolloutGateStatus,
-                        circuitBreakerState,
-                    })
-                }
+                        } = await resolveFinalizedData()
+                        const rolloutGateStatus = resolveRolloutGateStatus({
+                            circuitBreakerOpen: rolloutState.disabled,
+                            usedCacheRequest,
+                        })
+                        const circuitBreakerState = rolloutState.disabled
+                            ? 'open'
+                            : 'closed'
+                        manifest = attachResultSnapshot(manifest, {
+                            text,
+                            responseMessage,
+                            toolCalls,
+                            usage,
+                        })
+                        try {
+                            manifest = attachCacheResultSnapshot(
+                                manifest,
+                                normalizeProviderCacheResult({
+                                    cachePlan,
+                                    totalUsage,
+                                    providerMetadata,
+                                    rolloutGateStatus,
+                                    circuitBreakerState,
+                                    cacheDisabledReason,
+                                }),
+                            )
+                        } catch (error) {
+                            console.error(
+                                '[ai-runtime][cache normalization] failed; attaching fallback cache result',
+                                error,
+                            )
+                            manifest = attachCacheResultSnapshot(manifest, {
+                                cacheObserved: false,
+                                evidenceSource: 'none',
+                                cacheReadObserved: false,
+                                cacheWriteObserved: false,
+                                cacheReadEvidenceSource: 'none',
+                                cacheWriteEvidenceSource: 'none',
+                                cacheDisabledReason:
+                                    'cache_result_normalization_failed',
+                                rolloutGateStatus,
+                                circuitBreakerState,
+                            })
+                        }
 
-                await runAfterRunHooks(plugins, {
-                    ...runCtx,
-                    text,
-                    responseMessage,
-                    toolCalls,
-                    usage,
-                    contextManifest: manifest,
-                })
+                        await safeLedgerUpdate('succeedIfRunning', () =>
+                            agentRunStore.succeedIfRunning(runId, {
+                                messageId: responseMessage.id,
+                                outputSummary: text,
+                                usage,
+                            }),
+                        )
+
+                        const warnings = await runAfterRunHooks(plugins, {
+                            ...runCtx,
+                            text,
+                            responseMessage,
+                            toolCalls,
+                            usage,
+                            contextManifest: manifest,
+                        })
+
+                        if (warnings.length > 0) {
+                            await safeLedgerUpdate('recordWarnings', () =>
+                                agentRunStore.recordWarnings(runId, warnings),
+                            )
+                        }
+                    } catch (error) {
+                        await recordFailure(error)
+                        throw error
+                    }
+                })()
+
+                return finalizePromise
             }
 
             async function consumeStream(): Promise<ConsumedResult> {
                 let capturedResponseMessage: UIMessage | null = null
 
-                const uiStream = streamResult.toUIMessageStream({
-                    generateMessageId: createResponseMessageId,
-                    sendReasoning: true,
-                    onFinish: ({ responseMessage }) => {
-                        capturedResponseMessage = responseMessage
-                    },
-                })
-
-                const reader = uiStream.getReader()
                 try {
-                    while (true) {
-                        const { done } = await reader.read()
-                        if (done) break
+                    const uiStream = streamResult.toUIMessageStream({
+                        generateMessageId: createResponseMessageId,
+                        sendReasoning: true,
+                        onFinish: ({ responseMessage }) => {
+                            capturedResponseMessage = responseMessage
+                        },
+                    })
+
+                    const reader = uiStream.getReader()
+                    try {
+                        while (true) {
+                            const { done } = await reader.read()
+                            if (done) break
+                        }
+                    } finally {
+                        reader.releaseLock()
                     }
-                } finally {
-                    reader.releaseLock()
-                }
 
-                if (capturedResponseMessage == null) {
-                    throw new Error(
-                        'Stream finished without producing a responseMessage',
-                    )
-                }
+                    if (capturedResponseMessage == null) {
+                        throw new Error(
+                            'Stream finished without producing a responseMessage',
+                        )
+                    }
 
-                await finalize(capturedResponseMessage)
-                const { text, usage, toolCalls } = await resolveFinalizedData()
+                    await finalize(capturedResponseMessage)
+                    const { text, usage, toolCalls } =
+                        await resolveFinalizedData()
 
-                return {
-                    text,
-                    responseMessage: capturedResponseMessage,
-                    toolCalls,
-                    usage,
-                    contextManifest: manifest,
+                    return {
+                        text,
+                        responseMessage: capturedResponseMessage,
+                        toolCalls,
+                        usage,
+                        contextManifest: manifest,
+                    }
+                } catch (error) {
+                    await recordFailure(error)
+                    throw error
                 }
             }
 
             return {
                 streamResult,
+                runId,
                 sessionId: runCtx.sessionId,
                 consumeStream,
                 finalize,
+                recordFailure,
                 getContextManifest: () => manifest,
             }
         } catch (error) {
             const err =
                 error instanceof Error ? error : new Error(String(error))
             await runOnErrorHooks(plugins, runCtx, err)
+            await recordFailure(err)
             throw err
         }
     }
