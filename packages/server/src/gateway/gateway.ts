@@ -71,11 +71,23 @@ export class Gateway {
         const { text } = consumed
 
         if (normalizedInput.abortSignal?.aborted) {
+            const abortedError = Object.assign(new Error('Execution aborted'), {
+                code: 'ABORTED',
+            })
+            try {
+                await output.recordFailure(abortedError)
+            } catch (error) {
+                console.error(
+                    'Gateway trigger abort failure recording failed:',
+                    error,
+                )
+            }
             return {
-                text,
+                text: '',
                 sessionId: output.sessionId,
                 runId: output.runId,
-                success: true,
+                success: false,
+                error: 'Execution aborted',
             }
         }
 

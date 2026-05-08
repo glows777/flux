@@ -248,10 +248,57 @@ describe('Gateway', () => {
         })
 
         expect(result).toEqual({
-            text: 'do not send',
+            text: '',
             sessionId: 'session-123',
             runId: 'run-abort',
-            success: true,
+            success: false,
+            error: 'Execution aborted',
+        })
+        expect(chatOutput.recordFailure).toHaveBeenCalledWith(
+            expect.objectContaining({
+                code: 'ABORTED',
+                message: 'Execution aborted',
+            }),
+        )
+        expect(adapter.send).not.toHaveBeenCalled()
+    })
+
+    test('trigger mode still returns aborted failure when abort record fails', async () => {
+        const abortController = new AbortController()
+        const chatOutput = makeMockChatOutput('do not send', 'run-abort')
+        chatOutput.consumeStream = mock(() => {
+            abortController.abort()
+            return Promise.resolve(
+                makeConsumedResult('do not send', 'run-abort'),
+            )
+        })
+        chatOutput.recordFailure = mock(() =>
+            Promise.reject(new Error('ledger unavailable')),
+        )
+        const router = makeMockRouter({
+            chat: mock(() => Promise.resolve(chatOutput)),
+        })
+        const adapter = makeMockAdapter()
+        const gateway = new Gateway({
+            router: router as unknown as Router,
+            channels: new Map([['discord', adapter]]),
+        })
+
+        const result = await gateway.chat({
+            channel: 'cron',
+            mode: 'trigger',
+            content: 'run analysis',
+            runId: 'run-abort',
+            abortSignal: abortController.signal,
+            channelTarget: { type: 'discord', channelId: 'ch-123' },
+        })
+
+        expect(result).toEqual({
+            text: '',
+            sessionId: 'session-123',
+            runId: 'run-abort',
+            success: false,
+            error: 'Execution aborted',
         })
         expect(adapter.send).not.toHaveBeenCalled()
     })
