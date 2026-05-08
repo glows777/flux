@@ -17,23 +17,50 @@ function makeMockRouter(overrides?: Partial<MockRouter>): MockRouter {
     }
 }
 
-function makeMockChatOutput(text = 'AI response'): ChatOutput {
+function makeContextManifest(
+    runId: string,
+): ReturnType<ChatOutput['getContextManifest']> {
+    return {
+        runId,
+        createdAt: new Date().toISOString(),
+        input: {} as never,
+        pluginOutputs: [],
+        assembledContext: {} as never,
+        modelRequest: {} as never,
+    }
+}
+
+function makeConsumedResult(
+    text: string,
+    runId = 'run-123',
+): Awaited<ReturnType<ChatOutput['consumeStream']>> {
+    return {
+        text,
+        responseMessage: {
+            id: 'msg-1',
+            role: 'assistant' as const,
+            parts: [],
+        },
+        toolCalls: [],
+        usage: { inputTokens: 10, outputTokens: 20 },
+        contextManifest: makeContextManifest(runId),
+    }
+}
+
+function makeMockChatOutput(
+    text = 'AI response',
+    runId = 'run-123',
+): ChatOutput {
     return {
         streamResult: {} as ChatOutput['streamResult'],
+        runId,
         sessionId: 'session-123',
         consumeStream: mock(() =>
-            Promise.resolve({
-                text,
-                responseMessage: {
-                    id: 'msg-1',
-                    role: 'assistant' as const,
-                    parts: [],
-                },
-                toolCalls: [],
-                usage: { inputTokens: 10, outputTokens: 20 },
-            }),
+            Promise.resolve(makeConsumedResult(text, runId)),
         ),
         finalize: mock(() => Promise.resolve()),
+        recordFailure: mock(() => Promise.resolve()),
+        getContextManifest: () => makeContextManifest(runId),
     }
 }
 
@@ -77,9 +104,12 @@ describe('Gateway', () => {
     })
 
     test('trigger mode consumes stream and returns TriggerResult', async () => {
-        const chatOutput = makeMockChatOutput('trigger response')
         const router = makeMockRouter({
-            chat: mock(() => Promise.resolve(chatOutput)),
+            chat: mock((input: GatewayInput) =>
+                Promise.resolve(
+                    makeMockChatOutput('trigger response', input.runId),
+                ),
+            ),
         })
         const gateway = new Gateway({
             router: router as unknown as Router,
@@ -93,16 +123,19 @@ describe('Gateway', () => {
         }
 
         const result = await gateway.chat(input)
+        const callArgs = (router.chat as ReturnType<typeof mock>).mock
+            .calls[0]?.[0]
         expect(result).toEqual({
             text: 'trigger response',
             sessionId: 'session-123',
+            runId: callArgs.runId,
             success: true,
         })
-        expect(chatOutput.consumeStream).toHaveBeenCalled()
+        expect(callArgs.runId).toEqual(expect.any(String))
     })
 
     test('trigger mode with channelTarget calls adapter.send()', async () => {
-        const chatOutput = makeMockChatOutput('notify this')
+        const chatOutput = makeMockChatOutput('notify this', 'run-notify')
         const router = makeMockRouter({
             chat: mock(() => Promise.resolve(chatOutput)),
         })
@@ -117,6 +150,7 @@ describe('Gateway', () => {
             channel: 'cron',
             mode: 'trigger',
             content: 'run analysis',
+            runId: 'run-notify',
             channelTarget: { type: 'discord', channelId: 'ch-123' },
         }
 
@@ -124,6 +158,7 @@ describe('Gateway', () => {
         expect(result).toEqual({
             text: 'notify this',
             sessionId: 'session-123',
+            runId: 'run-notify',
             success: true,
         })
         expect(adapter.send).toHaveBeenCalledWith(
@@ -155,7 +190,7 @@ describe('Gateway', () => {
     })
 
     test('trigger mode adapter.send() failure is silent', async () => {
-        const chatOutput = makeMockChatOutput('will fail push')
+        const chatOutput = makeMockChatOutput('will fail push', 'run-push-fail')
         const router = makeMockRouter({
             chat: mock(() => Promise.resolve(chatOutput)),
         })
@@ -172,6 +207,7 @@ describe('Gateway', () => {
             channel: 'cron',
             mode: 'trigger',
             content: 'run analysis',
+            runId: 'run-push-fail',
             channelTarget: { type: 'discord', channelId: 'ch-123' },
         }
 
@@ -179,8 +215,46 @@ describe('Gateway', () => {
         expect(result).toEqual({
             text: 'will fail push',
             sessionId: 'session-123',
+            runId: 'run-push-fail',
             success: true,
         })
+    })
+
+    test('trigger mode skips delivery when aborted after stream consumption', async () => {
+        const abortController = new AbortController()
+        const chatOutput = makeMockChatOutput('do not send', 'run-abort')
+        chatOutput.consumeStream = mock(() => {
+            abortController.abort()
+            return Promise.resolve(
+                makeConsumedResult('do not send', 'run-abort'),
+            )
+        })
+        const router = makeMockRouter({
+            chat: mock(() => Promise.resolve(chatOutput)),
+        })
+        const adapter = makeMockAdapter()
+        const gateway = new Gateway({
+            router: router as unknown as Router,
+            channels: new Map([['discord', adapter]]),
+        })
+
+        const result = await gateway.chat({
+            channel: 'cron',
+            mode: 'trigger',
+            content: 'run analysis',
+            runId: 'run-abort',
+            abortSignal: abortController.signal,
+            channelTarget: { type: 'discord', channelId: 'ch-123' },
+        })
+
+        expect(result).toEqual({
+            text: '',
+            sessionId: 'session-123',
+            runId: 'run-abort',
+            success: false,
+            error: 'Execution aborted',
+        })
+        expect(adapter.send).not.toHaveBeenCalled()
     })
 
     test('trigger mode AI failure returns success: false', async () => {
@@ -196,19 +270,21 @@ describe('Gateway', () => {
             channel: 'cron',
             mode: 'trigger',
             content: 'run analysis',
+            runId: 'run-ai-fail',
         }
 
         const result = await gateway.chat(input)
         expect(result).toEqual({
             text: '',
             sessionId: '',
+            runId: 'run-ai-fail',
             success: false,
             error: 'AI service down',
         })
     })
 
     test('trigger mode stream failure returns success: false', async () => {
-        const chatOutput = makeMockChatOutput('unused')
+        const chatOutput = makeMockChatOutput('unused', 'run-stream-fail')
         chatOutput.consumeStream = mock(() =>
             Promise.reject(new Error('stream broke')),
         )
@@ -224,12 +300,14 @@ describe('Gateway', () => {
             channel: 'cron',
             mode: 'trigger',
             content: 'run analysis',
+            runId: 'run-stream-fail',
         }
 
         const result = await gateway.chat(input)
         expect(result).toEqual({
             text: '',
             sessionId: 'session-123',
+            runId: 'run-stream-fail',
             success: false,
             error: 'stream broke',
         })
