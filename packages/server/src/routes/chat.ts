@@ -67,14 +67,28 @@ export function createChatRoutes(gateway: Gateway) {
                                     code: 'ABORTED',
                                 },
                             )
-                            await output.recordFailure(abortedError)
+                            try {
+                                await output.recordFailure(abortedError)
+                            } catch (recordError) {
+                                console.error(
+                                    'Failed to record aborted chat stream failure',
+                                    recordError,
+                                )
+                            }
                             return
                         }
 
                         await output.finalize(responseMessage)
                     },
                     onError: (error) => {
-                        void output.recordFailure(error)
+                        void output
+                            .recordFailure(error)
+                            .catch((recordError) => {
+                                console.error(
+                                    'Failed to record chat stream failure',
+                                    recordError,
+                                )
+                            })
                         return 'Failed to generate chat response'
                     },
                 })

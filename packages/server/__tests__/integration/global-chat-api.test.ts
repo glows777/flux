@@ -219,6 +219,50 @@ describe('POST /api/chat', () => {
         expect(capturedOptions?.consumeSseStream).toBeDefined()
     })
 
+    test('stream onError returns message when failure recording rejects', async () => {
+        const recordFailure = mock(() =>
+            Promise.reject(new Error('record failure failed')),
+        )
+        let capturedOnError: ((error: unknown) => string) | undefined
+
+        mockGatewayChat.mockResolvedValueOnce({
+            runId: 'run-1',
+            sessionId: 'session-1',
+            streamResult: {
+                toUIMessageStreamResponse: mock(
+                    (opts: { onError?: (error: unknown) => string }) => {
+                        capturedOnError = opts.onError
+                        return new Response('stream')
+                    },
+                ),
+            },
+            finalize: mock(() => Promise.resolve()),
+            recordFailure,
+            consumeStream: mock(() => Promise.resolve({})),
+            getContextManifest: mock(() => ({ runId: 'run-1' }) as never),
+        } as never)
+
+        await app.request('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [
+                    {
+                        id: 'u1',
+                        role: 'user',
+                        parts: [{ type: 'text', text: 'hi' }],
+                    },
+                ],
+            }),
+        })
+
+        const message = capturedOnError?.(new Error('stream failed'))
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(message).toBe('Failed to generate chat response')
+        expect(recordFailure).toHaveBeenCalledWith(expect.any(Error))
+    })
+
     test('records aborted UI stream before finalize', async () => {
         const finalize = mock(() => Promise.resolve())
         const recordFailure = mock(() => Promise.resolve())
@@ -273,6 +317,71 @@ describe('POST /api/chat', () => {
             },
             isAborted: true,
         })
+
+        expect(recordFailure).toHaveBeenCalledWith(
+            expect.objectContaining({ code: 'ABORTED' }),
+        )
+        expect(finalize).not.toHaveBeenCalled()
+    })
+
+    test('aborted UI stream finish resolves when failure recording rejects', async () => {
+        const finalize = mock(() => Promise.resolve())
+        const recordFailure = mock(() =>
+            Promise.reject(new Error('record failure failed')),
+        )
+        let capturedOnFinish:
+            | ((input: {
+                  responseMessage: UIMessage
+                  isAborted: boolean
+              }) => Promise<void>)
+            | undefined
+
+        mockGatewayChat.mockResolvedValueOnce({
+            runId: 'run-1',
+            sessionId: 'session-1',
+            streamResult: {
+                toUIMessageStreamResponse: mock(
+                    (opts: {
+                        onFinish?: (input: {
+                            responseMessage: UIMessage
+                            isAborted: boolean
+                        }) => Promise<void>
+                    }) => {
+                        capturedOnFinish = opts.onFinish
+                        return new Response('stream')
+                    },
+                ),
+            },
+            finalize,
+            recordFailure,
+            consumeStream: mock(() => Promise.resolve({})),
+            getContextManifest: mock(() => ({ runId: 'run-1' }) as never),
+        } as never)
+
+        await app.request('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: [
+                    {
+                        id: 'u1',
+                        role: 'user',
+                        parts: [{ type: 'text', text: 'hi' }],
+                    },
+                ],
+            }),
+        })
+
+        await expect(
+            capturedOnFinish?.({
+                responseMessage: {
+                    id: 'assistant-1',
+                    role: 'assistant',
+                    parts: [],
+                },
+                isAborted: true,
+            }),
+        ).resolves.toBeUndefined()
 
         expect(recordFailure).toHaveBeenCalledWith(
             expect.objectContaining({ code: 'ABORTED' }),
