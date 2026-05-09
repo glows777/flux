@@ -365,9 +365,7 @@ export function normalizeProviderCacheResult(input: {
         cacheWriteTokens,
         uncachedInputTokens,
         cachedTokenRatio:
-            cacheReadTokens != null && totalInput > 0
-                ? cacheReadTokens / totalInput
-                : undefined,
+            totalInput > 0 ? (cacheReadTokens ?? 0) / totalInput : undefined,
         providerRawCacheUsage,
         cacheDisabledReason: input.cacheDisabledReason,
         rolloutGateStatus: input.rolloutGateStatus,

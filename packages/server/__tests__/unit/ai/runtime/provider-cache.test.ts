@@ -492,6 +492,7 @@ describe('normalizeProviderCacheResult', () => {
         expect(result.cacheWriteObserved).toBe(true)
         expect(result.cacheReadEvidenceSource).toBe('none')
         expect(result.cacheWriteEvidenceSource).toBe('totalUsage')
+        expect(result.cachedTokenRatio).toBe(0)
     })
 
     test('records providerMetadata when metadata is positive but normalized usage is zero', async () => {
