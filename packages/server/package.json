@@ -11,9 +11,9 @@
         "./*": "./src/*"
     },
     "scripts": {
-        "dev": "bun --watch src/index.ts",
-        "build": "bun build src/index.ts --outdir dist --target bun",
-        "start": "bun run dist/index.js",
+        "dev": "cd ../.. && bun packages/server/src/index.ts",
+        "build": "cd ../.. && bun build packages/server/src/index.ts --outdir packages/server/dist --target bun",
+        "start": "cd ../.. && bun packages/server/dist/index.js",
         "normalize:stock-history": "bun run scripts/normalize-stock-history.ts",
         "verify:prompt-cache-chat-flow": "bun run scripts/verify-prompt-cache-chat-flow.ts",
         "db:push": "bunx prisma db push",
@@ -37,7 +37,7 @@
         "@prisma/adapter-pg": "^7.3.0",
         "@prisma/client": "^7.3.0",
         "@tavily/core": "^0.7.2",
-        "ai": "^6.0.73",
+        "ai": "6.0.73",
         "bash-tool": "^1.3.15",
         "croner": "^10.0.1",
         "discord.js": "^14.25.1",
