@@ -15,6 +15,9 @@ export interface GatewayInput {
     readonly sourceId?: string
     readonly userId?: string
     readonly symbol?: string
+    readonly runId?: string
+    readonly cronJobId?: string
+    readonly abortSignal?: AbortSignal
     readonly channelTarget?: {
         readonly type: string
         readonly channelId: string
@@ -24,6 +27,7 @@ export interface GatewayInput {
 export interface TriggerResult {
     readonly text: string
     readonly sessionId: string
+    readonly runId: string
     readonly success: boolean
     readonly error?: string
 }
@@ -53,6 +57,7 @@ export class Router {
         ]
 
         return runtime.chat({
+            runId: input.runId,
             sessionId: input.sessionId,
             messages,
             symbol: input.symbol,
@@ -61,6 +66,8 @@ export class Router {
             mode: input.mode,
             sourceId: input.sourceId,
             userId: input.userId,
+            cronJobId: input.cronJobId,
+            abortSignal: input.abortSignal,
         })
     }
 

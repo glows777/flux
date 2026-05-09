@@ -7,6 +7,7 @@ import {
     mock,
     test,
 } from 'bun:test'
+import type { AgentRunStore } from '../../../../src/core/ai/agent-run'
 import type {
     AIPlugin,
     CachePlanSnapshot,
@@ -17,7 +18,7 @@ const mockConvertToModelMessages = mock(async (messages: unknown[]) => messages)
 const mockStepCountIs = mock((_count: number) => () => false)
 
 type StreamResultOverrides = {
-    text?: string
+    text?: string | Promise<string>
     usage?: { inputTokens?: number; outputTokens?: number }
     totalUsage?: Record<string, unknown>
     providerMetadata?: Record<string, unknown>
@@ -25,10 +26,12 @@ type StreamResultOverrides = {
 }
 
 function createMockStreamResult(overrides: StreamResultOverrides = {}) {
+    const text =
+        typeof overrides.text === 'string' ? overrides.text : 'mock text'
     const responseMessage = {
         id: 'assistant-1',
         role: 'assistant',
-        parts: [{ type: 'text', text: overrides.text ?? 'mock text' }],
+        parts: [{ type: 'text', text }],
     }
 
     return {
@@ -58,6 +61,20 @@ function createMockStreamResult(overrides: StreamResultOverrides = {}) {
 }
 
 const mockStreamText = mock(() => createMockStreamResult())
+
+function createFakeAgentRunStore(): AgentRunStore {
+    return {
+        createRunningRun: mock(() => Promise.resolve()),
+        createFailedRun: mock(async (input) => ({
+            runId: input.runId ?? 'generated-failed-run',
+        })),
+        attachSession: mock(() => Promise.resolve()),
+        succeedIfRunning: mock(() => Promise.resolve()),
+        failIfRunning: mock(() => Promise.resolve()),
+        recordWarnings: mock(() => Promise.resolve()),
+        reconcileStaleRunningRuns: mock(() => Promise.resolve({ count: 0 })),
+    }
+}
 
 function createCachePlanFixture(
     overrides: Partial<CachePlanSnapshot> = {},
@@ -258,9 +275,13 @@ describe('createAIRuntime', () => {
     test('rejects duplicate plugin names', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const plugins: AIPlugin[] = [{ name: 'dup' }, { name: 'dup' }]
-        expect(createAIRuntime({ model: mockModel, plugins })).rejects.toThrow(
-            'Duplicate plugin name: "dup"',
-        )
+        expect(
+            createAIRuntime({
+                model: mockModel,
+                plugins,
+                agentRunStore: createFakeAgentRunStore(),
+            }),
+        ).rejects.toThrow('Duplicate plugin name: "dup"')
     })
 
     test('calls init() on all plugins in order', async () => {
@@ -280,7 +301,11 @@ describe('createAIRuntime', () => {
                 },
             },
         ]
-        await createAIRuntime({ model: mockModel, plugins })
+        await createAIRuntime({
+            model: mockModel,
+            plugins,
+            agentRunStore: createFakeAgentRunStore(),
+        })
         expect(order).toEqual(['a', 'b'])
     })
 
@@ -294,14 +319,22 @@ describe('createAIRuntime', () => {
                 },
             },
         ]
-        expect(createAIRuntime({ model: mockModel, plugins })).rejects.toThrow(
-            'init failed',
-        )
+        expect(
+            createAIRuntime({
+                model: mockModel,
+                plugins,
+                agentRunStore: createFakeAgentRunStore(),
+            }),
+        ).rejects.toThrow('init failed')
     })
 
     test('returns runtime with chat and dispose', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
-        const runtime = await createAIRuntime({ model: mockModel, plugins: [] })
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            plugins: [],
+            agentRunStore: createFakeAgentRunStore(),
+        })
         expect(typeof runtime.chat).toBe('function')
         expect(typeof runtime.dispose).toBe('function')
     })
@@ -310,6 +343,7 @@ describe('createAIRuntime', () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const runtime = await createAIRuntime({
             model: mockModel,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -343,6 +377,256 @@ describe('createAIRuntime', () => {
         expect(output.getContextManifest().pluginOutputs).toHaveLength(1)
     })
 
+    test('records the successful agent run lifecycle', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [
+                {
+                    name: 'session',
+                    beforeRun(ctx) {
+                        ctx.meta.set('sessionId', 'session-1')
+                    },
+                },
+            ],
+        })
+
+        const output = await runtime.chat({
+            messages: [
+                {
+                    id: 'u1',
+                    role: 'user',
+                    parts: [{ type: 'text', text: 'Hi' }],
+                },
+            ],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const consumed = await output.consumeStream()
+
+        expect(output.runId).toBe(consumed.contextManifest.runId)
+        expect(agentRunStore.createRunningRun).toHaveBeenCalledWith(
+            expect.objectContaining({
+                runId: output.runId,
+                source: 'web',
+                mode: 'conversation',
+                agentType: 'trading-agent',
+                inputSummary: expect.stringContaining('Hi'),
+            }),
+        )
+        expect(agentRunStore.attachSession).toHaveBeenCalledWith(
+            output.runId,
+            'session-1',
+        )
+        expect(agentRunStore.succeedIfRunning).toHaveBeenCalledWith(
+            output.runId,
+            {
+                messageId: 'assistant-1',
+                outputSummary: 'mock text',
+                usage: { inputTokens: 10, outputTokens: 5 },
+            },
+        )
+    })
+
+    test('records failure when stream consumption fails', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const streamError = new Error('stream broke')
+        const agentRunStore = createFakeAgentRunStore()
+        mockStreamText.mockImplementationOnce(() =>
+            createMockStreamResult({ text: Promise.reject(streamError) }),
+        )
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+
+        await expect(output.consumeStream()).rejects.toThrow('stream broke')
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
+            output.runId,
+            expect.objectContaining({ error: expect.any(Error) }),
+        )
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not execute the model when createRunningRun fails', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const ledgerError = new Error('ledger unavailable')
+        const agentRunStore = createFakeAgentRunStore()
+        agentRunStore.createRunningRun = mock(() =>
+            Promise.reject(ledgerError),
+        ) as AgentRunStore['createRunningRun']
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        await expect(
+            runtime.chat({
+                messages: [],
+                channel: 'web',
+                mode: 'conversation',
+            }),
+        ).rejects.toThrow('ledger unavailable')
+        expect(mockStreamText).not.toHaveBeenCalled()
+        expect(agentRunStore.failIfRunning).not.toHaveBeenCalled()
+    })
+
+    test('passes the supplied abortSignal to streamText', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const abortController = new AbortController()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+            abortSignal: abortController.signal,
+        })
+
+        expect(
+            (mockStreamText.mock.calls[0][0] as { abortSignal?: AbortSignal })
+                .abortSignal,
+        ).toBe(abortController.signal)
+    })
+
+    test('records stream callback errors as failed agent runs', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const streamOptions = mockStreamText.mock.calls[0][0] as {
+            onError?: (input: { error: unknown }) => void
+        }
+        const streamError = new Error('provider failed')
+
+        expect(typeof streamOptions.onError).toBe('function')
+        streamOptions.onError?.({ error: streamError })
+
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(output.runId, {
+            error: streamError,
+        })
+    })
+
+    test('records aborted streams as failed and does not mark success', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        const streamOptions = mockStreamText.mock.calls[0][0] as {
+            onAbort?: () => void
+        }
+
+        expect(typeof streamOptions.onAbort).toBe('function')
+        streamOptions.onAbort?.()
+
+        await expect(output.consumeStream()).rejects.toThrow('Stream aborted')
+        expect(agentRunStore.succeedIfRunning).not.toHaveBeenCalled()
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
+            output.runId,
+            expect.objectContaining({
+                error: expect.any(Error),
+                code: 'ABORTED',
+            }),
+        )
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledTimes(1)
+    })
+
+    test('records afterRun warnings after success', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [
+                {
+                    name: 'bad',
+                    afterRun() {
+                        throw new Error('manifest failed')
+                    },
+                },
+            ],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        await output.consumeStream()
+
+        expect(agentRunStore.succeedIfRunning).toHaveBeenCalled()
+        expect(agentRunStore.recordWarnings).toHaveBeenCalledWith(
+            output.runId,
+            [{ source: 'bad.afterRun', message: 'manifest failed' }],
+        )
+    })
+
+    test('records failure with resolved session id when beforeRun fails', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [
+                {
+                    name: 'session',
+                    beforeRun(ctx) {
+                        ctx.meta.set('sessionId', 'session-before-fail')
+                        throw new Error('append failed')
+                    },
+                },
+            ],
+        })
+
+        await expect(
+            runtime.chat({
+                messages: [],
+                channel: 'web',
+                mode: 'conversation',
+            }),
+        ).rejects.toThrow('append failed')
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
+            expect.any(String),
+            {
+                error: expect.any(Error),
+                sessionId: 'session-before-fail',
+            },
+        )
+    })
+
     test('chat manifest stores normalized segments and the resolved max output cap', async () => {
         mockStreamText.mockClear()
 
@@ -350,6 +634,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'gpt-4.1' } as never,
             defaults: { maxTokens: 2048 },
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'low',
@@ -423,6 +708,7 @@ describe('createAIRuntime', () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const runtime = await createAIRuntime({
             model: { modelId: 'gpt-4.1' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [],
         })
 
@@ -449,6 +735,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -535,6 +822,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             defaults: { thinkingBudget: 256 },
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -666,6 +954,7 @@ describe('createAIRuntime', () => {
                 modelId: 'claude-sonnet-4-6',
             } as never,
             defaults: { thinkingBudget: 256 },
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'seed-previous-manifest',
@@ -743,6 +1032,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [],
         })
 
@@ -797,6 +1087,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -858,6 +1149,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -930,6 +1222,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1050,6 +1343,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             defaults: { thinkingBudget: 256 },
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1141,6 +1435,7 @@ describe('createAIRuntime', () => {
                 provider: 'anthropic',
                 modelId: 'claude-sonnet-4-6',
             } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [],
         })
 
@@ -1191,6 +1486,7 @@ describe('createAIRuntime', () => {
                 provider: 'anthropic',
                 modelId: 'claude-sonnet-4-6',
             } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1265,6 +1561,7 @@ describe('createAIRuntime', () => {
 
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [],
         })
 
@@ -1310,7 +1607,11 @@ describe('createAIRuntime', () => {
                 },
             },
         ]
-        const runtime = await createAIRuntime({ model: mockModel, plugins })
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            plugins,
+            agentRunStore: createFakeAgentRunStore(),
+        })
         await runtime.dispose()
         expect(destroyed).toEqual(['a', 'b'])
     })
@@ -1325,7 +1626,11 @@ describe('createAIRuntime', () => {
                 },
             },
         ]
-        const runtime = await createAIRuntime({ model: mockModel, plugins })
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            plugins,
+            agentRunStore: createFakeAgentRunStore(),
+        })
         // Should not throw
         await runtime.dispose()
     })

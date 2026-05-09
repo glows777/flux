@@ -14,6 +14,12 @@ export interface MessageManifestRecord {
     readonly manifest: ContextManifest
 }
 
+interface MessageManifestRow {
+    readonly version: number
+    readonly runId: string
+    readonly manifest: string
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -221,98 +227,13 @@ function isContextManifestShape(value: unknown): value is ContextManifest {
     )
 }
 
-export async function saveMessageManifest(
-    sessionId: string,
-    messageId: string,
-    manifest: ContextManifest,
-    deps: SessionManifestDeps,
-): Promise<void> {
-    const serializedManifest = JSON.stringify(manifest)
-
-    await deps.db.chatMessageManifest.upsert({
-        where: {
-            sessionId_messageId: { sessionId, messageId },
-        },
-        create: {
-            sessionId,
-            messageId,
-            runId: manifest.runId,
-            manifest: serializedManifest,
-            version: MESSAGE_MANIFEST_VERSION,
-        },
-        update: {
-            runId: manifest.runId,
-            manifest: serializedManifest,
-            version: MESSAGE_MANIFEST_VERSION,
-        },
-    })
-}
-
-export async function loadMessageManifest(
-    sessionId: string,
-    messageId: string,
-    deps: SessionManifestDeps,
-): Promise<MessageManifestRecord | null> {
-    const row = await deps.db.chatMessageManifest.findUnique({
-        where: {
-            sessionId_messageId: { sessionId, messageId },
-        },
-        select: {
-            version: true,
-            runId: true,
-            manifest: true,
-        },
-    })
-
-    if (!row) {
-        const sessionStore = deps.db.chatSession as
-            | {
-                  findUnique?: (args: {
-                      where: { id: string }
-                      select?: { id: boolean }
-                  }) => Promise<{ id: string } | null>
-              }
-            | undefined
-        const messageStore = deps.db.chatMessage as
-            | {
-                  findUnique?: (args: {
-                      where: {
-                          sessionId_messageId: {
-                              sessionId: string
-                              messageId: string
-                          }
-                      }
-                      select?: { id: boolean }
-                  }) => Promise<{ id: string } | null>
-              }
-            | undefined
-
-        if (sessionStore?.findUnique && messageStore?.findUnique) {
-            const session = await sessionStore.findUnique({
-                where: { id: sessionId },
-                select: { id: true },
-            })
-            if (!session) {
-                throw new SessionError('Session not found', 'NOT_FOUND')
-            }
-
-            const message = await messageStore.findUnique({
-                where: {
-                    sessionId_messageId: { sessionId, messageId },
-                },
-                select: { id: true },
-            })
-            if (!message) {
-                throw new SessionError('Message not found', 'NOT_FOUND')
-            }
-        }
-
-        return null
-    }
-
+function parseMessageManifestRow(
+    row: MessageManifestRow,
+    sourceLabel: string,
+): MessageManifestRecord {
     const invalidManifestError = () =>
         new SessionError(
-            `Failed to parse manifest content for message ${messageId}`,
+            `Failed to parse manifest content for ${sourceLabel}`,
             'INVALID_INPUT',
         )
 
@@ -332,4 +253,107 @@ export async function loadMessageManifest(
         runId: row.runId,
         manifest: parsedManifest,
     }
+}
+
+export async function saveMessageManifest(
+    sessionId: string,
+    messageId: string,
+    manifest: ContextManifest,
+    deps: SessionManifestDeps,
+): Promise<void> {
+    const serializedManifest = JSON.stringify(manifest)
+
+    await deps.db.chatMessageManifest.upsert({
+        where: { runId: manifest.runId },
+        create: {
+            sessionId,
+            messageId,
+            runId: manifest.runId,
+            manifest: serializedManifest,
+            version: MESSAGE_MANIFEST_VERSION,
+        },
+        update: {
+            sessionId,
+            messageId,
+            manifest: serializedManifest,
+            version: MESSAGE_MANIFEST_VERSION,
+        },
+    })
+}
+
+export async function loadMessageManifest(
+    sessionId: string,
+    messageId: string,
+    deps: SessionManifestDeps,
+): Promise<MessageManifestRecord | null> {
+    const row = await deps.db.chatMessageManifest.findFirst({
+        where: { sessionId, messageId },
+        orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
+        select: {
+            version: true,
+            runId: true,
+            manifest: true,
+        },
+    })
+
+    if (!row) {
+        const sessionStore = deps.db.chatSession as unknown as
+            | {
+                  findUnique?: (args: {
+                      where: { id: string }
+                      select?: { id: boolean }
+                  }) => Promise<{ id: string } | null>
+              }
+            | undefined
+        const messageStore = deps.db.chatMessage as unknown as
+            | {
+                  findFirst?: (args: {
+                      where: { sessionId: string; messageId: string }
+                      select?: { id: boolean }
+                  }) => Promise<{ id: string } | null>
+              }
+            | undefined
+
+        if (sessionStore?.findUnique && messageStore?.findFirst) {
+            const session = await sessionStore.findUnique({
+                where: { id: sessionId },
+                select: { id: true },
+            })
+            if (!session) {
+                throw new SessionError('Session not found', 'NOT_FOUND')
+            }
+
+            const message = await messageStore.findFirst({
+                where: { sessionId, messageId },
+                select: { id: true },
+            })
+            if (!message) {
+                throw new SessionError('Message not found', 'NOT_FOUND')
+            }
+        }
+
+        return null
+    }
+
+    return parseMessageManifestRow(row, `message ${messageId}`)
+}
+
+export async function loadMessageManifestByRunId(
+    runId: string,
+    deps: SessionManifestDeps,
+): Promise<MessageManifestRecord | null> {
+    const row = await deps.db.chatMessageManifest.findUnique({
+        where: { runId },
+        select: {
+            version: true,
+            runId: true,
+            manifest: true,
+        },
+    })
+
+    if (!row) {
+        return null
+    }
+
+    return parseMessageManifestRow(row, `run ${runId}`)
 }

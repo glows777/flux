@@ -7,10 +7,81 @@ if (!process.env.DATABASE_URL) {
 
 import type { SessionDeps } from '@/core/ai/session'
 
+function createManifest({ runId = 'run-1' }: { runId?: string } = {}) {
+    return {
+        runId,
+        createdAt: '2024-06-01T00:00:00.000Z',
+        input: {
+            channel: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+            rawMessages: [],
+            initialSessionId: 'session-1',
+            resolvedSessionId: 'session-1',
+            defaults: {},
+        },
+        pluginOutputs: [],
+        assembledContext: {
+            segments: [],
+            systemSegments: [],
+            tools: [],
+            params: { candidates: [], resolved: {} },
+            totalEstimatedInputTokens: 0,
+        },
+        modelRequest: {
+            systemText: '',
+            modelMessages: [],
+            toolNames: [],
+            resolvedParams: {},
+            providerOptions: {},
+        },
+        cachePlan: {
+            provider: 'anthropic',
+            stableCoreSegmentIds: [],
+            cacheableSessionSegmentIds: [],
+            dynamicTailSegmentIds: [],
+            effectivePrefixSegmentIds: [],
+            effectivePrefixEstimatedTokens: 0,
+            breakpoints: [],
+            hashes: {
+                toolDefinitionsHash: 'tool-hash',
+                systemHash: 'system-hash',
+                memoryHash: 'memory-hash',
+                dynamicTailHash: 'tail-hash',
+            },
+            eligibility: {
+                providerSupportsPromptCache: true,
+                prefixAboveThreshold: false,
+                cacheExpected: false,
+                cacheExpectationReason: 'below_cache_threshold',
+                providerRuleAssumptions: ['anthropic>=1024'],
+            },
+        },
+        result: {
+            text: '',
+            responseMessage: { id: 'a1', role: 'assistant', parts: [] },
+            toolCalls: [],
+            usage: { inputTokens: 0, outputTokens: 0 },
+            cacheResult: {
+                cacheObserved: false,
+                evidenceSource: 'none',
+                cacheReadTokens: 0,
+                cacheWriteTokens: 0,
+                uncachedInputTokens: 0,
+                cachedTokenRatio: 0,
+                providerRawCacheUsage: undefined,
+                rolloutGateStatus: 'observe-only',
+                circuitBreakerState: 'closed',
+            },
+        },
+    }
+}
+
 function createMockDb() {
     return {
         chatMessageManifest: {
             upsert: mock(() => Promise.resolve({})),
+            findFirst: mock(() => Promise.resolve(null)),
             findUnique: mock(() => Promise.resolve(null)),
         },
     }
@@ -35,77 +106,11 @@ async function importActualSessionErrors() {
 }
 
 describe('saveMessageManifest', () => {
-    it('upserts serialized row keyed by sessionId + messageId', async () => {
+    it('upserts serialized row keyed by run id', async () => {
         const { saveMessageManifest } = await importActualSessionModule()
         const db = createMockDb()
         const deps = { db } as unknown as SessionDeps
-        const manifest = {
-            runId: 'run-1',
-            createdAt: '2024-06-01T00:00:00.000Z',
-            input: {
-                channel: 'web',
-                mode: 'conversation',
-                agentType: 'trading-agent',
-                rawMessages: [],
-                initialSessionId: 'session-1',
-                resolvedSessionId: 'session-1',
-                defaults: {},
-            },
-            pluginOutputs: [],
-            assembledContext: {
-                segments: [],
-                systemSegments: [],
-                tools: [],
-                params: { candidates: [], resolved: {} },
-                totalEstimatedInputTokens: 0,
-            },
-            modelRequest: {
-                systemText: '',
-                modelMessages: [],
-                toolNames: [],
-                resolvedParams: {},
-                providerOptions: {},
-            },
-            cachePlan: {
-                provider: 'anthropic',
-                stableCoreSegmentIds: [],
-                cacheableSessionSegmentIds: [],
-                dynamicTailSegmentIds: [],
-                effectivePrefixSegmentIds: [],
-                effectivePrefixEstimatedTokens: 0,
-                breakpoints: [],
-                hashes: {
-                    toolDefinitionsHash: 'tool-hash',
-                    systemHash: 'system-hash',
-                    memoryHash: 'memory-hash',
-                    dynamicTailHash: 'tail-hash',
-                },
-                eligibility: {
-                    providerSupportsPromptCache: true,
-                    prefixAboveThreshold: false,
-                    cacheExpected: false,
-                    cacheExpectationReason: 'below_cache_threshold',
-                    providerRuleAssumptions: ['anthropic>=1024'],
-                },
-            },
-            result: {
-                text: '',
-                responseMessage: { id: 'a1', role: 'assistant', parts: [] },
-                toolCalls: [],
-                usage: { inputTokens: 0, outputTokens: 0 },
-                cacheResult: {
-                    cacheObserved: false,
-                    evidenceSource: 'none',
-                    cacheReadTokens: 0,
-                    cacheWriteTokens: 0,
-                    uncachedInputTokens: 0,
-                    cachedTokenRatio: 0,
-                    providerRawCacheUsage: undefined,
-                    rolloutGateStatus: 'observe-only',
-                    circuitBreakerState: 'closed',
-                },
-            },
-        }
+        const manifest = createManifest({ runId: 'run-1' })
 
         await saveMessageManifest(
             'session-1',
@@ -116,12 +121,7 @@ describe('saveMessageManifest', () => {
 
         expect(db.chatMessageManifest.upsert).toHaveBeenCalledTimes(1)
         expect(db.chatMessageManifest.upsert).toHaveBeenCalledWith({
-            where: {
-                sessionId_messageId: {
-                    sessionId: 'session-1',
-                    messageId: 'message-1',
-                },
-            },
+            where: { runId: 'run-1' },
             create: {
                 sessionId: 'session-1',
                 messageId: 'message-1',
@@ -130,10 +130,40 @@ describe('saveMessageManifest', () => {
                 version: 1,
             },
             update: {
-                runId: 'run-1',
+                sessionId: 'session-1',
+                messageId: 'message-1',
                 manifest: JSON.stringify(manifest),
                 version: 1,
             },
+        })
+    })
+
+    it('keeps separate rows for two runs on the same session message', async () => {
+        const { saveMessageManifest } = await importActualSessionModule()
+        const db = createMockDb()
+        const deps = { db } as unknown as SessionDeps
+        const firstManifest = createManifest({ runId: 'run-1' })
+        const secondManifest = createManifest({ runId: 'run-2' })
+
+        await saveMessageManifest(
+            'session-1',
+            'message-1',
+            firstManifest as never,
+            deps,
+        )
+        await saveMessageManifest(
+            'session-1',
+            'message-1',
+            secondManifest as never,
+            deps,
+        )
+
+        expect(db.chatMessageManifest.upsert).toHaveBeenCalledTimes(2)
+        expect(db.chatMessageManifest.upsert.mock.calls[0]?.[0].where).toEqual({
+            runId: 'run-1',
+        })
+        expect(db.chatMessageManifest.upsert.mock.calls[1]?.[0].where).toEqual({
+            runId: 'run-2',
         })
     })
 })
@@ -148,13 +178,9 @@ describe('loadMessageManifest', () => {
         } as unknown as SessionDeps)
 
         expect(result).toBeNull()
-        expect(db.chatMessageManifest.findUnique).toHaveBeenCalledWith({
-            where: {
-                sessionId_messageId: {
-                    sessionId: 'session-1',
-                    messageId: 'message-1',
-                },
-            },
+        expect(db.chatMessageManifest.findFirst).toHaveBeenCalledWith({
+            where: { sessionId: 'session-1', messageId: 'message-1' },
+            orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
             select: {
                 version: true,
                 runId: true,
@@ -234,6 +260,31 @@ describe('loadMessageManifest', () => {
             },
         }
 
+        db.chatMessageManifest.findFirst = mock(() =>
+            Promise.resolve({
+                version: 1,
+                runId: 'run-2',
+                manifest: JSON.stringify(manifest),
+            }),
+        ) as typeof db.chatMessageManifest.findFirst
+
+        const result = await loadMessageManifest('session-1', 'message-1', {
+            db,
+        } as unknown as SessionDeps)
+
+        expect(result).toEqual({
+            version: 1,
+            runId: 'run-2',
+            manifest,
+        })
+    })
+
+    it('loads and parses a stored payload by run id', async () => {
+        const { loadMessageManifestByRunId } =
+            await importActualSessionModule()
+        const db = createMockDb()
+        const manifest = createManifest({ runId: 'run-2' })
+
         db.chatMessageManifest.findUnique = mock(() =>
             Promise.resolve({
                 version: 1,
@@ -242,10 +293,18 @@ describe('loadMessageManifest', () => {
             }),
         ) as typeof db.chatMessageManifest.findUnique
 
-        const result = await loadMessageManifest('session-1', 'message-1', {
+        const result = await loadMessageManifestByRunId('run-2', {
             db,
         } as unknown as SessionDeps)
 
+        expect(db.chatMessageManifest.findUnique).toHaveBeenCalledWith({
+            where: { runId: 'run-2' },
+            select: {
+                version: true,
+                runId: true,
+                manifest: true,
+            },
+        })
         expect(result).toEqual({
             version: 1,
             runId: 'run-2',
@@ -328,13 +387,13 @@ describe('loadMessageManifest', () => {
             },
         }
 
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: manifest.runId,
                 manifest: JSON.stringify(manifest),
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         const result = await loadMessageManifest('session-1', 'message-1', deps)
 
@@ -409,13 +468,13 @@ describe('loadMessageManifest', () => {
             },
         }
 
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: manifest.runId,
                 manifest: JSON.stringify(manifest),
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         const result = await loadMessageManifest('session-1', 'message-1', deps)
 
@@ -464,13 +523,13 @@ describe('loadMessageManifest', () => {
             },
         }
 
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: manifest.runId,
                 manifest: JSON.stringify(manifest),
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         const result = await loadMessageManifest('session-1', 'message-1', deps)
 
@@ -521,13 +580,13 @@ describe('loadMessageManifest', () => {
             },
         }
 
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: manifest.runId,
                 manifest: JSON.stringify(manifest),
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         try {
             await loadMessageManifest('session-1', 'message-1', deps)
@@ -588,13 +647,13 @@ describe('loadMessageManifest', () => {
             },
         }
 
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: manifest.runId,
                 manifest: JSON.stringify(manifest),
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         try {
             await loadMessageManifest('session-1', 'message-1', deps)
@@ -664,13 +723,13 @@ describe('loadMessageManifest', () => {
             },
         }
 
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: manifest.runId,
                 manifest: JSON.stringify(manifest),
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         try {
             await loadMessageManifest('session-1', 'message-1', deps)
@@ -687,13 +746,13 @@ describe('loadMessageManifest', () => {
         const { loadMessageManifest } = await importActualSessionModule()
         const { SessionError } = await importActualSessionErrors()
         const db = createMockDb()
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: 'run-3',
                 manifest: '{not-valid-json',
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         try {
             await loadMessageManifest('session-1', 'message-1', {
@@ -712,13 +771,13 @@ describe('loadMessageManifest', () => {
         const { loadMessageManifest } = await importActualSessionModule()
         const { SessionError } = await importActualSessionErrors()
         const db = createMockDb()
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: 'run-4',
                 manifest: '{}',
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         try {
             await loadMessageManifest('session-1', 'message-1', {
@@ -737,7 +796,7 @@ describe('loadMessageManifest', () => {
         const { loadMessageManifest } = await importActualSessionModule()
         const { SessionError } = await importActualSessionErrors()
         const db = createMockDb()
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: 'run-5',
@@ -754,7 +813,7 @@ describe('loadMessageManifest', () => {
                     modelRequest: {},
                 }),
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         try {
             await loadMessageManifest('session-1', 'message-1', {
@@ -773,7 +832,7 @@ describe('loadMessageManifest', () => {
         const { loadMessageManifest } = await importActualSessionModule()
         const { SessionError } = await importActualSessionErrors()
         const db = createMockDb()
-        db.chatMessageManifest.findUnique = mock(() =>
+        db.chatMessageManifest.findFirst = mock(() =>
             Promise.resolve({
                 version: 1,
                 runId: 'run-6',
@@ -817,7 +876,7 @@ describe('loadMessageManifest', () => {
                     },
                 }),
             }),
-        ) as typeof db.chatMessageManifest.findUnique
+        ) as typeof db.chatMessageManifest.findFirst
 
         try {
             await loadMessageManifest('session-1', 'message-1', {

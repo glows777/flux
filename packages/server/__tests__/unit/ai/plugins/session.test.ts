@@ -272,11 +272,17 @@ describe('sessionPlugin', () => {
         console.error = errorSpy as typeof console.error
 
         try {
-            await plugin.afterRun?.(ctx)
+            await expect(plugin.afterRun?.(ctx)).rejects.toThrow(
+                'manifest write failed',
+            )
         } finally {
             console.error = originalConsoleError
         }
 
+        expect(deps.appendMessage).toHaveBeenCalledWith(
+            's1',
+            ctx.responseMessage,
+        )
         expect(deps.touchSession).toHaveBeenCalledWith('s1')
         expect(deps.clearSessionError).toHaveBeenCalledWith('s1')
         expect(errorSpy).toHaveBeenCalledTimes(1)

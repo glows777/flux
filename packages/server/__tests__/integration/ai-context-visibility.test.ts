@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
+import type { AgentRunStore } from '@/core/ai/agent-run'
 import {
     mockConvertToModelMessages,
     mockGenerateText,
@@ -144,6 +145,20 @@ mock.module('ai', () => ({
     stepCountIs: mockStepCountIs,
 }))
 
+function createFakeAgentRunStore(): AgentRunStore {
+    return {
+        createRunningRun: mock(() => Promise.resolve()),
+        createFailedRun: mock(async (input) => ({
+            runId: input.runId ?? 'generated-failed-run',
+        })),
+        attachSession: mock(() => Promise.resolve()),
+        succeedIfRunning: mock(() => Promise.resolve()),
+        failIfRunning: mock(() => Promise.resolve()),
+        recordWarnings: mock(() => Promise.resolve()),
+        reconcileStaleRunningRuns: mock(() => Promise.resolve({ count: 0 })),
+    }
+}
+
 async function loadModules() {
     const runtimeMod = await import('../../src/core/ai/runtime')
     const tradingPresetMod = await import(
@@ -243,6 +258,7 @@ describe('ai context visibility integration', () => {
                 provider: 'anthropic',
                 modelId: 'claude-sonnet-4-6',
             } as Parameters<typeof createAIRuntime>[0]['model'],
+            agentRunStore: createFakeAgentRunStore(),
             plugins: tradingAgentPreset({
                 toolDeps: {
                     getQuote: async () => ({
@@ -335,6 +351,7 @@ describe('ai context visibility integration', () => {
         const { createAIRuntime, autoTradingAgentPreset } = await loadModules()
         const runtime = await createAIRuntime({
             model: {} as Parameters<typeof createAIRuntime>[0]['model'],
+            agentRunStore: createFakeAgentRunStore(),
             plugins: autoTradingAgentPreset({
                 alpacaClient: {
                     getAccount: async () => ({ equity: 100000 }),

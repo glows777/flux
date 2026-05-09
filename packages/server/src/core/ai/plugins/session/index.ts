@@ -191,6 +191,8 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
 
         async afterRun(ctx): Promise<void> {
             await deps.appendMessage(ctx.sessionId, ctx.responseMessage)
+
+            let manifestError: unknown
             try {
                 await deps.saveMessageManifest(
                     ctx.sessionId,
@@ -199,11 +201,15 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
                 )
             } catch (error) {
                 console.error('Failed to save message manifest', error)
+                manifestError = error
             }
+
             await deps.touchSession(ctx.sessionId)
             // Idempotent safety net — beforeRun already cleared, but double-clear
             // guarantees no stale error if beforeRun's clear somehow failed silently.
             await deps.clearSessionError(ctx.sessionId)
+
+            if (manifestError) throw manifestError
         },
 
         async onError(ctx, error: Error): Promise<void> {

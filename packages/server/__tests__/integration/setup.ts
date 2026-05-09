@@ -26,6 +26,8 @@ import {
     mockBuildAgentSystemPrompt,
     mockBuildGlobalSystemPrompt,
     mockClearChannelSession,
+    mockClearSessionError,
+    mockConsumeStream,
     mockConvertToModelMessages,
     // runtime mocks
     mockCreateAIRuntime,
@@ -75,18 +77,17 @@ import {
     mockListAllSessions,
     mockListCronJobRuns,
     mockListCronJobs,
-    mockClearSessionError,
     mockListSessions,
     mockLoadMemoryContext,
-    mockLoadMessages,
     mockLoadMessageManifest,
+    mockLoadMessages,
     // session — loadMessagesForTranscript
     mockLoadMessagesForTranscript,
     mockLoadSessionError,
-    mockSaveSessionError,
-    mockSaveMessageManifest,
     mockRemoveFromWatchlist,
     mockRenameSession,
+    mockSaveMessageManifest,
+    mockSaveSessionError,
     // search mock
     mockSearchStocks,
     mockStepCountIs,
@@ -122,6 +123,21 @@ if (!process.env.OPENAI_BASE_URL) {
     process.env.OPENAI_BASE_URL = 'http://localhost'
 }
 
+// ─── DB delegate mocks ───
+
+export const mockAgentRunCreate = mock(() => Promise.resolve({ id: 'run-1' }))
+export const mockAgentRunUpdate = mock(() => Promise.resolve({ id: 'run-1' }))
+export const mockAgentRunUpdateMany = mock(() => Promise.resolve({ count: 1 }))
+export const mockAgentRunFindUnique = mock(() =>
+    Promise.resolve({ id: 'run-1', startedAt: new Date(), warnings: [] }),
+)
+export const mockAgentRunDelegate = {
+    create: mockAgentRunCreate,
+    update: mockAgentRunUpdate,
+    updateMany: mockAgentRunUpdateMany,
+    findUnique: mockAgentRunFindUnique,
+}
+
 // ─── Module mocks (must be in preload or test file for bun) ───
 
 mock.module('@/core/db', () => ({
@@ -151,6 +167,7 @@ mock.module('@/core/db', () => ({
             findMany: mock(() => Promise.resolve([])),
             count: mock(() => Promise.resolve(0)),
         },
+        agentRun: mockAgentRunDelegate,
         chatSession: {
             findFirst: mock(() => Promise.resolve(null)),
             create: mock(() => Promise.resolve({ id: 'session-1' })),
@@ -305,7 +322,7 @@ mock.module('@/core/ai/research', () => ({
     X_SEARCH_SYSTEM_PROMPT: 'mock prompt',
 }))
 
-    mock.module('@/core/ai/session', () => ({
+mock.module('@/core/ai/session', () => ({
     SessionError: MockSessionError,
     listSessions: mockListSessions,
     listAllSessions: mockListAllSessions,
@@ -326,6 +343,7 @@ mock.module('@/core/ai/research', () => ({
 }))
 
 mock.module('ai', () => ({
+    consumeStream: mockConsumeStream,
     generateText: mockGenerateText,
     streamText: mockStreamText,
     tool: mockTool,

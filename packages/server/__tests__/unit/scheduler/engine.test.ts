@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { CronJob } from '@prisma/client'
+import type { AgentRunStore } from '@/core/ai/agent-run'
 import { CronScheduler, parseSchedule } from '@/scheduler/engine'
+import type { ExecutionResult, TaskExecutor } from '@/scheduler/executor'
 
 type SchedulerDeps = ConstructorParameters<typeof CronScheduler>[0]
 type SchedulerGateway = SchedulerDeps['gateway']
@@ -13,6 +15,7 @@ type TestableCronScheduler = CronScheduler & {
     readonly jobs: Map<string, { stop(): void }>
     readonly running: Set<string>
     readonly runningJobStartedAt: Map<string, number>
+    executor: TaskExecutor
     oldestRunningJobStartedAt: number | null
     stop: () => Promise<void>
     start: () => Promise<void>
@@ -24,7 +27,12 @@ function asTestableScheduler(scheduler: CronScheduler): TestableCronScheduler {
 
 function createGateway(
     gatewayChat: ReturnType<typeof mock> = mock(() =>
-        Promise.resolve({ success: true, text: 'done' }),
+        Promise.resolve({
+            success: true,
+            text: 'done',
+            runId: 'run-1',
+            sessionId: 'session-1',
+        }),
     ),
 ): SchedulerGateway {
     return {
@@ -50,6 +58,20 @@ function createPrisma(
             ...overrides.cronJobRun,
         },
     } as SchedulerPrisma
+}
+
+function createFakeAgentRunStore(): AgentRunStore {
+    return {
+        createRunningRun: mock(() => Promise.resolve()),
+        createFailedRun: mock(async (input) => ({
+            runId: input.runId ?? 'generated-failed-run',
+        })),
+        attachSession: mock(() => Promise.resolve()),
+        succeedIfRunning: mock(() => Promise.resolve()),
+        failIfRunning: mock(() => Promise.resolve()),
+        recordWarnings: mock(() => Promise.resolve()),
+        reconcileStaleRunningRuns: mock(() => Promise.resolve({ count: 0 })),
+    }
 }
 
 const baseJob: CronJob = {
@@ -94,6 +116,7 @@ function createScheduler(options?: {
             },
             cronJobRun: { create: mockRunCreate },
         }),
+        agentRunStore: createFakeAgentRunStore(),
     })
 
     return {
@@ -274,7 +297,14 @@ describe('CronScheduler.handleResult via runNow', () => {
 
         scheduler = new CronScheduler({
             gateway: createGateway(
-                mock(() => Promise.resolve({ success: true, text: 'done' })),
+                mock(() =>
+                    Promise.resolve({
+                        success: true,
+                        text: 'done',
+                        runId: 'run-1',
+                        sessionId: 'session-1',
+                    }),
+                ),
             ),
             prisma: createPrisma({
                 cronJob: {
@@ -285,6 +315,7 @@ describe('CronScheduler.handleResult via runNow', () => {
                 },
                 cronJobRun: { create: mockCronJobRunCreate },
             }),
+            agentRunStore: createFakeAgentRunStore(),
         })
     })
 
@@ -293,6 +324,7 @@ describe('CronScheduler.handleResult via runNow', () => {
 
         expect(mockCronJobRunCreate).toHaveBeenCalledTimes(1)
         const call = mockCronJobRunCreate.mock.calls[0][0]
+        expect(call.data.id).toBe('run-1')
         expect(call.data.jobId).toBe('job-1')
         expect(call.data.status).toBe('success')
         expect(call.data.triggeredBy).toBe('manual')
@@ -308,7 +340,15 @@ describe('CronScheduler.handleResult via runNow', () => {
     test('writes an error run record on failure', async () => {
         const failScheduler = new CronScheduler({
             gateway: createGateway(
-                mock(() => Promise.resolve({ success: false, text: '' })),
+                mock(() =>
+                    Promise.resolve({
+                        success: false,
+                        text: '',
+                        runId: 'run-error',
+                        sessionId: 'session-error',
+                        error: 'AI failed',
+                    }),
+                ),
             ),
             prisma: createPrisma({
                 cronJob: {
@@ -319,14 +359,58 @@ describe('CronScheduler.handleResult via runNow', () => {
                 },
                 cronJobRun: { create: mockCronJobRunCreate },
             }),
+            agentRunStore: createFakeAgentRunStore(),
         })
 
         await failScheduler.runNow('job-1')
 
         expect(mockCronJobRunCreate).toHaveBeenCalledTimes(1)
         const call = mockCronJobRunCreate.mock.calls[0][0]
+        expect(call.data.id).toBe('run-error')
         expect(call.data.status).toBe('error')
         expect(call.data.triggeredBy).toBe('manual')
+    })
+
+    test('writes timeout run record and lastRunStatus', async () => {
+        const timeoutScheduler = new CronScheduler({
+            gateway: createGateway(),
+            prisma: createPrisma({
+                cronJob: {
+                    findMany: mock(() => Promise.resolve([])),
+                    update: mockCronJobUpdate,
+                    findFirst: mockCronJobFindFirst,
+                    count: mockCronJobCount,
+                },
+                cronJobRun: { create: mockCronJobRunCreate },
+            }),
+            agentRunStore: createFakeAgentRunStore(),
+        })
+        const timeoutResult: ExecutionResult = {
+            status: 'timeout',
+            success: false,
+            runId: 'run-timeout',
+            output: 'Cron job timed out: Execution timed out',
+            error: 'Execution timed out',
+        }
+        asTestableScheduler(timeoutScheduler).executor = {
+            execute: mock(() => Promise.resolve(timeoutResult)),
+        } as unknown as TaskExecutor
+
+        await timeoutScheduler.runNow('job-1')
+
+        expect(mockCronJobUpdate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({ lastRunStatus: 'timeout' }),
+            }),
+        )
+        expect(mockCronJobRunCreate).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    id: 'run-timeout',
+                    status: 'timeout',
+                }),
+            }),
+        )
     })
 
     test('soft-deletes job and removes from scheduler after MAX_RETRIES failures', async () => {
@@ -338,7 +422,15 @@ describe('CronScheduler.handleResult via runNow', () => {
 
         const failScheduler = new CronScheduler({
             gateway: createGateway(
-                mock(() => Promise.resolve({ success: false, text: 'err' })),
+                mock(() =>
+                    Promise.resolve({
+                        success: false,
+                        text: 'err',
+                        runId: 'run-error',
+                        sessionId: 'session-error',
+                        error: 'AI failed',
+                    }),
+                ),
             ),
             prisma: createPrisma({
                 cronJob: {
@@ -349,6 +441,7 @@ describe('CronScheduler.handleResult via runNow', () => {
                 },
                 cronJobRun: { create: mockCronJobRunCreate },
             }),
+            agentRunStore: createFakeAgentRunStore(),
         })
 
         await failScheduler.start()

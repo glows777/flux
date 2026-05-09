@@ -1,6 +1,6 @@
 import { sValidator } from '@hono/standard-validator'
 import type { UIMessage } from 'ai'
-import { generateId } from 'ai'
+import { consumeStream as consumeSseStream, generateId } from 'ai'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { SessionError } from '@/core/ai/session'
@@ -46,6 +46,7 @@ export function createChatRoutes(gateway: Gateway) {
 
                 return output.streamResult.toUIMessageStreamResponse({
                     originalMessages: messages as UIMessage[],
+                    consumeSseStream,
                     generateMessageId: generateId,
                     sendReasoning: true,
                     sendSources: false,
@@ -54,10 +55,41 @@ export function createChatRoutes(gateway: Gateway) {
                     }),
                     onFinish: async ({
                         responseMessage,
+                        isAborted,
                     }: {
                         responseMessage: UIMessage
+                        isAborted: boolean
                     }) => {
+                        if (isAborted) {
+                            const abortedError = Object.assign(
+                                new Error('Stream aborted'),
+                                {
+                                    code: 'ABORTED',
+                                },
+                            )
+                            try {
+                                await output.recordFailure(abortedError)
+                            } catch (recordError) {
+                                console.error(
+                                    'Failed to record aborted chat stream failure',
+                                    recordError,
+                                )
+                            }
+                            return
+                        }
+
                         await output.finalize(responseMessage)
+                    },
+                    onError: (error) => {
+                        void output
+                            .recordFailure(error)
+                            .catch((recordError) => {
+                                console.error(
+                                    'Failed to record chat stream failure',
+                                    recordError,
+                                )
+                            })
+                        return 'Failed to generate chat response'
                     },
                 })
             } catch (error) {

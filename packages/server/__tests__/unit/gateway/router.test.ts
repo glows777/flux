@@ -3,6 +3,19 @@ import type { AgentType, AIRuntime, ChatOutput } from '@/core/ai/runtime/types'
 import type { GatewayInput } from '@/gateway/router'
 import { Router } from '@/gateway/router'
 
+function createContextManifest(
+    runId = 'run-1',
+): ReturnType<ChatOutput['getContextManifest']> {
+    return {
+        runId,
+        createdAt: new Date().toISOString(),
+        input: {} as never,
+        pluginOutputs: [],
+        assembledContext: {} as never,
+        modelRequest: {} as never,
+    }
+}
+
 function createMockRuntime(): AIRuntime {
     const mockConsumeStream = mock(() =>
         Promise.resolve({
@@ -14,14 +27,7 @@ function createMockRuntime(): AIRuntime {
             },
             toolCalls: [],
             usage: { inputTokens: 100, outputTokens: 50 },
-            contextManifest: {
-                runId: 'run-1',
-                createdAt: new Date().toISOString(),
-                input: {} as never,
-                pluginOutputs: [],
-                assembledContext: {} as never,
-                modelRequest: {} as never,
-            },
+            contextManifest: createContextManifest(),
         }),
     )
 
@@ -39,17 +45,12 @@ function createMockRuntime(): AIRuntime {
                         new Response('mock stream'),
                     toUIMessageStream: () => new ReadableStream(),
                 },
+                runId: 'run-1',
                 sessionId: 'session-1',
                 consumeStream: mockConsumeStream,
                 finalize: mock(() => Promise.resolve()),
-                getContextManifest: () => ({
-                    runId: 'run-1',
-                    createdAt: new Date().toISOString(),
-                    input: {} as never,
-                    pluginOutputs: [],
-                    assembledContext: {} as never,
-                    modelRequest: {} as never,
-                }),
+                recordFailure: mock(() => Promise.resolve()),
+                getContextManifest: () => createContextManifest(),
             } as ChatOutput),
         ),
         dispose: mock(() => Promise.resolve()),
@@ -123,6 +124,7 @@ describe('Router', () => {
 
     test('chat passes through all input fields to runtime', async () => {
         const tradingRuntime = createMockRuntime()
+        const abortController = new AbortController()
 
         const router = new Router({
             runtimes: {
@@ -138,16 +140,25 @@ describe('Router', () => {
             content: 'Check NVDA',
             sourceId: 'guild:ch',
             userId: 'user-1',
+            sessionId: 'session-input',
             symbol: 'NVDA',
+            runId: 'run-input',
+            cronJobId: 'cron-job-1',
+            abortSignal: abortController.signal,
         })
 
         const callArgs = (tradingRuntime.chat as ReturnType<typeof mock>).mock
             .calls[0]?.[0]
+        expect(callArgs.runId).toBe('run-input')
+        expect(callArgs.sessionId).toBe('session-input')
         expect(callArgs.channel).toBe('discord')
         expect(callArgs.agentType).toBe('trading-agent')
+        expect(callArgs.mode).toBe('conversation')
         expect(callArgs.sourceId).toBe('guild:ch')
         expect(callArgs.userId).toBe('user-1')
         expect(callArgs.symbol).toBe('NVDA')
+        expect(callArgs.cronJobId).toBe('cron-job-1')
+        expect(callArgs.abortSignal).toBe(abortController.signal)
     })
 
     test('chat returns ChatOutput from runtime', async () => {

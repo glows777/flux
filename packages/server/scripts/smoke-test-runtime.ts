@@ -8,12 +8,27 @@
 
 import 'dotenv/config'
 import type { UIMessage } from 'ai'
+import type { AgentRunStore } from '../src/core/ai/agent-run'
 import { promptPlugin } from '../src/core/ai/plugins/prompt'
-import { webChatPreset } from '../src/core/ai/presets/web-chat'
+import { tradingAgentPreset } from '../src/core/ai/presets'
 import { getModel } from '../src/core/ai/providers'
 import { createAIRuntime } from '../src/core/ai/runtime'
 
 const DIVIDER = '─'.repeat(60)
+
+function createFakeAgentRunStore(): AgentRunStore {
+    return {
+        createRunningRun: async () => {},
+        createFailedRun: async (input) => ({
+            runId: input.runId ?? 'smoke-failed-run',
+        }),
+        attachSession: async () => {},
+        succeedIfRunning: async () => {},
+        failIfRunning: async () => {},
+        recordWarnings: async () => {},
+        reconcileStaleRunningRuns: async () => ({ count: 0 }),
+    }
+}
 
 // ── Test 1: 最小 runtime ──
 
@@ -22,6 +37,7 @@ async function testMinimal() {
 
     const runtime = await createAIRuntime({
         model: getModel('main'),
+        agentRunStore: createFakeAgentRunStore(),
         plugins: [
             promptPlugin({ mode: 'global' }),
             // 跳过 session（避免 DB 依赖）
@@ -53,16 +69,16 @@ async function testMinimal() {
     await runtime.dispose()
 }
 
-// ── Test 2: 完整 webChatPreset（含 data tools + research + display）──
+// ── Test 2: 完整 tradingAgentPreset（含 data tools + research + display）──
 
 async function testFullPreset() {
     console.log(
-        '\n📦 Test 2: 完整 webChatPreset（含 data/research/display tools）',
+        '\n📦 Test 2: 完整 tradingAgentPreset（含 data/research/display tools）',
     )
 
-    let plugins: ReturnType<typeof webChatPreset> = []
+    let plugins: ReturnType<typeof tradingAgentPreset> = []
     try {
-        plugins = webChatPreset()
+        plugins = tradingAgentPreset()
         console.log(
             '   ✅ Preset 创建成功, plugins:',
             plugins.map((p) => p.name).join(', '),
@@ -74,6 +90,7 @@ async function testFullPreset() {
 
     const runtime = await createAIRuntime({
         model: getModel('main'),
+        agentRunStore: createFakeAgentRunStore(),
         plugins,
         defaults: { thinkingBudget: 4096 },
     })
@@ -119,6 +136,7 @@ async function testToolConflict() {
     try {
         await createAIRuntime({
             model: getModel('main'),
+            agentRunStore: createFakeAgentRunStore(),
             plugins: [
                 {
                     name: 'a',

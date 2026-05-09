@@ -1,4 +1,5 @@
 import type { ChannelAdapter } from '@/channels/types'
+import { createRunId } from '@/core/ai/agent-run'
 import type { ChatOutput } from '@/core/ai/runtime/types'
 import type { GatewayInput, Router, TriggerResult } from './router'
 
@@ -32,14 +33,23 @@ export class Gateway {
     }
 
     private async handleTrigger(input: GatewayInput): Promise<TriggerResult> {
+        const runId = input.runId ?? createRunId()
+        const normalizedInput: GatewayInput = { ...input, runId }
+
         let output: ChatOutput
         try {
-            output = await this.deps.router.chat(input)
+            output = await this.deps.router.chat(normalizedInput)
         } catch (error) {
             console.error('Gateway trigger AI execution failed:', error)
             const message =
                 error instanceof Error ? error.message : 'Unknown error'
-            return { text: '', sessionId: '', success: false, error: message }
+            return {
+                text: '',
+                sessionId: normalizedInput.sessionId ?? '',
+                runId,
+                success: false,
+                error: message,
+            }
         }
 
         let consumed: Awaited<ReturnType<ChatOutput['consumeStream']>>
@@ -52,6 +62,7 @@ export class Gateway {
             return {
                 text: '',
                 sessionId: output.sessionId,
+                runId: output.runId,
                 success: false,
                 error: message,
             }
@@ -59,23 +70,51 @@ export class Gateway {
 
         const { text } = consumed
 
-        if (input.channelTarget) {
-            const adapter = this.deps.channels.get(input.channelTarget.type)
+        if (normalizedInput.abortSignal?.aborted) {
+            const abortedError = Object.assign(new Error('Execution aborted'), {
+                code: 'ABORTED',
+            })
+            try {
+                await output.recordFailure(abortedError)
+            } catch (error) {
+                console.error(
+                    'Gateway trigger abort failure recording failed:',
+                    error,
+                )
+            }
+            return {
+                text: '',
+                sessionId: output.sessionId,
+                runId: output.runId,
+                success: false,
+                error: 'Execution aborted',
+            }
+        }
+
+        if (normalizedInput.channelTarget) {
+            const adapter = this.deps.channels.get(
+                normalizedInput.channelTarget.type,
+            )
             if (adapter) {
                 try {
                     await adapter.send(
-                        { channelId: input.channelTarget.channelId },
+                        { channelId: normalizedInput.channelTarget.channelId },
                         { content: text },
                     )
                 } catch (error) {
                     console.error(
-                        `Gateway push to ${input.channelTarget.type} failed:`,
+                        `Gateway push to ${normalizedInput.channelTarget.type} failed:`,
                         error,
                     )
                 }
             }
         }
 
-        return { text, sessionId: output.sessionId, success: true }
+        return {
+            text,
+            sessionId: output.sessionId,
+            runId: output.runId,
+            success: true,
+        }
     }
 }

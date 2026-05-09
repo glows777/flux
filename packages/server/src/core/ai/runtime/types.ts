@@ -1,4 +1,5 @@
 import type { LanguageModel, Tool, UIMessage } from 'ai'
+import type { AgentRunStore } from '@/core/ai/agent-run'
 import type { GatewayMode } from '@/gateway/router'
 
 // ── Tool Definition ──
@@ -266,10 +267,12 @@ export interface AIPlugin {
 export interface RuntimeOptions {
     model: LanguageModel
     plugins: AIPlugin[]
+    agentRunStore: AgentRunStore
     defaults?: Partial<ChatParams>
 }
 
 export interface ChatInput {
+    runId?: string
     sessionId?: string
     messages: UIMessage[]
     symbol?: string
@@ -278,6 +281,8 @@ export interface ChatInput {
     agentType?: AgentType
     sourceId?: string
     userId?: string
+    cronJobId?: string
+    abortSignal?: AbortSignal
 }
 
 export interface ConsumedResult {
@@ -292,9 +297,11 @@ export interface ChatOutput {
     // streamText()'s generics are constrained (TOOLS extends ToolSet, OUTPUT extends Output).
     // We intentionally keep this surface loose during the migration.
     streamResult: ReturnType<typeof import('ai').streamText>
+    runId: string
     sessionId: string
     consumeStream(): Promise<ConsumedResult>
     finalize(responseMessage: UIMessage): Promise<void>
+    recordFailure(error: unknown): Promise<void>
     getContextManifest(): ContextManifest
 }
 

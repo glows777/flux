@@ -1,5 +1,6 @@
 import type { CronJob, PrismaClient } from '@prisma/client'
 import { Cron } from 'croner'
+import type { AgentRunStore } from '@/core/ai/agent-run'
 import type { Gateway } from '@/gateway/gateway'
 import { type ExecutionResult, TaskExecutor } from './executor'
 
@@ -56,6 +57,7 @@ export function parseSchedule(schedule: string): string | null {
 interface CronSchedulerDeps {
     readonly gateway: Gateway
     readonly prisma: Pick<PrismaClient, 'cronJob' | 'cronJobRun'>
+    readonly agentRunStore: AgentRunStore
 }
 
 export interface SchedulerHealthResult {
@@ -78,7 +80,10 @@ export class CronScheduler {
     private isStarted = false
 
     constructor(private readonly deps: CronSchedulerDeps) {
-        this.executor = new TaskExecutor({ gateway: deps.gateway })
+        this.executor = new TaskExecutor({
+            gateway: deps.gateway,
+            agentRunStore: deps.agentRunStore,
+        })
     }
 
     async start(): Promise<void> {
@@ -287,9 +292,11 @@ export class CronScheduler {
             try {
                 await this.deps.prisma.cronJobRun.create({
                     data: {
+                        id: result.runId,
                         jobId,
-                        status: 'success',
+                        status: result.status,
                         output: result.output ?? null,
+                        error: result.error ?? null,
                         durationMs,
                         triggeredBy,
                     },
@@ -310,7 +317,7 @@ export class CronScheduler {
                 where: { id: jobId },
                 data: {
                     lastRunAt: new Date(),
-                    lastRunStatus: 'error',
+                    lastRunStatus: result.status,
                     lastRunError: result.error,
                     retryCount: newRetryCount,
                     ...(shouldDisable
@@ -321,8 +328,9 @@ export class CronScheduler {
             try {
                 await this.deps.prisma.cronJobRun.create({
                     data: {
+                        id: result.runId,
                         jobId,
-                        status: 'error',
+                        status: result.status,
                         output: result.output ?? null,
                         error: result.error ?? null,
                         durationMs,

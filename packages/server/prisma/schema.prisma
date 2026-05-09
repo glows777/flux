@@ -135,8 +135,43 @@ model ChatMessageManifest {
 
   session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
-  @@unique([sessionId, messageId])
+  @@index([sessionId, messageId, createdAt])
   @@index([sessionId, createdAt])
+}
+
+// AgentRun (统一 agent 执行底账)
+model AgentRun {
+  id            String   @id
+  status        String   // "queued" | "running" | "succeeded" | "failed" | "cancelled"
+  source        String   // "web" | "discord" | "cron" | "background" | "sub_agent"
+  mode          String   // "conversation" | "trigger"
+  agentType     String
+
+  sessionId     String?
+  messageId     String?
+  cronJobId     String?
+  parentRunId   String?
+
+  userId        String?
+  sourceId      String?
+
+  inputSummary  String?  @db.Text
+  outputSummary String?  @db.Text
+  error         Json?
+  usage         Json?
+  warnings      Json?
+
+  startedAt     DateTime @default(now())
+  finishedAt    DateTime?
+  durationMs    Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status, startedAt])
+  @@index([source, startedAt])
+  @@index([sessionId, startedAt])
+  @@index([cronJobId, startedAt])
+  @@index([parentRunId, startedAt])
 }
 
 // CronJob (定时任务配置)
@@ -151,7 +186,7 @@ model CronJob {
   userId        String                   // 创建者用户 ID
   enabled       Boolean   @default(true)
   lastRunAt     DateTime?
-  lastRunStatus String?                  // "success" | "error"
+  lastRunStatus String?                  // "success" | "error" | "timeout"
   lastRunError  String?
   retryCount    Int       @default(0)
   deletedAt     DateTime?                // 软删除时间，非 null 表示已删除

@@ -1,5 +1,6 @@
 import { DiscordAdapter } from './channels/discord/bot'
 import { getDiscordConfig } from './channels/discord/config'
+import { createPrismaAgentRunStore } from './core/ai/agent-run'
 import { tradingAgentPreset } from './core/ai/presets'
 import { autoTradingAgentPreset } from './core/ai/presets/auto-trading-agent'
 import { getModel, THINKING_BUDGET } from './core/ai/providers'
@@ -44,11 +45,17 @@ async function main() {
     // 1. Create AI runtime instances (2 runtimes only)
     const model = getModel('main')
     const defaults = { thinkingBudget: THINKING_BUDGET }
+    const agentRunStore = createPrismaAgentRunStore(prisma)
+    await agentRunStore.reconcileStaleRunningRuns({
+        olderThan: new Date(Date.now() - 30 * 60 * 1000),
+        reason: 'Server startup reconciled stale running run',
+    })
 
     const tradingRuntime = await createAIRuntime({
         model,
         plugins: tradingAgentPreset(),
         defaults,
+        agentRunStore,
     })
     const autoTradingRuntime = await createAIRuntime({
         model,
@@ -64,6 +71,7 @@ async function main() {
             },
         }),
         defaults,
+        agentRunStore,
     })
 
     // 1.5 Order sync service (WebSocket — real-time order status to DB + Discord)
@@ -113,7 +121,7 @@ async function main() {
         console.error('Failed to seed cron jobs:', error)
     }
 
-    scheduler = new CronScheduler({ gateway, prisma })
+    scheduler = new CronScheduler({ gateway, prisma, agentRunStore })
     await scheduler.start()
 
     // 5. Health monitor
