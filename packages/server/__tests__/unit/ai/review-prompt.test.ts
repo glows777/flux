@@ -7,8 +7,9 @@ describe('buildReviewAgentPrompt', () => {
         expect(prompt).toContain('复盘')
         expect(prompt).toContain('getTradeHistory')
         expect(prompt).toContain('getPortfolio')
-        expect(prompt).toContain('trading-lessons.md')
-        expect(prompt).toContain('memory_write')
+        expect(prompt).toContain('lessons slot')
+        expect(prompt).toContain('save_lesson')
+        expect(prompt).toContain('update_core_memory')
     })
 
     it('does not contain Trade Loop behavior', () => {

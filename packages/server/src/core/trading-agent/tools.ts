@@ -9,7 +9,7 @@
 
 import { tool } from 'ai'
 import { z } from 'zod'
-import { createMemoryTools } from '@/core/ai/memory/tools'
+import { createHistoryTool, createMemoryTools } from '@/core/ai/memory/tools'
 import { createResearchTools } from '@/core/ai/research'
 import { withTimeout } from '@/core/ai/timeout'
 import { createTools } from '@/core/ai/tools'
@@ -32,14 +32,14 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
 
     // ── Reused tool sets ──────────────────────────────────────────────────
 
-    const { memory_read, memory_write, memory_list } =
-        createMemoryTools(memoryDeps)
+    const { update_core_memory, save_lesson } = createMemoryTools(memoryDeps)
+    const { read_history } = createHistoryTool(memoryDeps)
 
     const { getHistory, calculateIndicators } = createTools(toolDeps)
 
     const tradingToolDeps = {
         alpacaClient,
-        db: db as Parameters<typeof createTradingTools>[0]['db'],
+        db: db as unknown as Parameters<typeof createTradingTools>[0]['db'],
         getQuote: async (s: string) => {
             const r = await alpacaClient.getLastTrade(s)
             return { price: r?.price ?? 0 }
@@ -321,9 +321,9 @@ export function createTradingAgentTools(deps: TradingAgentDeps) {
 
     return {
         // Memory (3)
-        memory_read,
-        memory_write,
-        memory_list,
+        update_core_memory,
+        save_lesson,
+        read_history,
         // Market data (2)
         getHistory,
         calculateIndicators,

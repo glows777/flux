@@ -164,6 +164,69 @@ describe('AgentRunStore', () => {
         expect(createData?.warnings).toBe(Prisma.JsonNull)
     })
 
+    test('attachSession stores a non-empty resolved session id', async () => {
+        const store = createPrismaAgentRunStore(fixture.db as never)
+        await store.createRunningRun({
+            runId: 'run-attach-session',
+            source: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+        })
+
+        await store.attachSession('run-attach-session', '  session-1  ')
+
+        expect(fixture.rows.get('run-attach-session')?.sessionId).toBe(
+            'session-1',
+        )
+    })
+
+    test('failIfRunning writes terminal failure fields and preserves succeeded runs', async () => {
+        const store = createPrismaAgentRunStore(fixture.db as never)
+        await store.createRunningRun({
+            runId: 'run-fail',
+            source: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+        })
+
+        await store.failIfRunning('run-fail', {
+            error: new Error('stream failed'),
+            code: 'STREAM_FAILED',
+            sessionId: 'session-1',
+        })
+
+        const failedRow = fixture.rows.get('run-fail')
+        expect(failedRow?.status).toBe('failed')
+        expect(failedRow?.sessionId).toBe('session-1')
+        expect(failedRow?.finishedAt).toBeInstanceOf(Date)
+        expect(failedRow?.durationMs).toEqual(expect.any(Number))
+        expect(failedRow?.error).toEqual({
+            message: 'stream failed',
+            name: 'Error',
+            code: 'STREAM_FAILED',
+        })
+
+        await store.createRunningRun({
+            runId: 'run-succeeded',
+            source: 'web',
+            mode: 'conversation',
+            agentType: 'trading-agent',
+        })
+        await store.succeedIfRunning('run-succeeded', {
+            messageId: 'msg-1',
+            outputSummary: 'done',
+        })
+
+        await store.failIfRunning('run-succeeded', {
+            error: new Error('late failure'),
+            code: 'LATE_FAILURE',
+        })
+
+        const succeededRow = fixture.rows.get('run-succeeded')
+        expect(succeededRow?.status).toBe('succeeded')
+        expect(succeededRow?.error).toBe(Prisma.JsonNull)
+    })
+
     test('createFailedRun uses supplied run id', async () => {
         const store = createPrismaAgentRunStore(fixture.db as never)
 

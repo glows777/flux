@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronRight, RefreshCcw, X } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type {
     MessageContextSegment,
     MessageContextState,
@@ -222,23 +222,16 @@ export function MessageContextDetailSheet({
     const closeButtonRef = useRef<HTMLButtonElement | null>(null)
     const previousFocusRef = useRef<HTMLElement | null>(null)
 
-    const groups = state.status === 'ready' ? buildSegmentGroups(state.record) : []
-    const segmentIdsSignature =
-        state.status === 'ready'
-            ? groups
-                  .flatMap((group) =>
-                      group.segments.map(
-                          (segment) =>
-                              `${group.key}:${getSegmentStateKey(messageId ?? 'unknown', segment.id)}:${
-                                  group.collapsedByDefault ? 'closed' : 'open'
-                              }`,
-                      ),
-                  )
-                  .join('|')
-            : ''
+    const groups = useMemo(
+        () =>
+            state.status === 'ready' ? buildSegmentGroups(state.record) : [],
+        [state],
+    )
 
     useEffect(() => {
-        setIsRawOpen(false)
+        if (!isOpen || messageId != null) {
+            setIsRawOpen(false)
+        }
     }, [messageId, isOpen])
 
     useEffect(() => {
@@ -278,7 +271,7 @@ export function MessageContextDetailSheet({
 
             return changed ? nextState : prev
         })
-    }, [isOpen, messageId, segmentIdsSignature, state.status])
+    }, [groups, isOpen, messageId, state.status])
 
     useEffect(() => {
         if (!isOpen) {
@@ -383,8 +376,9 @@ export function MessageContextDetailSheet({
 
             <aside
                 ref={sheetRef}
-                role={isModal ? 'dialog' : 'complementary'}
-                aria-modal={isModal ? 'true' : undefined}
+                {...(isModal
+                    ? { role: 'dialog', 'aria-modal': true }
+                    : { role: 'complementary' })}
                 aria-labelledby={titleId}
                 tabIndex={-1}
                 className='fixed inset-x-0 bottom-0 top-16 z-40 overflow-y-auto border-t border-white/10 bg-[#050505] p-4 text-slate-200 shadow-[-1px_0_0_rgba(255,255,255,0.05)] md:static md:inset-auto md:w-[clamp(420px,36vw,480px)] md:border-l md:border-t-0'
@@ -511,18 +505,17 @@ export function MessageContextDetailSheet({
                                                                 messageId,
                                                                 segment.id,
                                                             )
-                                                        ] ?? !group.collapsedByDefault
+                                                        ] ??
+                                                        !group.collapsedByDefault
                                                     }
                                                     onOpenChange={(nextOpen) =>
                                                         setSegmentOpenState(
                                                             (prev) => ({
                                                                 ...prev,
-                                                                [
-                                                                    getSegmentStateKey(
-                                                                        messageId,
-                                                                        segment.id,
-                                                                    )
-                                                                ]: nextOpen,
+                                                                [getSegmentStateKey(
+                                                                    messageId,
+                                                                    segment.id,
+                                                                )]: nextOpen,
                                                             }),
                                                         )
                                                     }
@@ -653,8 +646,8 @@ export function MessageContextDetailSheet({
                                         </p>
                                         <JsonBlock
                                             value={
-                                                state.record.manifest.modelRequest
-                                                    .systemText
+                                                state.record.manifest
+                                                    .modelRequest.systemText
                                             }
                                         />
                                     </div>

@@ -564,6 +564,100 @@ describe('createAIRuntime', () => {
         expect(agentRunStore.failIfRunning).toHaveBeenCalledTimes(1)
     })
 
+    test('does not finalize success when abort signal fires before consumeStream finalizes', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const abortController = new AbortController()
+        const ignoredAbortResponseMessage = {
+            id: 'assistant-after-abort',
+            role: 'assistant',
+            parts: [{ type: 'text', text: 'late text' }],
+        }
+
+        mockStreamText.mockImplementationOnce(() => ({
+            ...createMockStreamResult({ text: 'late text' }),
+            toUIMessageStream: (opts?: {
+                onFinish?: (payload: {
+                    responseMessage: typeof ignoredAbortResponseMessage
+                }) => void
+            }) =>
+                new ReadableStream({
+                    start(controller) {
+                        opts?.onFinish?.({
+                            responseMessage: ignoredAbortResponseMessage,
+                        })
+                        abortController.abort()
+                        controller.close()
+                    },
+                }),
+        }))
+
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'cron',
+            mode: 'trigger',
+            abortSignal: abortController.signal,
+        })
+
+        await expect(output.consumeStream()).rejects.toThrow('Stream aborted')
+        expect(agentRunStore.succeedIfRunning).not.toHaveBeenCalled()
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
+            output.runId,
+            expect.objectContaining({
+                error: expect.any(Error),
+                code: 'ABORTED',
+            }),
+        )
+    })
+
+    test('does not finalize success when abort signal fires while finalize resolves stream data', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const abortController = new AbortController()
+        let resolveText: (text: string) => void = () => {}
+        const delayedText = new Promise<string>((resolve) => {
+            resolveText = resolve
+        })
+
+        mockStreamText.mockImplementationOnce(() =>
+            createMockStreamResult({ text: delayedText }),
+        )
+
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'cron',
+            mode: 'trigger',
+            abortSignal: abortController.signal,
+        })
+        const consumePromise = output.consumeStream()
+
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        abortController.abort()
+        resolveText('late text')
+
+        await expect(consumePromise).rejects.toThrow('Stream aborted')
+        expect(agentRunStore.succeedIfRunning).not.toHaveBeenCalled()
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
+            output.runId,
+            expect.objectContaining({
+                error: expect.any(Error),
+                code: 'ABORTED',
+            }),
+        )
+    })
+
     test('records afterRun warnings after success', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const agentRunStore = createFakeAgentRunStore()

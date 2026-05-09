@@ -23,11 +23,8 @@ export interface HandleOrderUpdateDeps {
 function normalizeInstant(value: unknown): number | string | null {
     if (value == null) return null
     if (value instanceof Date) return value.getTime()
-    if (
-        typeof value === 'string' ||
-        typeof value === 'number' ||
-        typeof value === 'boolean'
-    ) {
+    if (typeof value === 'boolean') return String(value)
+    if (typeof value === 'string' || typeof value === 'number') {
         const timestamp = new Date(value).getTime()
         return Number.isNaN(timestamp) ? String(value) : timestamp
     }

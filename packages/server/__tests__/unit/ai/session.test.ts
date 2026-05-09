@@ -225,7 +225,9 @@ describe('renameSession', () => {
             '@/core/ai/session'
         )
         const db = createMockDb()
-        db.chatSession.findUnique.mockImplementation(() => Promise.resolve(null))
+        db.chatSession.findUnique.mockImplementation(() =>
+            Promise.resolve(null),
+        )
         const deps = { db } as unknown as SessionDeps
 
         try {
@@ -512,10 +514,9 @@ describe('loadSessionError', () => {
             Promise.resolve({ lastError: null }),
         ) as typeof db.chatSession.findUnique
 
-        const result = await loadSessionError(
-            's1',
-            { db } as unknown as SessionDeps,
-        )
+        const result = await loadSessionError('s1', {
+            db,
+        } as unknown as SessionDeps)
 
         expect(result).toBeNull()
     })
@@ -533,10 +534,9 @@ describe('loadSessionError', () => {
             }),
         ) as typeof db.chatSession.findUnique
 
-        const result = await loadSessionError(
-            's1',
-            { db } as unknown as SessionDeps,
-        )
+        const result = await loadSessionError('s1', {
+            db,
+        } as unknown as SessionDeps)
 
         expect(result).toEqual({
             message: 'boom',
@@ -552,10 +552,9 @@ describe('loadSessionError', () => {
             Promise.resolve({ lastError: 'not-an-object' }),
         ) as typeof db.chatSession.findUnique
 
-        const result = await loadSessionError(
-            's1',
-            { db } as unknown as SessionDeps,
-        )
+        const result = await loadSessionError('s1', {
+            db,
+        } as unknown as SessionDeps)
 
         expect(result).toBeNull()
     })

@@ -453,6 +453,16 @@ export async function createAIRuntime(
             )
         }
 
+        async function throwIfInputAborted(): Promise<void> {
+            if (!input.abortSignal?.aborted) return
+
+            streamAbortError ??= Object.assign(new Error('Stream aborted'), {
+                code: 'ABORTED',
+            })
+            await recordFailure(streamAbortError, 'ABORTED')
+            throw streamAbortError
+        }
+
         try {
             await agentRunStore.createRunningRun({
                 runId,
@@ -747,6 +757,8 @@ export async function createAIRuntime(
 
                 finalizePromise = (async () => {
                     try {
+                        await throwIfInputAborted()
+
                         const {
                             text,
                             usage,
@@ -797,6 +809,8 @@ export async function createAIRuntime(
                                 circuitBreakerState,
                             })
                         }
+
+                        await throwIfInputAborted()
 
                         if (streamAbortError) {
                             await recordFailure(streamAbortError, 'ABORTED')
@@ -855,6 +869,8 @@ export async function createAIRuntime(
                     } finally {
                         reader.releaseLock()
                     }
+
+                    await throwIfInputAborted()
 
                     if (capturedResponseMessage == null) {
                         throw new Error(

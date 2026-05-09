@@ -31,11 +31,7 @@ mock.module('@/components/detail/PeriodButton', () => ({
         active: boolean
         onClick: () => void
     }) => (
-        <button
-            type='button'
-            data-active={active}
-            onClick={onClick}
-        >
+        <button type='button' data-active={active} onClick={onClick}>
             {label}
         </button>
     ),

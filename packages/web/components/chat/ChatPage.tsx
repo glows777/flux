@@ -591,88 +591,97 @@ export function ChatPage() {
                                     let assistantMessageCount = 0
 
                                     return messages.map((msg, index) => {
-                                    const cutoffIndex =
-                                        messages.length - TRUNCATE_LIMIT
-                                    const showDivider =
-                                        messages.length > TRUNCATE_LIMIT &&
-                                        index === cutoffIndex
+                                        const cutoffIndex =
+                                            messages.length - TRUNCATE_LIMIT
+                                        const showDivider =
+                                            messages.length > TRUNCATE_LIMIT &&
+                                            index === cutoffIndex
 
-                                    let messageNode: React.ReactNode = null
-                                    if (msg.role === 'user') {
-                                        const textPart = msg.parts?.find(
-                                            (p) => p.type === 'text',
-                                        )
-                                        const text =
-                                            textPart && 'text' in textPart
-                                                ? textPart.text
-                                                : ''
-                                        messageNode = (
-                                            <UserMessage
-                                                key={msg.id}
-                                                content={text}
-                                            />
-                                        )
-                                    } else if (msg.role === 'assistant') {
-                                        assistantMessageCount += 1
-                                        const isLast =
-                                            index === messages.length - 1
-                                        const contextState =
-                                            messageContextStates[msg.id] ?? {
-                                                status: 'idle',
-                                            }
-                                        const isContextOpen =
-                                            activeContextMessageId === msg.id
-                                        const actionLabel = `assistant message ${assistantMessageCount}`
-                                        messageNode = (
-                                            <div
-                                                key={msg.id}
-                                                className='space-y-3'
-                                            >
-                                                <AssistantMessage
-                                                    message={msg}
-                                                    isLast={isLast}
-                                                    isLoading={isLoading}
+                                        let messageNode: React.ReactNode = null
+                                        if (msg.role === 'user') {
+                                            const textPart = msg.parts?.find(
+                                                (p) => p.type === 'text',
+                                            )
+                                            const text =
+                                                textPart && 'text' in textPart
+                                                    ? textPart.text
+                                                    : ''
+                                            messageNode = (
+                                                <UserMessage
+                                                    key={msg.id}
+                                                    content={text}
                                                 />
-                                                <MessageContextSummaryStrip
-                                                    state={contextState}
-                                                    isSelected={isContextOpen}
-                                                    actionLabel={actionLabel}
-                                                    onOpen={() =>
-                                                        handleOpenContextMessage(
-                                                            msg.id,
-                                                        )
-                                                    }
-                                                    onRetry={() => {
-                                                        const activeSessionId =
-                                                            sessionIdRef.current
-                                                        if (!activeSessionId)
-                                                            return
+                                            )
+                                        } else if (msg.role === 'assistant') {
+                                            assistantMessageCount += 1
+                                            const isLast =
+                                                index === messages.length - 1
+                                            const contextState =
+                                                messageContextStates[
+                                                    msg.id
+                                                ] ?? {
+                                                    status: 'idle',
+                                                }
+                                            const isContextOpen =
+                                                activeContextMessageId ===
+                                                msg.id
+                                            const actionLabel = `assistant message ${assistantMessageCount}`
+                                            messageNode = (
+                                                <div
+                                                    key={msg.id}
+                                                    className='space-y-3'
+                                                >
+                                                    <AssistantMessage
+                                                        message={msg}
+                                                        isLast={isLast}
+                                                        isLoading={isLoading}
+                                                    />
+                                                    <MessageContextSummaryStrip
+                                                        state={contextState}
+                                                        isSelected={
+                                                            isContextOpen
+                                                        }
+                                                        actionLabel={
+                                                            actionLabel
+                                                        }
+                                                        onOpen={() =>
+                                                            handleOpenContextMessage(
+                                                                msg.id,
+                                                            )
+                                                        }
+                                                        onRetry={() => {
+                                                            const activeSessionId =
+                                                                sessionIdRef.current
+                                                            if (
+                                                                !activeSessionId
+                                                            )
+                                                                return
 
-                                                        setActiveContextMessageId(
-                                                            msg.id,
-                                                        )
-                                                        void loadMessageContext(
-                                                            activeSessionId,
-                                                            msg.id,
-                                                            {
-                                                                force: true,
-                                                            },
-                                                        )
-                                                    }}
-                                                />
-                                            </div>
-                                        )
-                                    }
+                                                            setActiveContextMessageId(
+                                                                msg.id,
+                                                            )
+                                                            void loadMessageContext(
+                                                                activeSessionId,
+                                                                msg.id,
+                                                                {
+                                                                    force: true,
+                                                                },
+                                                            )
+                                                        }}
+                                                    />
+                                                </div>
+                                            )
+                                        }
 
-                                    if (showDivider) {
-                                        return (
-                                            <div key={msg.id}>
-                                                <TruncationNotice />
-                                                {messageNode}
-                                            </div>
-                                        )
-                                    }
-                                    return messageNode
+                                        if (showDivider) {
+                                            return (
+                                                <div key={msg.id}>
+                                                    <TruncationNotice />
+                                                    {messageNode}
+                                                </div>
+                                            )
+                                        }
+                                        return messageNode
                                     })
                                 })()}
 
@@ -683,14 +692,10 @@ export function ChatPage() {
                                     />
                                 ) : persistedError ? (
                                     <ErrorBanner
-                                        error={
-                                            Object.assign(
-                                                new Error(
-                                                    persistedError.message,
-                                                ),
-                                                { name: persistedError.name },
-                                            )
-                                        }
+                                        error={Object.assign(
+                                            new Error(persistedError.message),
+                                            { name: persistedError.name },
+                                        )}
                                         onReload={handleRetry}
                                     />
                                 ) : null}

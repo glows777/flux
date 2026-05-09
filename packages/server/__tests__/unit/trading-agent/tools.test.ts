@@ -129,9 +129,9 @@ describe('createTradingAgentTools', () => {
         const names = Object.keys(tools)
 
         const expected = [
-            'memory_read',
-            'memory_write',
-            'memory_list',
+            'update_core_memory',
+            'save_lesson',
+            'read_history',
             'getHistory',
             'calculateIndicators',
             'getPortfolio',

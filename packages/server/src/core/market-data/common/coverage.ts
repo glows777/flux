@@ -5,8 +5,11 @@ export interface CoverageStore {
     updateCoveredFrom(key: string, from: Date): Promise<void>
 }
 
-export interface CoveredDataSource<T> {
-    get(key: string, options: { days: number }): Promise<T>
+export interface CoveredDataSource<
+    T,
+    P extends Record<string, unknown> = Record<string, never>,
+> {
+    get(key: string, options: P & { readonly days: number }): Promise<T>
 }
 
 /**
@@ -23,9 +26,12 @@ export function withCoverage<
 >(
     source: CachedDataSource<T, P>,
     coverageStore: CoverageStore,
-): CoveredDataSource<T> {
+): CoveredDataSource<T, P> {
     return {
-        async get(key: string, options: { days: number }): Promise<T> {
+        async get(
+            key: string,
+            options: P & { readonly days: number },
+        ): Promise<T> {
             const requestedFrom = new Date(
                 Date.now() - options.days * 24 * 60 * 60 * 1000,
             )

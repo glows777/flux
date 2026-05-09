@@ -10,7 +10,9 @@ import {
 } from './store'
 import { type MemorySlot, VALID_SLOTS } from './types'
 
-const SLOT_ENUM = z.enum(VALID_SLOTS as [MemorySlot, ...MemorySlot[]])
+const SLOT_ENUM = z.enum(
+    VALID_SLOTS as unknown as [MemorySlot, ...MemorySlot[]],
+)
 
 const TOOL_TIMEOUTS = {
     update_core_memory: 5_000,

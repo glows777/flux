@@ -280,8 +280,7 @@ describe('loadMessageManifest', () => {
     })
 
     it('loads and parses a stored payload by run id', async () => {
-        const { loadMessageManifestByRunId } =
-            await importActualSessionModule()
+        const { loadMessageManifestByRunId } = await importActualSessionModule()
         const db = createMockDb()
         const manifest = createManifest({ runId: 'run-2' })
 
@@ -397,9 +396,7 @@ describe('loadMessageManifest', () => {
 
         const result = await loadMessageManifest('session-1', 'message-1', deps)
 
-        expect(result?.manifest.cachePlan?.modelId).toBe(
-            'claude-sonnet-4-6',
-        )
+        expect(result?.manifest.cachePlan?.modelId).toBe('claude-sonnet-4-6')
         expect(result?.manifest.cachePlan?.minCacheablePrefixTokens).toBe(2048)
         expect(
             result?.manifest.cachePlan?.eligibility.minCacheablePrefixTokens,

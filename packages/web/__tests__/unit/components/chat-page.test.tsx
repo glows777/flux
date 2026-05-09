@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import {
-    cleanup,
     act,
+    cleanup,
     fireEvent,
     render,
     screen,
@@ -165,8 +165,9 @@ mock.module('@/components/chat/messages/AssistantMessage', () => ({
         children?: ReactNode
     }) => (
         <div>
-            {message?.parts?.find((part) => part.type === 'text' && 'text' in part)
-                ?.text ?? null}
+            {message?.parts?.find(
+                (part) => part.type === 'text' && 'text' in part,
+            )?.text ?? null}
             {children}
         </div>
     ),
@@ -1110,11 +1111,7 @@ describe('ChatPage', () => {
         fireEvent.click(
             screen.getByRole('button', { name: /^close context details$/i }),
         )
-        await waitFor(() =>
-            expect(
-                queryContextSheet(),
-            ).toBeNull(),
-        )
+        await waitFor(() => expect(queryContextSheet()).toBeNull())
         expect(
             screen
                 .getByRole('button', {
@@ -1198,17 +1195,11 @@ describe('ChatPage', () => {
 
         fireEvent.click(summaryButton)
         await findContextSheet()
-        expect(
-            screen.getByRole('button', { name: /viewing/i }),
-        ).toBeDefined()
+        expect(screen.getByRole('button', { name: /viewing/i })).toBeDefined()
 
         fireEvent.click(screen.getByRole('button', { name: /viewing/i }))
 
-        await waitFor(() =>
-            expect(
-                queryContextSheet(),
-            ).toBeNull(),
-        )
+        await waitFor(() => expect(queryContextSheet()).toBeNull())
         expect(
             screen.getByRole('button', { name: /view context/i }),
         ).toBeDefined()
@@ -1293,8 +1284,9 @@ describe('ChatPage', () => {
 
         expect(await findContextSheet()).toBeDefined()
         expect(
-            screen.getByText((_, element) =>
-                element?.textContent === 'Message message-assistant-1',
+            screen.getByText(
+                (_, element) =>
+                    element?.textContent === 'Message message-assistant-1',
             ),
         ).toBeDefined()
         expect(readyButtons[0]?.getAttribute('aria-pressed')).toBe('true')
@@ -1311,8 +1303,9 @@ describe('ChatPage', () => {
         )
         await waitFor(() =>
             expect(
-                screen.getByText((_, element) =>
-                    element?.textContent === 'Message message-assistant-2',
+                screen.getByText(
+                    (_, element) =>
+                        element?.textContent === 'Message message-assistant-2',
                 ),
             ).toBeDefined(),
         )
@@ -1322,9 +1315,7 @@ describe('ChatPage', () => {
                     element?.textContent === 'Message message-assistant-1',
             ),
         ).toBeNull()
-        expect(
-            queryContextSheet(),
-        ).toBeDefined()
+        expect(queryContextSheet()).toBeDefined()
         expect(
             screen
                 .getAllByRole('button')
@@ -1413,13 +1404,9 @@ describe('ChatPage', () => {
         )
 
         await findContextSheet()
-        expect(
-            screen.getByRole('button', { name: /viewing/i }),
-        ).toBeDefined()
+        expect(screen.getByRole('button', { name: /viewing/i })).toBeDefined()
 
-        await waitFor(() =>
-            expect(chatMessagesSetter).not.toBeNull(),
-        )
+        await waitFor(() => expect(chatMessagesSetter).not.toBeNull())
         await act(async () => {
             chatMessagesSetter?.([
                 {
@@ -1430,11 +1417,7 @@ describe('ChatPage', () => {
             ])
         })
 
-        await waitFor(() =>
-            expect(
-                queryContextSheet(),
-            ).toBeNull(),
-        )
+        await waitFor(() => expect(queryContextSheet()).toBeNull())
         expect(screen.queryByRole('button', { name: /viewing/i })).toBeNull()
     })
 
@@ -1527,9 +1510,7 @@ describe('ChatPage', () => {
         expect(
             screen.queryByRole('button', { name: /context selected/i }),
         ).toBeNull()
-        expect(
-            queryContextSheet(),
-        ).toBeNull()
+        expect(queryContextSheet()).toBeNull()
 
         sessionSwitchDeferred.resolve({
             json: () =>

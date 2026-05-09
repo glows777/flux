@@ -42,7 +42,8 @@ function isYahooEquityQuote(
     return (
         quote.quoteType === 'EQUITY' &&
         quote.isYahooFinance === true &&
-        quote.symbol != null
+        typeof quote.symbol === 'string' &&
+        quote.symbol.trim().length > 0
     )
 }
 
@@ -118,7 +119,7 @@ async function searchYahoo(
     query: string,
 ): Promise<StockSearchResult[]> {
     const result = await yahoo.search(query)
-    return result.quotes.filter(isYahooEquityQuote).map((q: YfSearchQuote) => ({
+    return result.quotes.filter(isYahooEquityQuote).map((q) => ({
         symbol: q.symbol,
         name: q.longname ?? q.shortname ?? q.symbol,
     }))

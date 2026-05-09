@@ -10,7 +10,9 @@ import {
     writeSlot,
 } from '@/core/ai/memory'
 
-const SLOT_SCHEMA = z.enum(VALID_SLOTS as [MemorySlot, ...MemorySlot[]])
+const SLOT_SCHEMA = z.enum(
+    VALID_SLOTS as unknown as [MemorySlot, ...MemorySlot[]],
+)
 
 const slotParamSchema = z.object({
     slot: SLOT_SCHEMA,

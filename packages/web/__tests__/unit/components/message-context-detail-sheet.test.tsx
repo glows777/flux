@@ -1,6 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import {
+    cleanup,
+    fireEvent,
+    render,
+    screen,
+    within,
+} from '@testing-library/react'
 import * as React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MessageContextDetailSheet } from '@/components/chat/messages/MessageContextDetailSheet'
 import type { MessageContextState } from '@/lib/ai/context-visibility'
 
@@ -323,24 +329,32 @@ describe('MessageContextDetailSheet', () => {
 
         expect(recentCard).toBeDefined()
         expect(memoryCard).toBeDefined()
-        expect(within(recentCard as HTMLElement).getByText('Priority')).toBeDefined()
+        expect(
+            within(recentCard as HTMLElement).getByText('Priority'),
+        ).toBeDefined()
         expect(
             within(recentCard as HTMLElement).getByText('Cacheability'),
         ).toBeDefined()
         expect(
             within(recentCard as HTMLElement).getByText('Compactability'),
         ).toBeDefined()
-        expect(within(recentCard as HTMLElement).getByText('Included')).toBeDefined()
+        expect(
+            within(recentCard as HTMLElement).getByText('Included'),
+        ).toBeDefined()
         expect(
             within(recentCard as HTMLElement).getByText('Final order'),
         ).toBeDefined()
-        expect(within(recentCard as HTMLElement).getByText('Source')).toBeDefined()
+        expect(
+            within(recentCard as HTMLElement).getByText('Source'),
+        ).toBeDefined()
         expect(
             within(recentCard as HTMLElement).getAllByText(
                 'session · recent window',
             ).length,
         ).toBeGreaterThanOrEqual(2)
-        expect(within(memoryCard as HTMLElement).getByText('Excluded')).toBeDefined()
+        expect(
+            within(memoryCard as HTMLElement).getByText('Excluded'),
+        ).toBeDefined()
     })
 
     it('keeps raw inspect collapsed until opened', () => {
@@ -465,12 +479,21 @@ describe('MessageContextDetailSheet', () => {
             .getByRole('heading', { name: 'Request config' })
             .closest('section')
 
-        expect(within(requestConfig as HTMLElement).getByText('Model messages')).toBeDefined()
-        expect(within(requestConfig as HTMLElement).getByText('Resolved params')).toBeDefined()
-        expect(within(requestConfig as HTMLElement).getByText('Provider options')).toBeDefined()
-        expect(within(requestConfig as HTMLElement).getByText('Tool names')).toBeDefined()
         expect(
-            within(requestConfig as HTMLElement).getAllByText(/webSearch/).length,
+            within(requestConfig as HTMLElement).getByText('Model messages'),
+        ).toBeDefined()
+        expect(
+            within(requestConfig as HTMLElement).getByText('Resolved params'),
+        ).toBeDefined()
+        expect(
+            within(requestConfig as HTMLElement).getByText('Provider options'),
+        ).toBeDefined()
+        expect(
+            within(requestConfig as HTMLElement).getByText('Tool names'),
+        ).toBeDefined()
+        expect(
+            within(requestConfig as HTMLElement).getAllByText(/webSearch/)
+                .length,
         ).toBeGreaterThanOrEqual(2)
         expect(
             within(requestConfig as HTMLElement).getByText(/"count": 1/),
@@ -479,7 +502,9 @@ describe('MessageContextDetailSheet', () => {
             within(requestConfig as HTMLElement).getByText(/"maxSteps": 4/),
         ).toBeDefined()
         expect(
-            within(requestConfig as HTMLElement).getByText(/"reasoning": "medium"/),
+            within(requestConfig as HTMLElement).getByText(
+                /"reasoning": "medium"/,
+            ),
         ).toBeDefined()
     })
 

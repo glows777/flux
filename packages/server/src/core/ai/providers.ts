@@ -111,31 +111,50 @@ function createProviderInstance(key: ProviderKey): ProviderInstance {
         case 'xai': {
             const apiKey = process.env.XAI_API_KEY
             if (!apiKey) throw new Error('XAI_API_KEY is not configured')
+            const fetchPreconnect = (
+                fetchOpt as Omit<typeof fetchOpt, 'preconnect'> & {
+                    readonly preconnect?: typeof fetchOpt.preconnect
+                }
+            ).preconnect
             // Some proxies return usage.prompt_tokens/completion_tokens instead of
             // input_tokens/output_tokens. Patch the response to normalize.
-            const xaiFetch: typeof globalThis.fetch = async (url, init) => {
-                const resp = await fetchOpt(url, init)
-                const ct = resp.headers.get('content-type') || ''
-                if (!ct.includes('application/json')) return resp
-                const text = await resp.text()
-                try {
-                    const json = JSON.parse(text)
-                    if (json.usage && json.usage.input_tokens === undefined) {
-                        json.usage.input_tokens = json.usage.prompt_tokens ?? 0
-                        json.usage.output_tokens =
-                            json.usage.completion_tokens ?? 0
+            const xaiFetch: typeof fetchOpt = Object.assign(
+                async (
+                    url: Parameters<typeof fetchOpt>[0],
+                    init?: Parameters<typeof fetchOpt>[1],
+                ): ReturnType<typeof fetchOpt> => {
+                    const resp = await fetchOpt(url, init)
+                    const ct = resp.headers.get('content-type') || ''
+                    if (!ct.includes('application/json')) return resp
+                    const text = await resp.text()
+                    try {
+                        const json = JSON.parse(text)
+                        if (
+                            json.usage &&
+                            json.usage.input_tokens === undefined
+                        ) {
+                            json.usage.input_tokens =
+                                json.usage.prompt_tokens ?? 0
+                            json.usage.output_tokens =
+                                json.usage.completion_tokens ?? 0
+                        }
+                        return new Response(JSON.stringify(json), {
+                            status: resp.status,
+                            headers: resp.headers,
+                        })
+                    } catch {
+                        return new Response(text, {
+                            status: resp.status,
+                            headers: resp.headers,
+                        })
                     }
-                    return new Response(JSON.stringify(json), {
-                        status: resp.status,
-                        headers: resp.headers,
-                    })
-                } catch {
-                    return new Response(text, {
-                        status: resp.status,
-                        headers: resp.headers,
-                    })
-                }
-            }
+                },
+                {
+                    preconnect: fetchPreconnect
+                        ? fetchPreconnect.bind(fetchOpt)
+                        : () => {},
+                },
+            )
             return createXai({
                 apiKey,
                 ...(process.env.XAI_BASE_URL

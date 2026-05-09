@@ -12,8 +12,8 @@ import {
     estimateToolSpec,
 } from '../../../../src/core/ai/runtime/token-estimator'
 import type {
-    ContextSegment,
     ChatParams,
+    ContextSegment,
     ToolContribution,
 } from '../../../../src/core/ai/runtime/types'
 
@@ -84,13 +84,17 @@ describe('assembleSegments', () => {
             id: 'base',
             included: true,
             finalOrder: 0,
-            estimatedTokens: addSystemSegmentOverhead(estimateTextTokens('base')),
+            estimatedTokens: addSystemSegmentOverhead(
+                estimateTextTokens('base'),
+            ),
         })
         expect(result.systemSegments[1]).toMatchObject({
             id: 'live',
             included: true,
             finalOrder: 1,
-            estimatedTokens: addSystemSegmentOverhead(estimateTextTokens('live')),
+            estimatedTokens: addSystemSegmentOverhead(
+                estimateTextTokens('live'),
+            ),
         })
     })
 
@@ -242,14 +246,11 @@ describe('assembleTools', () => {
 describe('assembleParams', () => {
     test('uses last-writer-wins in plugin order', () => {
         const defaults: ChatParams = { maxSteps: 20, temperature: 0.1 }
-        const result = assembleParams(
-            defaults,
-            [
-                { plugin: 'trading', params: { maxSteps: 50 } },
-                { plugin: 'skill', params: { temperature: 0.4 } },
-                { plugin: 'heartbeat', params: { maxSteps: 80 } },
-            ],
-        )
+        const result = assembleParams(defaults, [
+            { plugin: 'trading', params: { maxSteps: 50 } },
+            { plugin: 'skill', params: { temperature: 0.4 } },
+            { plugin: 'heartbeat', params: { maxSteps: 80 } },
+        ])
 
         expect(result.resolved.maxSteps).toBe(80)
         expect(result.resolved.temperature).toBe(0.4)

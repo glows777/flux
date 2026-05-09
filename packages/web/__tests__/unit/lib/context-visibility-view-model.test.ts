@@ -144,8 +144,9 @@ function buildReadyRecord({
             modelRequest: {
                 systemText: 'Base prompt text',
                 modelMessages: [],
-                toolNames: Array.from({ length: toolCount }, (_, index) =>
-                    `tool-${index + 1}`,
+                toolNames: Array.from(
+                    { length: toolCount },
+                    (_, index) => `tool-${index + 1}`,
                 ),
                 resolvedParams: {},
                 providerOptions: {},

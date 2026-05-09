@@ -38,4 +38,3 @@ describe('token-estimator', () => {
         expect(total).toBeGreaterThan(0)
     })
 })
-

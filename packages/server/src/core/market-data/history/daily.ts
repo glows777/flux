@@ -2,11 +2,7 @@ import type { HistoryPoint } from '../common/types'
 
 export function toUtcDay(date: Date): Date {
     return new Date(
-        Date.UTC(
-            date.getUTCFullYear(),
-            date.getUTCMonth(),
-            date.getUTCDate(),
-        ),
+        Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
     )
 }
 
