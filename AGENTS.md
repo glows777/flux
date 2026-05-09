@@ -25,6 +25,40 @@ For implementation tasks such as code edits, tests, commits, pushes, PR prep, br
 - do not stop for repeated confirmations between routine steps
 - ask again only for irreversible or destructive actions
 
+### Worktree Handoff and PR Workflow
+
+Use worktrees for parallel agent implementation when the user wants isolated work, background progress, or an automatic PR/review/fix loop.
+
+- Treat the main workspace as the planning, coordination, and review surface.
+- Treat each worktree as an isolated implementation surface.
+- Use one worktree and one branch per independent task, preferably `codex/<short-task>`.
+- A worktree does not create a PR by itself. PRs are opened from the branch checked out in that worktree.
+- Keep file ownership explicit when delegating: list allowed files, do-not-touch files, verification commands, and expected output.
+- Do not let multiple agents edit the same shared files in parallel. Shared files such as `package.json`, lockfiles, Prisma schema, shared types, route registries, global styles, and test setup should have a single owner or be changed in a separate base PR.
+
+Before handing off to a worktree:
+
+1. Write or identify the relevant spec/plan in `.dev-docs/specs/` and `.dev-docs/plans/`.
+2. Remember that `.dev-docs/` is ignored by Git and will not automatically follow a new worktree.
+3. Put the essential spec/plan context directly in the handoff prompt, or provide absolute paths and then verify the worktree can read them.
+4. Include `Goal`, `Context`, `Constraints`, `Done when`, allowed files, forbidden files, and verification commands.
+
+For PR-based worktree completion:
+
+1. Ensure the worktree is on a named branch, not detached HEAD.
+2. Stage explicit files only.
+3. Run the relevant verification, preferably `bun run test:all` before merge readiness.
+4. Push the branch and open a draft PR to `main`.
+5. Include PR body sections for Summary, Changed files / affected packages, Acceptance criteria, Verification commands and results, Risk areas, Rollback notes, and Review focus.
+6. Use Codex/GitHub review and fix loops when useful, but keep human approval as the final merge gate for high-risk or product-direction changes.
+
+Before deleting any worktree:
+
+- inspect tracked, untracked, and ignored files, especially `.dev-docs/`
+- inspect `git status`, `git diff`, `git diff --cached`, and recent commits
+- copy or restore any useful ignored local documents back to the main workspace
+- prefer `git worktree remove <path>` over deleting the directory manually
+
 ## Development Preferences
 
 - Package manager and runtime: `bun`

@@ -33,7 +33,7 @@
 推荐启动 server：
 
 ```bash
-cd /Users/glows777/.codex/worktrees/5f21/flux/packages/server
+cd packages/server
 DATABASE_URL='postgresql://flux_user:flux_password@localhost:5433/flux_test?schema=public' \
 MAIN_MODEL='~anthropic/claude-sonnet-latest' \
 bun run dev
@@ -53,7 +53,7 @@ SERVER_URL='http://localhost:3001' bun run verify:prompt-cache-chat-flow
 执行：
 
 ```bash
-cd /Users/glows777/.codex/worktrees/5f21/flux/packages/server
+cd packages/server
 MAIN_MODEL='~anthropic/claude-sonnet-latest' bun run verify:prompt-cache-chat-flow
 ```
 
@@ -126,7 +126,7 @@ Web UI smoke 是补充验收，不替代 server-only verifier。
 启动 web 后执行：
 
 ```bash
-cd /Users/glows777/.codex/worktrees/5f21/flux/packages/web
+cd packages/web
 NEXT_PUBLIC_SERVER_URL='http://localhost:3001' bun run dev
 ```
 
