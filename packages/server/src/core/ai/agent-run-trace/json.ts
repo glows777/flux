@@ -164,21 +164,31 @@ function normalizeValue(
 }
 
 export function stableTraceStringify(value: unknown): string {
-    const sorted = sortForStableStringify(value)
+    const sorted = sortForStableStringify(value, new WeakSet<object>())
     const serialized = JSON.stringify(sorted)
     return serialized === undefined ? 'undefined' : serialized
 }
 
-function sortForStableStringify(value: unknown): unknown {
+function sortForStableStringify(
+    value: unknown,
+    seen: WeakSet<object>,
+): unknown {
     if (value === undefined) return '[Undefined]'
     if (typeof value === 'bigint') return value.toString()
     if (typeof value === 'function') return '[Function]'
-    if (Array.isArray(value)) return value.map(sortForStableStringify)
     if (value == null || typeof value !== 'object') return value
+
+    if (seen.has(value)) return '[Circular]'
+    seen.add(value)
+
+    if (Array.isArray(value)) {
+        return value.map((item) => sortForStableStringify(item, seen))
+    }
+
     return Object.fromEntries(
         Object.entries(value as Record<string, unknown>)
             .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, item]) => [key, sortForStableStringify(item)]),
+            .map(([key, item]) => [key, sortForStableStringify(item, seen)]),
     )
 }
 

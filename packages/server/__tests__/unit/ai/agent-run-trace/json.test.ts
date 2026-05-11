@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
     hashTraceValue,
+    measureTraceJsonBytes,
     sanitizeTraceJson,
     stableTraceStringify,
     truncateTraceText,
@@ -111,6 +112,18 @@ describe('trace JSON hygiene', () => {
 
         expect(stableTraceStringify(left)).toBe(stableTraceStringify(right))
         expect(hashTraceValue(left)).toBe(hashTraceValue(right))
+    })
+
+    test('stable stringify and sizing handle circular values directly', () => {
+        const cyclic: Record<string, unknown> = { b: 2, a: 1 }
+        cyclic.self = cyclic
+
+        expect(() => stableTraceStringify(cyclic)).not.toThrow()
+        expect(stableTraceStringify(cyclic)).toBe(
+            '{"a":1,"b":2,"self":"[Circular]"}',
+        )
+        expect(() => measureTraceJsonBytes(cyclic)).not.toThrow()
+        expect(measureTraceJsonBytes(cyclic)).toBeGreaterThan(0)
     })
 
     test('truncates trace text while leaving hashable original available to caller', () => {
