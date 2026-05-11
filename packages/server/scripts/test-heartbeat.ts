@@ -89,13 +89,16 @@ async function main() {
     // Debug: test individual tools
     console.log('\n--- Testing tools directly ---')
     try {
-        const memResult = await tools.memory_read.execute(
-            { path: 'trading-agent/strategy.md' },
+        const historyResult = await tools.read_history.execute(
+            { slot: 'agent_strategy', limit: 1 },
             toolCtx,
         )
-        console.log('memory_read:', JSON.stringify(memResult).slice(0, 200))
+        console.log(
+            'read_history(agent_strategy):',
+            JSON.stringify(historyResult).slice(0, 200),
+        )
     } catch (e) {
-        console.error('memory_read ERROR:', e)
+        console.error('read_history ERROR:', e)
     }
 
     try {
@@ -138,15 +141,18 @@ async function main() {
         }
     }
 
-    // 5. Check strategy.md
-    const strategy = await prisma.memoryDocument.findUnique({
-        where: { path: 'trading-agent/strategy.md' },
+    // 5. Check latest agent_strategy slot content
+    const strategy = await prisma.memoryVersion.findFirst({
+        where: { slot: 'agent_strategy' },
+        orderBy: { createdAt: 'desc' },
     })
     if (strategy) {
-        console.log(`\n--- strategy.md (${strategy.content.length} chars) ---`)
+        console.log(
+            `\n--- agent_strategy (${strategy.content.length} chars) ---`,
+        )
         console.log(strategy.content.slice(0, 500))
     } else {
-        console.log('\nstrategy.md: not created')
+        console.log('\nagent_strategy: not created')
     }
 
     await prisma.$disconnect()
