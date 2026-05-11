@@ -176,6 +176,50 @@ describe('trace JSON hygiene', () => {
         })
     })
 
+    test('preserves token metrics while redacting token secrets', () => {
+        const result = sanitizeTraceJson(
+            {
+                prompt: { totalEstimatedInputTokens: 1200 },
+                result: {
+                    usage: { inputTokens: 1000, outputTokens: 200 },
+                },
+                cache: {
+                    cacheReadTokens: 800,
+                    cacheWriteTokens: 1200,
+                    cachedTokenRatio: 0.8,
+                },
+                token: 'plain-secret',
+                accessToken: 'access-secret',
+                api_token: 'api-secret',
+                tokenCount: 3,
+            },
+            {
+                maxBytes: 10_000,
+                maxDepth: 8,
+                maxArrayItems: 50,
+                maxStringBytes: 10_000,
+                redactKeys: ['token'],
+            },
+        )
+
+        expect(result.redacted).toBe(true)
+        expect(result.value).toEqual({
+            prompt: { totalEstimatedInputTokens: 1200 },
+            result: {
+                usage: { inputTokens: 1000, outputTokens: 200 },
+            },
+            cache: {
+                cacheReadTokens: 800,
+                cacheWriteTokens: 1200,
+                cachedTokenRatio: 0.8,
+            },
+            token: '[Redacted]',
+            accessToken: '[Redacted]',
+            api_token: '[Redacted]',
+            tokenCount: 3,
+        })
+    })
+
     test('redacts secret-shaped map keys', () => {
         const result = sanitizeTraceJson(
             new Map<unknown, unknown>([['token', 'secret']]),

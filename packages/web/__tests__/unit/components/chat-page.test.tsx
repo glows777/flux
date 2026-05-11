@@ -773,6 +773,57 @@ describe('ChatPage', () => {
         expect(queryTraceSheet()).toBeNull()
     })
 
+    it('shows unavailable state instead of error when a prefetched trace returns 404', async () => {
+        chatMessages = [
+            {
+                id: 'message-user-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-1',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'reply' }],
+            } as UIMessage,
+        ]
+
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            status: 404,
+            body: { success: false, error: 'Trace API disabled' },
+        }
+
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: withTestRunMetadata(chatMessages),
+                                error: null,
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) => String(input) === '/api/runs/run-1/trace',
+                ),
+            ).toBe(true),
+        )
+        expect(
+            await screen.findAllByText('Trace unavailable'),
+        ).not.toHaveLength(0)
+        expect(screen.queryByText('Trace error')).toBeNull()
+    })
+
     it('prefetches the latest assistant trace when switching sessions', async () => {
         runTraceResponses['/api/runs/run-2/trace'] = {
             body: buildRunTraceResponse('run-2'),

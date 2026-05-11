@@ -184,7 +184,10 @@ export function ChatPage() {
 
                 setRunTraceStates((prev) => ({
                     ...prev,
-                    [messageId]: { status: 'ready', record },
+                    [messageId]:
+                        record == null
+                            ? { status: 'unavailable' }
+                            : { status: 'ready', record },
                 }))
             } catch (error) {
                 if (runTraceGenerationRef.current !== generation) return

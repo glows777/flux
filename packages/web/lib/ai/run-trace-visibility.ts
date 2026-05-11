@@ -429,13 +429,19 @@ export function buildTraceSegmentGroups(
         })
 }
 
-export async function fetchRunTrace(runId: string): Promise<RunTraceRecord> {
+export async function fetchRunTrace(
+    runId: string,
+): Promise<RunTraceRecord | null> {
     const response = await fetch(
         `/api/runs/${encodeURIComponent(runId)}/trace`,
         {
             headers: { Accept: 'application/json' },
         },
     )
+
+    if (response.status === 404) {
+        return null
+    }
 
     let payload: unknown = null
     try {

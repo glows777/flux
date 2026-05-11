@@ -225,4 +225,21 @@ describe('fetchRunTrace', () => {
             headers: { Accept: 'application/json' },
         })
     })
+
+    it('returns null for unavailable run traces', async () => {
+        const fetchMock = mock(() =>
+            Promise.resolve({
+                ok: false,
+                status: 404,
+                json: () =>
+                    Promise.resolve({
+                        success: false,
+                        error: 'Trace API disabled',
+                    }),
+            }),
+        )
+        global.fetch = fetchMock as typeof fetch
+
+        await expect(fetchRunTrace('run-404')).resolves.toBeNull()
+    })
 })

@@ -42,8 +42,31 @@ function byteLength(value: string): number {
 
 function shouldRedactKey(key: string, redactKeys: readonly string[]): boolean {
     const normalized = key.toLowerCase()
-    return redactKeys.some((candidate) =>
-        normalized.includes(candidate.toLowerCase()),
+    const compact = normalized.replace(/[^a-z0-9]/g, '')
+
+    return redactKeys.some((candidate) => {
+        const normalizedCandidate = candidate.toLowerCase()
+        const compactCandidate = normalizedCandidate.replace(/[^a-z0-9]/g, '')
+
+        if (compactCandidate === 'token') {
+            return isSecretTokenKey(compact)
+        }
+
+        return (
+            normalized.includes(normalizedCandidate) ||
+            compact.includes(compactCandidate)
+        )
+    })
+}
+
+function isSecretTokenKey(compactKey: string): boolean {
+    if (compactKey === 'token') return true
+    if (compactKey === 'tokensecret' || compactKey === 'tokenvalue') {
+        return true
+    }
+
+    return /(access|refresh|api|auth|bearer|session|id|jwt|csrf|xsrf|alpaca)token$/.test(
+        compactKey,
     )
 }
 
