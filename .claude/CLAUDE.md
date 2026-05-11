@@ -40,15 +40,31 @@ Git 操作（commit/push/PR/branch cleanup/tag）、代码修改、测试运行�
 
 唯一需要额外确认的场景: 不可逆操作（force push、删数据库、删文件）。
 
-### Worktree 合并 — 退出后本地 merge，不要走 PR
+### Worktree / Handoff / PR 流程
 
-在 worktree 中完成工作后，合并回 main 的流程:
+Worktree 用来隔离实现，不是 PR 本身。**PR 来自 branch，worktree 只是这个 branch 的工作目录**。
 
-1. `ExitWorktree` 退出 worktree → 回到主仓库（main 已 checkout）
-2. `git merge <worktree-branch>` 本地合并
-3. `git push` 推送
+根据任务选择两种合并路径:
 
-**不要**在 worktree 里 push 分支再创建 PR 合并 — 这是不必要的绕路。worktree 里无法 `checkout main`（被主仓库占用），但退出后就能直接本地 merge。
+1. **本地 merge 路径** — 已经 review 和验证过、用户明确要求直接合并时使用:
+   - `ExitWorktree` 退出 worktree → 回到主仓库（main 已 checkout）
+   - `git merge <worktree-branch>` 本地合并
+   - `git push` 推送
+2. **PR 路径** — 并行 worker、需要异步 review/fix、或者用户希望自动开 PR 时使用:
+   - 每个独立任务一个 worktree + 一个 branch，优先命名为 `codex/<short-task>`
+   - 如果 worktree 是 detached HEAD，先 `git switch -c codex/<short-task>`
+   - 显式 stage 文件、commit、push branch，然后从该 branch 开 draft PR 到 `main`
+   - PR body 必须包含 Summary、Changed files / affected packages、Acceptance criteria、Verification commands and results、Risk areas、Rollback notes、Review focus
+   - 可用 `@codex review` 做自动预审，用 `@codex fix ...` 处理明确 review comments；高风险或产品方向变更仍必须人工最终确认
+
+并行 worktree 规则:
+
+- 主仓库负责规划、协调和 review；worktree 负责隔离实现。
+- handoff 前先写好或确认 `.dev-docs/specs/` 和 `.dev-docs/plans/` 中的 spec/plan。
+- `.dev-docs/` 被 Git ignore，不会自动跟随新 worktree。handoff prompt 必须包含关键上下文，或提供主仓库里的绝对路径，并在 worktree 中确认能读取。
+- dispatch worker 时必须写清 allowed files、do-not-touch files、验证命令和期望输出。
+- 不允许多个 worker 并行改同一批共享文件。`package.json`、lockfile、Prisma schema、shared types、route registry、global styles、test setup 等共享文件必须单 owner 或拆成单独 base PR。
+- 删除 worktree 前必须检查 tracked/untracked/ignored 文件，尤其是 `.dev-docs/`；确认 `git status`、`git diff`、`git diff --cached`、最近 commit 后，再用 `git worktree remove <path>`。
 
 ### Discord — Bot + Channel 推送
 

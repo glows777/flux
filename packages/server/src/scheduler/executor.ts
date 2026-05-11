@@ -1,5 +1,6 @@
 import type { CronJob } from '@prisma/client'
 import { type AgentRunStore, createRunId } from '@/core/ai/agent-run'
+import type { TracePhase, TraceRecorder } from '@/core/ai/agent-run-trace'
 import type { AgentType } from '@/core/ai/runtime/types'
 import type { Gateway } from '@/gateway/gateway'
 import type { TriggerResult } from '@/gateway/router'
@@ -15,6 +16,7 @@ export interface ExecutionResult {
 interface ExecutorDeps {
     readonly gateway: Gateway
     readonly agentRunStore: AgentRunStore
+    readonly traceRecorder?: TraceRecorder
     readonly timeoutMs?: number
 }
 
@@ -70,17 +72,20 @@ export class TaskExecutor {
             const message =
                 error instanceof Error ? error.message : 'Unknown error'
             if (message === 'Execution timed out') {
-                await this.recordFailedRun({
-                    runId,
-                    source: 'cron',
-                    mode: 'trigger',
-                    agentType: job.taskType as AgentType,
-                    cronJobId: job.id,
-                    userId: job.userId,
-                    sourceId: `cron:${job.id}`,
-                    error,
-                    code: 'TIMEOUT',
-                })
+                await this.recordFailedRun(
+                    {
+                        runId,
+                        source: 'cron',
+                        mode: 'trigger',
+                        agentType: job.taskType as AgentType,
+                        cronJobId: job.id,
+                        userId: job.userId,
+                        sourceId: `cron:${job.id}`,
+                        error,
+                        code: 'TIMEOUT',
+                    },
+                    'model_stream',
+                )
                 return {
                     status: 'timeout',
                     success: false,
@@ -137,16 +142,21 @@ export class TaskExecutor {
         const triggerRunId = triggerResult.runId || runId
 
         if (!triggerResult.success) {
-            await this.recordFailedRun({
-                runId: triggerRunId,
-                source: 'cron',
-                mode: 'trigger',
-                agentType: job.taskType as AgentType,
-                cronJobId: job.id,
-                userId: job.userId,
-                sourceId: `cron:${job.id}`,
-                error: new Error(triggerResult.error ?? 'Cron trigger failed'),
-            })
+            await this.recordFailedRun(
+                {
+                    runId: triggerRunId,
+                    source: 'cron',
+                    mode: 'trigger',
+                    agentType: job.taskType as AgentType,
+                    cronJobId: job.id,
+                    userId: job.userId,
+                    sourceId: `cron:${job.id}`,
+                    error: new Error(
+                        triggerResult.error ?? 'Cron trigger failed',
+                    ),
+                },
+                triggerResult.failurePhase ?? 'before_run',
+            )
         }
 
         return {
@@ -160,11 +170,36 @@ export class TaskExecutor {
 
     private async recordFailedRun(
         input: Parameters<AgentRunStore['createFailedRun']>[0],
+        phase: TracePhase = 'before_run',
     ): Promise<void> {
+        let runId = input.runId
+
         try {
-            await this.deps.agentRunStore.createFailedRun(input)
+            const result = await this.deps.agentRunStore.createFailedRun(input)
+            runId = result.runId
         } catch (error) {
             console.error('Failed to record agent run failure:', error)
+        }
+
+        if (!this.deps.traceRecorder || !runId) return
+
+        try {
+            await this.deps.traceRecorder.recordMinimalFailure({
+                runId,
+                source: 'cron_executor',
+                phase,
+                error: input.error,
+                runContext: {
+                    source: input.source,
+                    mode: input.mode,
+                    agentType: input.agentType as AgentType,
+                    cronJobId: input.cronJobId,
+                    userId: input.userId,
+                    sourceId: input.sourceId,
+                },
+            })
+        } catch (error) {
+            console.error('Failed to record agent run failure trace:', error)
         }
     }
 }

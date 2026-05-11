@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import {
-    cleanup,
     act,
+    cleanup,
     fireEvent,
     render,
     screen,
@@ -45,7 +45,7 @@ const mockRegenerate = mock(() => {})
 let chatMessages: UIMessage[] = []
 let chatError: Error | undefined
 let chatMessagesSetter: ((next: UIMessage[]) => void) | null = null
-let messageContextResponses: Record<
+let runTraceResponses: Record<
     string,
     {
         status?: number
@@ -53,6 +53,27 @@ let messageContextResponses: Record<
     }
 > = {}
 const scrollIntoViewMock = mock(() => {})
+
+function withTestRunMetadata(messages: UIMessage[]): UIMessage[] {
+    return messages.map((message) => {
+        if (
+            message.role !== 'assistant' ||
+            message.metadata != null ||
+            !message.id.startsWith('message-assistant-')
+        ) {
+            return message
+        }
+
+        const suffix = message.id.replace('message-assistant-', '')
+        return {
+            ...message,
+            metadata: {
+                sessionId: 'session-1',
+                runId: `run-${suffix}`,
+            },
+        } as UIMessage
+    })
+}
 
 mock.module('next/navigation', () => ({
     useRouter: () => ({ replace: mock(() => {}) }),
@@ -82,10 +103,12 @@ mock.module('swr', () => ({
 
 mock.module('@ai-sdk/react', () => ({
     useChat: () => {
-        const [messagesState, setMessagesState] = useState(chatMessages)
+        const [messagesState, setMessagesState] = useState(
+            withTestRunMetadata(chatMessages),
+        )
         chatMessagesSetter = setMessagesState
         useEffect(() => {
-            setMessagesState(chatMessages)
+            setMessagesState(withTestRunMetadata(chatMessages))
         }, [])
 
         return {
@@ -95,7 +118,7 @@ mock.module('@ai-sdk/react', () => ({
             setMessages: (next: UIMessage[]) => {
                 chatMessages = next
                 mockSetMessages(next)
-                setMessagesState(next)
+                setMessagesState(withTestRunMetadata(next))
             },
             sendMessage: mockSendMessage,
             regenerate: mockRegenerate,
@@ -165,8 +188,9 @@ mock.module('@/components/chat/messages/AssistantMessage', () => ({
         children?: ReactNode
     }) => (
         <div>
-            {message?.parts?.find((part) => part.type === 'text' && 'text' in part)
-                ?.text ?? null}
+            {message?.parts?.find(
+                (part) => part.type === 'text' && 'text' in part,
+            )?.text ?? null}
             {children}
         </div>
     ),
@@ -263,7 +287,7 @@ const fetchMock = mock((input: string | URL, init?: RequestInit) => {
         return Promise.resolve({ ok: true })
     }
 
-    const contextResponse = messageContextResponses[url]
+    const contextResponse = runTraceResponses[url]
     if (contextResponse) {
         const status = contextResponse.status ?? 200
         return Promise.resolve({
@@ -278,38 +302,36 @@ const fetchMock = mock((input: string | URL, init?: RequestInit) => {
 
 const { ChatPage } = await import('@/components/chat/ChatPage')
 
-function buildMessageContextResponse(runId: string) {
+function buildRunTraceResponse(runId: string) {
     return {
         success: true,
         data: {
-            version: 1,
-            runId,
-            manifest: {
-                input: {
-                    channel: 'web',
-                    mode: 'chat',
-                    agentType: 'assistant',
-                    rawMessages: [],
-                    resolvedSessionId: 'session-1',
-                    defaults: {},
-                },
-                pluginOutputs: [],
-                assembledContext: {
-                    segments: [],
-                    systemSegments: [],
-                    tools: [],
-                    params: {
-                        candidates: [],
-                        resolved: {},
+            run: {
+                id: runId,
+                status: 'completed',
+                startedAt: '2026-05-11T00:00:00.000Z',
+                finishedAt: null,
+            },
+            trace: {
+                version: 1,
+                runId,
+                traceStatus: 'complete',
+                runOutcome: 'succeeded',
+                currentPhase: 'after_run',
+                completedPhases: ['created', 'after_run'],
+                updatedAt: '2026-05-11T00:00:00.000Z',
+                prompt: {
+                    finalInput: {
+                        systemText: '',
+                        modelMessages: [],
+                        tools: [],
+                        params: {
+                            candidates: [],
+                            resolved: {},
+                        },
                     },
                     totalEstimatedInputTokens: 0,
-                },
-                modelRequest: {
-                    systemText: '',
-                    modelMessages: [],
-                    toolNames: [],
-                    resolvedParams: {},
-                    providerOptions: {},
+                    segments: [],
                 },
             },
         },
@@ -327,16 +349,16 @@ function createDeferred<T>() {
     return { promise, resolve, reject }
 }
 
-function queryContextSheet() {
+function queryTraceSheet() {
     return (
-        screen.queryByRole('complementary', { name: /context details/i }) ??
-        screen.queryByRole('dialog', { name: /context details/i })
+        screen.queryByRole('complementary', { name: /run trace/i }) ??
+        screen.queryByRole('dialog', { name: /run trace/i })
     )
 }
 
-async function findContextSheet() {
-    await waitFor(() => expect(queryContextSheet()).toBeDefined())
-    return queryContextSheet() as HTMLElement
+async function findTraceSheet() {
+    await waitFor(() => expect(queryTraceSheet()).toBeDefined())
+    return queryTraceSheet() as HTMLElement
 }
 
 describe('ChatPage', () => {
@@ -345,7 +367,8 @@ describe('ChatPage', () => {
         sessions = defaultSessions
         chatMessages = []
         chatError = undefined
-        messageContextResponses = {}
+        chatMessagesSetter = null
+        runTraceResponses = {}
         mockMutateSessions.mockClear()
         mockSetMessages.mockClear()
         mockSendMessage.mockClear()
@@ -445,7 +468,7 @@ describe('ChatPage', () => {
                 return Promise.resolve({ ok: true })
             }
 
-            const contextResponse = messageContextResponses[url]
+            const contextResponse = runTraceResponses[url]
             if (contextResponse) {
                 const status = contextResponse.status ?? 200
                 return Promise.resolve({
@@ -543,7 +566,7 @@ describe('ChatPage', () => {
                 return Promise.resolve({ ok: true })
             }
 
-            const contextResponse = messageContextResponses[url]
+            const contextResponse = runTraceResponses[url]
             if (contextResponse) {
                 const status = contextResponse.status ?? 200
                 return Promise.resolve({
@@ -622,7 +645,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
@@ -665,7 +688,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: {
                                     message: 'rate limited',
                                     name: 'RateLimitError',
@@ -687,7 +710,7 @@ describe('ChatPage', () => {
         )
     })
 
-    it('prefetches the latest assistant context during auto-restore without auto-opening the detail sheet', async () => {
+    it('prefetches the latest assistant trace during auto-restore without auto-opening the detail sheet', async () => {
         chatMessages = [
             {
                 id: 'message-user-1',
@@ -706,10 +729,8 @@ describe('ChatPage', () => {
             } as UIMessage,
         ]
 
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-2/context'
-        ] = {
-            body: buildMessageContextResponse('run-latest'),
+        runTraceResponses['/api/runs/run-2/trace'] = {
+            body: buildRunTraceResponse('run-2'),
         }
 
         fetchMock.mockImplementationOnce(((input: string | URL) => {
@@ -720,7 +741,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
@@ -740,28 +761,73 @@ describe('ChatPage', () => {
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.some(
-                    ([input]) =>
-                        String(input) ===
-                        '/api/sessions/session-1/messages/message-assistant-2/context',
+                    ([input]) => String(input) === '/api/runs/run-2/trace',
                 ),
             ).toBe(true),
         )
 
         expect(
             fetchMock.mock.calls.some(
-                ([input]) =>
-                    String(input) ===
-                    '/api/sessions/session-1/messages/message-assistant-1/context',
+                ([input]) => String(input) === '/api/runs/run-1/trace',
             ),
         ).toBe(false)
-        expect(queryContextSheet()).toBeNull()
+        expect(queryTraceSheet()).toBeNull()
     })
 
-    it('prefetches the latest assistant context when switching sessions', async () => {
-        messageContextResponses[
-            '/api/sessions/session-2/messages/message-assistant-2/context'
-        ] = {
-            body: buildMessageContextResponse('run-session-2'),
+    it('shows unavailable state instead of error when a prefetched trace returns 404', async () => {
+        chatMessages = [
+            {
+                id: 'message-user-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-1',
+                role: 'assistant',
+                parts: [{ type: 'text', text: 'reply' }],
+            } as UIMessage,
+        ]
+
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            status: 404,
+            body: { success: false, error: 'Trace API disabled' },
+        }
+
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: withTestRunMetadata(chatMessages),
+                                error: null,
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) => String(input) === '/api/runs/run-1/trace',
+                ),
+            ).toBe(true),
+        )
+        expect(
+            await screen.findAllByText('Trace unavailable'),
+        ).not.toHaveLength(0)
+        expect(screen.queryByText('Trace error')).toBeNull()
+    })
+
+    it('prefetches the latest assistant trace when switching sessions', async () => {
+        runTraceResponses['/api/runs/run-2/trace'] = {
+            body: buildRunTraceResponse('run-2'),
         }
 
         fetchMock.mockImplementation(((
@@ -789,7 +855,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: [
+                                messages: withTestRunMetadata([
                                     {
                                         id: 'message-user-2',
                                         role: 'user',
@@ -820,7 +886,7 @@ describe('ChatPage', () => {
                                             },
                                         ],
                                     },
-                                ],
+                                ] as UIMessage[]),
                                 error: null,
                             },
                         }),
@@ -834,7 +900,7 @@ describe('ChatPage', () => {
                 return Promise.resolve({ ok: true })
             }
 
-            const contextResponse = messageContextResponses[url]
+            const contextResponse = runTraceResponses[url]
             if (contextResponse) {
                 const status = contextResponse.status ?? 200
                 return Promise.resolve({
@@ -866,18 +932,14 @@ describe('ChatPage', () => {
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.some(
-                    ([input]) =>
-                        String(input) ===
-                        '/api/sessions/session-2/messages/message-assistant-2/context',
+                    ([input]) => String(input) === '/api/runs/run-2/trace',
                 ),
             ).toBe(true),
         )
 
         expect(
             fetchMock.mock.calls.some(
-                ([input]) =>
-                    String(input) ===
-                    '/api/sessions/session-2/messages/message-assistant-1/context',
+                ([input]) => String(input) === '/api/runs/run-1/trace',
             ),
         ).toBe(false)
     })
@@ -901,15 +963,11 @@ describe('ChatPage', () => {
             } as UIMessage,
         ]
 
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-1/context'
-        ] = {
-            body: buildMessageContextResponse('run-1'),
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            body: buildRunTraceResponse('run-1'),
         }
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-2/context'
-        ] = {
-            body: buildMessageContextResponse('run-2'),
+        runTraceResponses['/api/runs/run-2/trace'] = {
+            body: buildRunTraceResponse('run-2'),
         }
 
         fetchMock.mockImplementationOnce(((input: string | URL) => {
@@ -920,7 +978,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
@@ -935,9 +993,7 @@ describe('ChatPage', () => {
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.some(
-                    ([input]) =>
-                        String(input) ===
-                        '/api/sessions/session-1/messages/message-assistant-2/context',
+                    ([input]) => String(input) === '/api/runs/run-2/trace',
                 ),
             ).toBe(true),
         )
@@ -945,34 +1001,30 @@ describe('ChatPage', () => {
         scrollIntoViewMock.mockClear()
 
         const openButtons = screen.getAllByRole('button', {
-            name: /view context for assistant message/i,
+            name: /view trace for assistant message/i,
         })
 
         fireEvent.click(openButtons[0] as HTMLElement)
-        await findContextSheet()
+        await findTraceSheet()
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.some(
-                    ([input]) =>
-                        String(input) ===
-                        '/api/sessions/session-1/messages/message-assistant-1/context',
+                    ([input]) => String(input) === '/api/runs/run-1/trace',
                 ),
             ).toBe(true),
         )
 
         fireEvent.click(
             screen.getAllByRole('button', {
-                name: /view(ing)? context for assistant message/i,
+                name: /view(ing)? trace for assistant message/i,
             })[1] as HTMLElement,
         )
-        fireEvent.click(
-            screen.getByRole('button', { name: 'Close context details' }),
-        )
+        fireEvent.click(screen.getByRole('button', { name: 'Close run trace' }))
 
         expect(scrollIntoViewMock).not.toHaveBeenCalled()
     })
 
-    it('exposes unique context action names for different assistant messages', async () => {
+    it('exposes unique trace action names for different assistant messages', async () => {
         chatMessages = [
             {
                 id: 'message-user-1',
@@ -991,10 +1043,8 @@ describe('ChatPage', () => {
             } as UIMessage,
         ]
 
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-2/context'
-        ] = {
-            body: buildMessageContextResponse('run-2'),
+        runTraceResponses['/api/runs/run-2/trace'] = {
+            body: buildRunTraceResponse('run-2'),
         }
 
         fetchMock.mockImplementationOnce(((input: string | URL) => {
@@ -1005,7 +1055,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
@@ -1020,17 +1070,17 @@ describe('ChatPage', () => {
 
         expect(
             screen.getByRole('button', {
-                name: 'View context for assistant message 1',
+                name: 'View trace for assistant message 1',
             }),
         ).toBeDefined()
         expect(
             screen.getByRole('button', {
-                name: 'View context for assistant message 2',
+                name: 'View trace for assistant message 2',
             }),
         ).toBeDefined()
     })
 
-    it('opens one shared sheet and reuses cached context across close and reopen', async () => {
+    it('opens one shared sheet and reuses cached trace across close and reopen', async () => {
         chatMessages = [
             {
                 id: 'message-user-1',
@@ -1044,10 +1094,8 @@ describe('ChatPage', () => {
             } as UIMessage,
         ]
 
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-1/context'
-        ] = {
-            body: buildMessageContextResponse('run-1'),
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            body: buildRunTraceResponse('run-1'),
         }
 
         fetchMock.mockImplementationOnce(((input: string | URL) => {
@@ -1058,7 +1106,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
@@ -1078,56 +1126,48 @@ describe('ChatPage', () => {
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.some(
-                    ([input]) =>
-                        String(input) ===
-                        '/api/sessions/session-1/messages/message-assistant-1/context',
+                    ([input]) => String(input) === '/api/runs/run-1/trace',
                 ),
             ).toBe(true),
         )
 
         const readyButton = screen.getByRole('button', {
-            name: /view context for assistant message 1/i,
+            name: /view trace for assistant message 1/i,
         })
         expect(readyButton.getAttribute('aria-pressed')).toBe('false')
         expect(
             fetchMock.mock.calls.filter(
-                ([input]) =>
-                    String(input) ===
-                    '/api/sessions/session-1/messages/message-assistant-1/context',
+                ([input]) => String(input) === '/api/runs/run-1/trace',
             ),
         ).toHaveLength(1)
 
         fireEvent.click(readyButton)
-        expect(await findContextSheet()).toBeDefined()
+        expect(await findTraceSheet()).toBeDefined()
         expect(
             screen
                 .getByRole('button', {
-                    name: /viewing context for assistant message 1/i,
+                    name: /viewing trace for assistant message 1/i,
                 })
                 .getAttribute('aria-pressed'),
         ).toBe('true')
 
         fireEvent.click(
-            screen.getByRole('button', { name: /^close context details$/i }),
+            screen.getByRole('button', { name: /^close run trace$/i }),
         )
-        await waitFor(() =>
-            expect(
-                queryContextSheet(),
-            ).toBeNull(),
-        )
+        await waitFor(() => expect(queryTraceSheet()).toBeNull())
         expect(
             screen
                 .getByRole('button', {
-                    name: /view context for assistant message 1/i,
+                    name: /view trace for assistant message 1/i,
                 })
                 .getAttribute('aria-pressed'),
         ).toBe('false')
         fireEvent.click(
             screen.getByRole('button', {
-                name: /view context for assistant message 1/i,
+                name: /view trace for assistant message 1/i,
             }),
         )
-        expect(await findContextSheet()).toBeDefined()
+        expect(await findTraceSheet()).toBeDefined()
         expect(
             screen.getByText(
                 (_, element) =>
@@ -1136,11 +1176,86 @@ describe('ChatPage', () => {
         ).toBeDefined()
         expect(
             fetchMock.mock.calls.filter(
-                ([input]) =>
-                    String(input) ===
-                    '/api/sessions/session-1/messages/message-assistant-1/context',
+                ([input]) => String(input) === '/api/runs/run-1/trace',
             ),
         ).toHaveLength(1)
+    })
+
+    it('refetches trace when an assistant message id is reused with a new run id', async () => {
+        const firstMessages = [
+            {
+                id: 'message-user-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-shared',
+                role: 'assistant',
+                metadata: { sessionId: 'session-1', runId: 'run-1' },
+                parts: [{ type: 'text', text: 'first run' }],
+            } as UIMessage,
+        ]
+        chatMessages = firstMessages
+
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            body: buildRunTraceResponse('run-1'),
+        }
+        runTraceResponses['/api/runs/run-2/trace'] = {
+            body: buildRunTraceResponse('run-2'),
+        }
+
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: firstMessages,
+                                error: null,
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) => String(input) === '/api/runs/run-1/trace',
+                ),
+            ).toBe(true),
+        )
+
+        act(() => {
+            chatMessagesSetter?.([
+                firstMessages[0] as UIMessage,
+                {
+                    id: 'message-assistant-shared',
+                    role: 'assistant',
+                    metadata: { sessionId: 'session-1', runId: 'run-2' },
+                    parts: [{ type: 'text', text: 'second run' }],
+                } as UIMessage,
+            ])
+        })
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: /view trace for assistant message 1/i,
+            }),
+        )
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) => String(input) === '/api/runs/run-2/trace',
+                ),
+            ).toBe(true),
+        )
     })
 
     it('clicking the selected assistant message closes the shared sheet', async () => {
@@ -1157,10 +1272,8 @@ describe('ChatPage', () => {
             } as UIMessage,
         ]
 
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-1/context'
-        ] = {
-            body: buildMessageContextResponse('run-1'),
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            body: buildRunTraceResponse('run-1'),
         }
 
         fetchMock.mockImplementationOnce(((input: string | URL) => {
@@ -1171,7 +1284,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
@@ -1185,38 +1298,28 @@ describe('ChatPage', () => {
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.filter(
-                    ([input]) =>
-                        String(input) ===
-                        '/api/sessions/session-1/messages/message-assistant-1/context',
+                    ([input]) => String(input) === '/api/runs/run-1/trace',
                 ),
             ).toHaveLength(1),
         )
 
         const summaryButton = await screen.findByRole('button', {
-            name: /view context/i,
+            name: /view trace/i,
         })
 
         fireEvent.click(summaryButton)
-        await findContextSheet()
-        expect(
-            screen.getByRole('button', { name: /viewing/i }),
-        ).toBeDefined()
+        await findTraceSheet()
+        expect(screen.getByRole('button', { name: /viewing/i })).toBeDefined()
 
         fireEvent.click(screen.getByRole('button', { name: /viewing/i }))
 
-        await waitFor(() =>
-            expect(
-                queryContextSheet(),
-            ).toBeNull(),
-        )
+        await waitFor(() => expect(queryTraceSheet()).toBeNull())
         expect(
-            screen.getByRole('button', { name: /view context/i }),
+            screen.getByRole('button', { name: /view trace/i }),
         ).toBeDefined()
         expect(
             fetchMock.mock.calls.filter(
-                ([input]) =>
-                    String(input) ===
-                    '/api/sessions/session-1/messages/message-assistant-1/context',
+                ([input]) => String(input) === '/api/runs/run-1/trace',
             ),
         ).toHaveLength(1)
     })
@@ -1240,15 +1343,11 @@ describe('ChatPage', () => {
             } as UIMessage,
         ]
 
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-1/context'
-        ] = {
-            body: buildMessageContextResponse('run-1'),
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            body: buildRunTraceResponse('run-1'),
         }
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-2/context'
-        ] = {
-            body: buildMessageContextResponse('run-2'),
+        runTraceResponses['/api/runs/run-2/trace'] = {
+            body: buildRunTraceResponse('run-2'),
         }
 
         fetchMock.mockImplementationOnce(((input: string | URL) => {
@@ -1259,7 +1358,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
@@ -1279,7 +1378,7 @@ describe('ChatPage', () => {
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.filter(([input]) =>
-                    String(input).includes('/context'),
+                    String(input).includes('/trace'),
                 ),
             ).toHaveLength(1),
         )
@@ -1291,10 +1390,11 @@ describe('ChatPage', () => {
 
         fireEvent.click(readyButtons[0] as HTMLElement)
 
-        expect(await findContextSheet()).toBeDefined()
+        expect(await findTraceSheet()).toBeDefined()
         expect(
-            screen.getByText((_, element) =>
-                element?.textContent === 'Message message-assistant-1',
+            screen.getByText(
+                (_, element) =>
+                    element?.textContent === 'Message message-assistant-1',
             ),
         ).toBeDefined()
         expect(readyButtons[0]?.getAttribute('aria-pressed')).toBe('true')
@@ -1305,14 +1405,15 @@ describe('ChatPage', () => {
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.filter(([input]) =>
-                    String(input).includes('/context'),
+                    String(input).includes('/trace'),
                 ),
             ).toHaveLength(2),
         )
         await waitFor(() =>
             expect(
-                screen.getByText((_, element) =>
-                    element?.textContent === 'Message message-assistant-2',
+                screen.getByText(
+                    (_, element) =>
+                        element?.textContent === 'Message message-assistant-2',
                 ),
             ).toBeDefined(),
         )
@@ -1322,9 +1423,7 @@ describe('ChatPage', () => {
                     element?.textContent === 'Message message-assistant-1',
             ),
         ).toBeNull()
-        expect(
-            queryContextSheet(),
-        ).toBeDefined()
+        expect(queryTraceSheet()).toBeDefined()
         expect(
             screen
                 .getAllByRole('button')
@@ -1339,16 +1438,12 @@ describe('ChatPage', () => {
         ).toBe('true')
         expect(
             fetchMock.mock.calls.some(
-                ([input]) =>
-                    String(input) ===
-                    '/api/sessions/session-1/messages/message-assistant-1/context',
+                ([input]) => String(input) === '/api/runs/run-1/trace',
             ),
         ).toBe(true)
         expect(
             fetchMock.mock.calls.some(
-                ([input]) =>
-                    String(input) ===
-                    '/api/sessions/session-1/messages/message-assistant-2/context',
+                ([input]) => String(input) === '/api/runs/run-2/trace',
             ),
         ).toBe(true)
     })
@@ -1367,10 +1462,8 @@ describe('ChatPage', () => {
             } as UIMessage,
         ]
 
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-1/context'
-        ] = {
-            body: buildMessageContextResponse('run-1'),
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            body: buildRunTraceResponse('run-1'),
         }
 
         fetchMock.mockImplementationOnce(((input: string | URL) => {
@@ -1381,7 +1474,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
@@ -1401,25 +1494,19 @@ describe('ChatPage', () => {
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.some(
-                    ([input]) =>
-                        String(input) ===
-                        '/api/sessions/session-1/messages/message-assistant-1/context',
+                    ([input]) => String(input) === '/api/runs/run-1/trace',
                 ),
             ).toBe(true),
         )
 
         fireEvent.click(
-            await screen.findByRole('button', { name: /view context/i }),
+            await screen.findByRole('button', { name: /view trace/i }),
         )
 
-        await findContextSheet()
-        expect(
-            screen.getByRole('button', { name: /viewing/i }),
-        ).toBeDefined()
+        await findTraceSheet()
+        expect(screen.getByRole('button', { name: /viewing/i })).toBeDefined()
 
-        await waitFor(() =>
-            expect(chatMessagesSetter).not.toBeNull(),
-        )
+        await waitFor(() => expect(chatMessagesSetter).not.toBeNull())
         await act(async () => {
             chatMessagesSetter?.([
                 {
@@ -1430,11 +1517,7 @@ describe('ChatPage', () => {
             ])
         })
 
-        await waitFor(() =>
-            expect(
-                queryContextSheet(),
-            ).toBeNull(),
-        )
+        await waitFor(() => expect(queryTraceSheet()).toBeNull())
         expect(screen.queryByRole('button', { name: /viewing/i })).toBeNull()
     })
 
@@ -1467,7 +1550,7 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
@@ -1485,7 +1568,7 @@ describe('ChatPage', () => {
                 return Promise.resolve({ ok: true })
             }
 
-            const contextResponse = messageContextResponses[url]
+            const contextResponse = runTraceResponses[url]
             if (contextResponse) {
                 const status = contextResponse.status ?? 200
                 return Promise.resolve({
@@ -1500,18 +1583,16 @@ describe('ChatPage', () => {
 
         render(<ChatPage />)
 
-        messageContextResponses[
-            '/api/sessions/session-1/messages/message-assistant-1/context'
-        ] = {
-            body: buildMessageContextResponse('run-stale'),
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            body: buildRunTraceResponse('run-1'),
         }
 
         const initialButton = await screen.findByRole('button', {
-            name: /view context/i,
+            name: /view trace/i,
         })
         expect(initialButton).toBeDefined()
         fireEvent.click(initialButton)
-        await findContextSheet()
+        await findTraceSheet()
 
         fireEvent.click(screen.getByText('switch-session-2'))
 
@@ -1521,15 +1602,11 @@ describe('ChatPage', () => {
             ),
         )
 
+        expect(screen.queryByRole('button', { name: /view trace/i })).toBeNull()
         expect(
-            screen.queryByRole('button', { name: /view context/i }),
+            screen.queryByRole('button', { name: /trace selected/i }),
         ).toBeNull()
-        expect(
-            screen.queryByRole('button', { name: /context selected/i }),
-        ).toBeNull()
-        expect(
-            queryContextSheet(),
-        ).toBeNull()
+        expect(queryTraceSheet()).toBeNull()
 
         sessionSwitchDeferred.resolve({
             json: () =>
@@ -1556,7 +1633,7 @@ describe('ChatPage', () => {
         await screen.findByText('hello from session 2')
     })
 
-    it('dedupes in-flight context loads for the same message', async () => {
+    it('dedupes in-flight trace loads for the same message', async () => {
         chatMessages = [
             {
                 id: 'message-user-1',
@@ -1588,17 +1665,14 @@ describe('ChatPage', () => {
                         Promise.resolve({
                             success: true,
                             data: {
-                                messages: chatMessages,
+                                messages: withTestRunMetadata(chatMessages),
                                 error: null,
                             },
                         }),
                 })
             }
 
-            if (
-                url ===
-                '/api/sessions/session-1/messages/message-assistant-1/context'
-            ) {
+            if (url === '/api/runs/run-1/trace') {
                 return contextDeferred.promise
             }
 
@@ -1609,7 +1683,7 @@ describe('ChatPage', () => {
                 return Promise.resolve({ ok: true })
             }
 
-            const contextResponse = messageContextResponses[url]
+            const contextResponse = runTraceResponses[url]
             if (contextResponse) {
                 const status = contextResponse.status ?? 200
                 return Promise.resolve({
@@ -1625,7 +1699,7 @@ describe('ChatPage', () => {
         render(<ChatPage />)
 
         const openButton = await screen.findByRole('button', {
-            name: /view context/i,
+            name: /view trace/i,
         })
 
         fireEvent.click(openButton)
@@ -1634,9 +1708,7 @@ describe('ChatPage', () => {
         await waitFor(() =>
             expect(
                 fetchMock.mock.calls.filter(
-                    ([input]) =>
-                        String(input) ===
-                        '/api/sessions/session-1/messages/message-assistant-1/context',
+                    ([input]) => String(input) === '/api/runs/run-1/trace',
                 ),
             ).toHaveLength(1),
         )
@@ -1644,21 +1716,19 @@ describe('ChatPage', () => {
         contextDeferred.resolve({
             ok: true,
             status: 200,
-            json: () => Promise.resolve(buildMessageContextResponse('run-1')),
+            json: () => Promise.resolve(buildRunTraceResponse('run-1')),
         })
 
-        await screen.findByRole('button', { name: /view context/i })
-        expect(queryContextSheet()).toBeNull()
+        await screen.findByRole('button', { name: /view trace/i })
+        expect(queryTraceSheet()).toBeNull()
 
-        fireEvent.click(screen.getByRole('button', { name: /view context/i }))
+        fireEvent.click(screen.getByRole('button', { name: /view trace/i }))
 
         await screen.findByRole('button', { name: /viewing/i })
-        expect(queryContextSheet()).toBeDefined()
+        expect(queryTraceSheet()).toBeDefined()
         expect(
             fetchMock.mock.calls.filter(
-                ([input]) =>
-                    String(input) ===
-                    '/api/sessions/session-1/messages/message-assistant-1/context',
+                ([input]) => String(input) === '/api/runs/run-1/trace',
             ),
         ).toHaveLength(1)
     })
@@ -1709,7 +1779,7 @@ describe('ChatPage', () => {
                 return Promise.resolve({ ok: true })
             }
 
-            const contextResponse = messageContextResponses[url]
+            const contextResponse = runTraceResponses[url]
             if (contextResponse) {
                 const status = contextResponse.status ?? 200
                 return Promise.resolve({
@@ -1799,7 +1869,7 @@ describe('ChatPage', () => {
                 return Promise.resolve({ ok: true })
             }
 
-            const contextResponse = messageContextResponses[url]
+            const contextResponse = runTraceResponses[url]
             if (contextResponse) {
                 const status = contextResponse.status ?? 200
                 return Promise.resolve({

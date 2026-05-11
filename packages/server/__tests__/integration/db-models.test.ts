@@ -32,20 +32,20 @@ describe('P2-02: Data Model Integration Tests', () => {
             expect(schemaContent).toContain('model StockHistory {')
             expect(schemaContent).toContain('model StockInfo {')
             expect(schemaContent).toContain('model ChatSession {')
-            expect(schemaContent).toContain('model ChatMessageManifest {')
             expect(schemaContent).toContain('model CronJobRun {')
             expect(schemaContent).toContain('model AgentRun {')
+            expect(schemaContent).toContain('model AgentRunTrace {')
 
-            const manifestModel = schemaContent.match(
-                /model ChatMessageManifest \{[\s\S]*?\n\}/,
+            const agentRunModel = schemaContent.match(
+                /model AgentRun \{[\s\S]*?\n\}/,
             )?.[0]
-            expect(manifestModel).toContain('runId     String   @unique')
-            expect(manifestModel).toContain(
-                '@@index([sessionId, messageId, createdAt])',
-            )
-            expect(manifestModel).not.toContain(
-                '@@unique([sessionId, messageId])',
-            )
+            const traceModel = schemaContent.match(
+                /model AgentRunTrace \{[\s\S]*?\n\}/,
+            )?.[0]
+
+            expect(agentRunModel).toContain('trace         AgentRunTrace?')
+            expect(traceModel).toContain('runId     String   @unique')
+            expect(traceModel).toContain('onDelete: Restrict')
         })
 
         it('should have Watchlist model with correct fields', () => {

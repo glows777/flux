@@ -15,18 +15,17 @@ export function estimateTextTokens(text: string): number {
     ).length
     const nonCjkChars = chars.length - cjkChars
 
-    return Math.max(
-        Math.ceil(bytes / 4),
-        Math.ceil(cjkChars + nonCjkChars / 4),
-    )
+    return Math.max(Math.ceil(bytes / 4), Math.ceil(cjkChars + nonCjkChars / 4))
 }
 
 export function estimateMessages(messages: UIMessage[]): number {
     return messages.reduce((total, message) => {
         const text = message.parts
             .filter(
-                (part): part is Extract<
-                    typeof message.parts[number],
+                (
+                    part,
+                ): part is Extract<
+                    (typeof message.parts)[number],
                     { type: 'text' }
                 > => part.type === 'text',
             )
@@ -37,7 +36,9 @@ export function estimateMessages(messages: UIMessage[]): number {
     }, 0)
 }
 
-export function estimateToolSpec(spec: ToolContribution['manifestSpec']): number {
+export function estimateToolSpec(
+    spec: ToolContribution['manifestSpec'],
+): number {
     return estimateTextTokens(JSON.stringify(spec ?? {})) + TOOL_OVERHEAD
 }
 

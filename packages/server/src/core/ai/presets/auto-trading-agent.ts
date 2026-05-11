@@ -1,4 +1,3 @@
-import { resolve } from 'node:path'
 import type { PrismaClient } from '@prisma/client'
 import type { AlpacaClient } from '@/core/broker/alpaca-client'
 import type { StoreDeps } from '../memory'
@@ -11,6 +10,7 @@ import { skillPlugin } from '../plugins/skill'
 import type { ResearchDeps } from '../research'
 import type { AIPlugin } from '../runtime/types'
 import type { ToolDeps } from '../tools'
+import { resolveServerSkillsDirectory } from './paths'
 
 export interface AutoTradingAgentPresetDeps {
     alpacaClient: AlpacaClient
@@ -42,7 +42,7 @@ export function autoTradingAgentPreset(
         sessionPlugin(),
         memoryPlugin({ includeHistory: true }),
         skillPlugin({
-            skillsDirectory: resolve(import.meta.dir, '../../../../skills'),
+            skillsDirectory: resolveServerSkillsDirectory(),
         }),
         autoTradingToolsPlugin({ tradingAgentDeps }),
     ]

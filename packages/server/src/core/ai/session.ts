@@ -9,11 +9,6 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 import type { UIMessage } from 'ai'
 import { prisma as defaultPrisma } from '@/core/db'
 import { SessionError, type SessionErrorCode } from './session-errors'
-import {
-    loadMessageManifest as loadMessageManifestRecord,
-    type MessageManifestRecord,
-    saveMessageManifest as saveMessageManifestRecord,
-} from './session-manifest'
 
 // --- Types ---
 
@@ -31,7 +26,7 @@ const TITLE_MAX_LENGTH = 20
 
 export { TRUNCATE_LIMIT }
 export { SessionError }
-export type { MessageManifestRecord, SessionErrorCode }
+export type { SessionErrorCode }
 
 // --- Deps ---
 
@@ -80,7 +75,13 @@ export async function deleteSession(id: string, deps?: SessionDeps) {
     const { db } = deps ?? getDefaultDeps()
 
     try {
-        await db.chatSession.delete({ where: { id } })
+        await db.$transaction([
+            db.chatSession.delete({ where: { id } }),
+            db.agentRunTrace.deleteMany({
+                where: { run: { sessionId: id } },
+            }),
+            db.agentRun.deleteMany({ where: { sessionId: id } }),
+        ])
     } catch (error) {
         if (isPrismaNotFoundError(error)) {
             throw new SessionError('Session not found', 'NOT_FOUND')
@@ -228,30 +229,6 @@ export async function appendMessage(
             content: JSON.stringify(message),
         },
     })
-}
-
-export async function saveMessageManifest(
-    sessionId: string,
-    messageId: string,
-    manifest: Parameters<typeof saveMessageManifestRecord>[2],
-    deps?: SessionDeps,
-): Promise<void> {
-    const resolvedDeps = deps ?? getDefaultDeps()
-    return saveMessageManifestRecord(
-        sessionId,
-        messageId,
-        manifest,
-        resolvedDeps,
-    )
-}
-
-export async function loadMessageManifest(
-    sessionId: string,
-    messageId: string,
-    deps?: SessionDeps,
-): Promise<MessageManifestRecord | null> {
-    const resolvedDeps = deps ?? getDefaultDeps()
-    return loadMessageManifestRecord(sessionId, messageId, resolvedDeps)
 }
 
 // --- Session Error Persistence ---

@@ -574,7 +574,6 @@ describe('runAfterRunHooks', () => {
             responseMessage: {} as AfterRunContext['responseMessage'],
             toolCalls: [],
             usage: { inputTokens: 0, outputTokens: 0 },
-            contextManifest: {} as AfterRunContext['contextManifest'],
         } satisfies AfterRunContext
 
         await runAfterRunHooks(plugins, ctx)
@@ -605,7 +604,6 @@ describe('runAfterRunHooks', () => {
             responseMessage: {} as AfterRunContext['responseMessage'],
             toolCalls: [],
             usage: { inputTokens: 0, outputTokens: 0 },
-            contextManifest: {} as AfterRunContext['contextManifest'],
         } satisfies AfterRunContext
 
         const warnings = await runAfterRunHooks(plugins, ctx)

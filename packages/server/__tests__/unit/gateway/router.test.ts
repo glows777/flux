@@ -3,19 +3,6 @@ import type { AgentType, AIRuntime, ChatOutput } from '@/core/ai/runtime/types'
 import type { GatewayInput } from '@/gateway/router'
 import { Router } from '@/gateway/router'
 
-function createContextManifest(
-    runId = 'run-1',
-): ReturnType<ChatOutput['getContextManifest']> {
-    return {
-        runId,
-        createdAt: new Date().toISOString(),
-        input: {} as never,
-        pluginOutputs: [],
-        assembledContext: {} as never,
-        modelRequest: {} as never,
-    }
-}
-
 function createMockRuntime(): AIRuntime {
     const mockConsumeStream = mock(() =>
         Promise.resolve({
@@ -27,7 +14,6 @@ function createMockRuntime(): AIRuntime {
             },
             toolCalls: [],
             usage: { inputTokens: 100, outputTokens: 50 },
-            contextManifest: createContextManifest(),
         }),
     )
 
@@ -50,7 +36,6 @@ function createMockRuntime(): AIRuntime {
                 consumeStream: mockConsumeStream,
                 finalize: mock(() => Promise.resolve()),
                 recordFailure: mock(() => Promise.resolve()),
-                getContextManifest: () => createContextManifest(),
             } as ChatOutput),
         ),
         dispose: mock(() => Promise.resolve()),

@@ -1,11 +1,14 @@
 import type { ChannelAdapter } from '@/channels/types'
-import { createRunId } from '@/core/ai/agent-run'
+import { type AgentRunStore, createRunId } from '@/core/ai/agent-run'
+import type { TracePhase, TraceRecorder } from '@/core/ai/agent-run-trace'
 import type { ChatOutput } from '@/core/ai/runtime/types'
 import type { GatewayInput, Router, TriggerResult } from './router'
 
 interface GatewayDeps {
     readonly router: Router
     readonly channels: Map<string, ChannelAdapter>
+    readonly agentRunStore: AgentRunStore
+    readonly traceRecorder?: TraceRecorder
 }
 
 export class Gateway {
@@ -41,6 +44,12 @@ export class Gateway {
             output = await this.deps.router.chat(normalizedInput)
         } catch (error) {
             console.error('Gateway trigger AI execution failed:', error)
+            await this.recordBoundaryFailure(
+                normalizedInput,
+                runId,
+                'before_run',
+                error,
+            )
             const message =
                 error instanceof Error ? error.message : 'Unknown error'
             return {
@@ -49,6 +58,7 @@ export class Gateway {
                 runId,
                 success: false,
                 error: message,
+                failurePhase: 'before_run',
             }
         }
 
@@ -57,6 +67,12 @@ export class Gateway {
             consumed = await output.consumeStream()
         } catch (error) {
             console.error('Gateway trigger stream consumption failed:', error)
+            await this.recordBoundaryFailure(
+                normalizedInput,
+                output.runId,
+                'model_stream',
+                error,
+            )
             const message =
                 error instanceof Error ? error.message : 'Unknown error'
             return {
@@ -65,6 +81,7 @@ export class Gateway {
                 runId: output.runId,
                 success: false,
                 error: message,
+                failurePhase: 'model_stream',
             }
         }
 
@@ -88,6 +105,7 @@ export class Gateway {
                 runId: output.runId,
                 success: false,
                 error: 'Execution aborted',
+                failurePhase: 'model_stream',
             }
         }
 
@@ -115,6 +133,55 @@ export class Gateway {
             sessionId: output.sessionId,
             runId: output.runId,
             success: true,
+        }
+    }
+
+    private async recordBoundaryFailure(
+        input: GatewayInput,
+        runId: string,
+        phase: TracePhase,
+        error: unknown,
+    ): Promise<void> {
+        const agentType = input.agentType ?? 'trading-agent'
+        let recordedRunId = runId
+
+        try {
+            const result = await this.deps.agentRunStore.createFailedRun({
+                runId,
+                source: input.channel,
+                mode: input.mode,
+                agentType,
+                sessionId: input.sessionId,
+                cronJobId: input.cronJobId,
+                userId: input.userId,
+                sourceId: input.sourceId,
+                inputSummary: input.content,
+                error,
+            })
+            recordedRunId = result.runId
+        } catch (recordError) {
+            console.error('Gateway failed-run recording failed:', recordError)
+        }
+
+        if (!this.deps.traceRecorder) return
+
+        try {
+            await this.deps.traceRecorder.recordMinimalFailure({
+                runId: recordedRunId,
+                source: 'gateway',
+                phase,
+                error,
+                runContext: {
+                    source: input.channel,
+                    mode: input.mode,
+                    agentType,
+                    cronJobId: input.cronJobId,
+                    userId: input.userId,
+                    sourceId: input.sourceId,
+                },
+            })
+        } catch (traceError) {
+            console.error('Gateway trace failure recording failed:', traceError)
         }
     }
 }

@@ -19,6 +19,11 @@
             }
         ],
         "paths": {
+            "@/channels/*": ["../server/src/channels/*"],
+            "@/core/*": ["../server/src/core/*"],
+            "@/gateway/*": ["../server/src/gateway/*"],
+            "@/routes/*": ["../server/src/routes/*"],
+            "@/scheduler/*": ["../server/src/scheduler/*"],
             "@/*": ["./*"]
         }
     },

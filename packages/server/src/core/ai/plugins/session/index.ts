@@ -1,12 +1,11 @@
 import type { UIMessage } from 'ai'
 import { prisma as defaultPrisma } from '@/core/db'
-import type { AfterRunContext, AIPlugin } from '../../runtime/types'
+import type { AIPlugin } from '../../runtime/types'
 import {
     appendMessage as defaultAppendMessage,
     clearSessionError as defaultClearSessionError,
     createSession as defaultCreateSession,
     loadMessages as defaultLoadMessages,
-    saveMessageManifest as defaultSaveMessageManifest,
     saveSessionError as defaultSaveSessionError,
     touchSession as defaultTouchSession,
     type SessionErrorRecord,
@@ -21,11 +20,6 @@ interface SessionPluginDeps {
     ) => Promise<string>
     loadMessages: (sessionId: string) => Promise<UIMessage[]>
     appendMessage: (sessionId: string, message: UIMessage) => Promise<void>
-    saveMessageManifest: (
-        sessionId: string,
-        messageId: string,
-        manifest: AfterRunContext['contextManifest'],
-    ) => Promise<void>
     touchSession: (sessionId: string) => Promise<void>
     resolveSession: (params: {
         channel: string
@@ -106,7 +100,6 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
         },
         loadMessages: defaultLoadMessages,
         appendMessage: defaultAppendMessage,
-        saveMessageManifest: defaultSaveMessageManifest,
         touchSession: defaultTouchSession,
         resolveSession: defaultResolveSession,
         saveSessionError: defaultSaveSessionError,
@@ -191,25 +184,10 @@ export function sessionPlugin(options?: SessionPluginOptions): AIPlugin {
 
         async afterRun(ctx): Promise<void> {
             await deps.appendMessage(ctx.sessionId, ctx.responseMessage)
-
-            let manifestError: unknown
-            try {
-                await deps.saveMessageManifest(
-                    ctx.sessionId,
-                    ctx.responseMessage.id,
-                    ctx.contextManifest,
-                )
-            } catch (error) {
-                console.error('Failed to save message manifest', error)
-                manifestError = error
-            }
-
             await deps.touchSession(ctx.sessionId)
             // Idempotent safety net — beforeRun already cleared, but double-clear
             // guarantees no stale error if beforeRun's clear somehow failed silently.
             await deps.clearSessionError(ctx.sessionId)
-
-            if (manifestError) throw manifestError
         },
 
         async onError(ctx, error: Error): Promise<void> {

@@ -257,14 +257,6 @@ export const mockRuntimeConsumeStream = mock(() =>
         },
         toolCalls: [],
         usage: { inputTokens: 100, outputTokens: 50 },
-        contextManifest: {
-            runId: 'run-1',
-            createdAt: new Date().toISOString(),
-            input: {} as never,
-            pluginOutputs: [],
-            assembledContext: {} as never,
-            modelRequest: {} as never,
-        },
     }),
 )
 
@@ -285,14 +277,6 @@ export const mockRuntimeChat = mock(() =>
         consumeStream: mockRuntimeConsumeStream,
         finalize: mockRuntimeFinalize,
         recordFailure: mockRuntimeRecordFailure,
-        getContextManifest: () => ({
-            runId: 'run-1',
-            createdAt: new Date().toISOString(),
-            input: {} as never,
-            pluginOutputs: [],
-            assembledContext: {} as never,
-            modelRequest: {} as never,
-        }),
     }),
 )
 

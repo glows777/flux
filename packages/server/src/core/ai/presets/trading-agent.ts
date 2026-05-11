@@ -1,4 +1,3 @@
-import { resolve } from 'node:path'
 import { getAlpacaClient } from '@/core/broker/alpaca-client'
 import { prisma } from '@/core/db'
 import {
@@ -20,6 +19,7 @@ import { createResearchTools } from '../research'
 import type { AIPlugin } from '../runtime/types'
 import { createTools, type ToolDeps } from '../tools'
 import { createTradingTools, type TradingToolDeps } from '../trading-tools'
+import { resolveServerSkillsDirectory } from './paths'
 
 export interface TradingAgentPresetDeps {
     toolDeps?: ToolDeps
@@ -53,7 +53,7 @@ export function tradingAgentPreset(deps?: TradingAgentPresetDeps): AIPlugin[] {
         sessionPlugin(),
         memoryPlugin(),
         skillPlugin({
-            skillsDirectory: resolve(import.meta.dir, '../../../../skills'),
+            skillsDirectory: resolveServerSkillsDirectory(),
         }),
         dataPlugin({ deps: { createTools: () => createTools(toolDeps) } }),
         displayPlugin({ deps: { createTools: () => createTools(toolDeps) } }),

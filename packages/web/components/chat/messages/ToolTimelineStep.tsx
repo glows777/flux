@@ -40,6 +40,9 @@ const ICON_COMPONENTS: Record<string, LucideIcon> = {
     memory_append: Save,
     memory_search: Search,
     memory_list: List,
+    update_core_memory: Save,
+    save_lesson: Save,
+    read_history: List,
 }
 
 function StepIcon({ step }: { readonly step: TimelineStep }) {
@@ -232,6 +235,7 @@ function StepContent({ step }: { readonly step: TimelineStep }) {
             return <WebFetchStep step={step} />
         case 'memory_read':
         case 'memory_list':
+        case 'read_history':
             return <MemoryReadStep step={step} />
         case 'memory_write':
         case 'memory_append':

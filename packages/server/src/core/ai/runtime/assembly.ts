@@ -10,8 +10,8 @@ import type {
     ChatParams,
     ContextSegment,
     ContextSegmentSnapshot,
-    MessageContextSegmentSnapshot,
     PluginOutput,
+    PromptMessageSegmentSnapshot,
     SystemContextSegmentSnapshot,
     ToolContribution,
     ToolContributionSnapshot,
@@ -59,28 +59,27 @@ export function assembleSegments(input: {
         .slice()
         .sort(sortSegments)
 
-    const messageSegments: MessageContextSegmentSnapshot[] =
-        input.pluginSegments
-            .filter((s) => s.target === 'messages')
-            .slice()
-            .sort(sortSegments)
-            .map((segment) => {
-                if (segment.payload.format !== 'messages') {
-                    throw new InvalidContextSegmentError(
-                        segment.id,
-                        'messages target requires payload.format = "messages"',
-                    )
-                }
+    const messageSegments: PromptMessageSegmentSnapshot[] = input.pluginSegments
+        .filter((s) => s.target === 'messages')
+        .slice()
+        .sort(sortSegments)
+        .map((segment) => {
+            if (segment.payload.format !== 'messages') {
+                throw new InvalidContextSegmentError(
+                    segment.id,
+                    'messages target requires payload.format = "messages"',
+                )
+            }
 
-                return {
-                    ...segment,
-                    target: 'messages' as const,
-                    payload: {
-                        format: 'messages' as const,
-                        messages: segment.payload.messages,
-                    },
-                }
-            })
+            return {
+                ...segment,
+                target: 'messages' as const,
+                payload: {
+                    format: 'messages' as const,
+                    messages: segment.payload.messages,
+                },
+            }
+        })
 
     const systemSegments: SystemContextSegmentSnapshot[] =
         rawSystemSegments.map((segment, index) => {

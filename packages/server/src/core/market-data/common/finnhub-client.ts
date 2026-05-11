@@ -82,14 +82,43 @@ export class FinnhubClient implements FinnhubMarketDataClient {
             to: String(to),
         })
         if (data.s !== 'ok' || !data.t) return []
-        return data.t.map((ts, i) => ({
-            date: new Date(ts * 1000),
-            open: data.o?.[i],
-            high: data.h?.[i],
-            low: data.l?.[i],
-            close: data.c?.[i],
-            volume: data.v?.[i] ?? undefined,
-        }))
+
+        const points: HistoryPoint[] = []
+        for (const [i, ts] of data.t.entries()) {
+            const open = data.o?.[i]
+            const high = data.h?.[i]
+            const low = data.l?.[i]
+            const close = data.c?.[i]
+            const volume = data.v?.[i]
+
+            if (
+                !Number.isFinite(ts) ||
+                typeof open !== 'number' ||
+                !Number.isFinite(open) ||
+                typeof high !== 'number' ||
+                !Number.isFinite(high) ||
+                typeof low !== 'number' ||
+                !Number.isFinite(low) ||
+                typeof close !== 'number' ||
+                !Number.isFinite(close)
+            ) {
+                continue
+            }
+
+            points.push({
+                date: new Date(ts * 1000),
+                open,
+                high,
+                low,
+                close,
+                volume:
+                    typeof volume === 'number' && Number.isFinite(volume)
+                        ? volume
+                        : undefined,
+            })
+        }
+
+        return points
     }
 
     async getCompanyOverview(symbol: string): Promise<CompanyOverview> {

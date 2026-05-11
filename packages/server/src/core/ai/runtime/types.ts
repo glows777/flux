@@ -1,5 +1,6 @@
 import type { LanguageModel, Tool, UIMessage } from 'ai'
 import type { AgentRunStore } from '@/core/ai/agent-run'
+import type { TraceRecorder } from '@/core/ai/agent-run-trace/recorder'
 import type { GatewayMode } from '@/gateway/router'
 
 // ── Tool Definition ──
@@ -54,7 +55,6 @@ export interface AfterRunContext extends RunContext {
     responseMessage: UIMessage
     toolCalls: ToolCallRecord[]
     usage: { inputTokens: number | undefined; outputTokens: number | undefined }
-    contextManifest: ContextManifest
 }
 
 // ── Context Manifest ──
@@ -98,21 +98,6 @@ export interface PluginDiagnostic {
     readonly data?: unknown
 }
 
-export interface ManifestInputSnapshot {
-    readonly channel: RunContext['channel']
-    readonly mode: RunContext['mode']
-    readonly agentType: RunContext['agentType']
-    readonly rawMessages: RunContext['rawMessages']
-    readonly initialSessionId?: string
-    readonly resolvedSessionId?: string
-    readonly defaults: Record<string, unknown>
-}
-
-export interface PluginOutputSnapshot {
-    readonly plugin: string
-    readonly output: PluginOutput
-}
-
 export interface AssembledParamsSnapshot {
     readonly candidates: Array<{
         readonly plugin: string
@@ -130,7 +115,7 @@ export interface SystemContextSegmentSnapshot extends ContextSegment {
     readonly estimatedTokens: number
 }
 
-export interface MessageContextSegmentSnapshot extends ContextSegment {
+export interface PromptMessageSegmentSnapshot extends ContextSegment {
     readonly target: 'messages'
     readonly payload: {
         readonly format: 'messages'
@@ -140,7 +125,7 @@ export interface MessageContextSegmentSnapshot extends ContextSegment {
 
 export type ContextSegmentSnapshot =
     | SystemContextSegmentSnapshot
-    | MessageContextSegmentSnapshot
+    | PromptMessageSegmentSnapshot
 
 export interface ToolContributionSnapshot extends ToolContribution {
     readonly estimatedTokens: number
@@ -221,28 +206,6 @@ export interface CacheResultSnapshot {
     readonly circuitBreakerState: 'closed' | 'open'
 }
 
-export interface ResultSnapshot {
-    readonly text: string
-    readonly responseMessage: UIMessage
-    readonly toolCalls: ToolCallRecord[]
-    readonly usage: {
-        readonly inputTokens: number | undefined
-        readonly outputTokens: number | undefined
-    }
-    readonly cacheResult?: CacheResultSnapshot
-}
-
-export interface ContextManifest {
-    readonly runId: string
-    readonly createdAt: string
-    readonly input: ManifestInputSnapshot
-    readonly pluginOutputs: PluginOutputSnapshot[]
-    readonly assembledContext: AssembledContextSnapshot
-    readonly modelRequest: ModelRequestSnapshot
-    readonly cachePlan?: CachePlanSnapshot
-    readonly result?: ResultSnapshot
-}
-
 // ── Plugin Interface ──
 
 export interface PluginOutput {
@@ -268,6 +231,7 @@ export interface RuntimeOptions {
     model: LanguageModel
     plugins: AIPlugin[]
     agentRunStore: AgentRunStore
+    traceRecorder: TraceRecorder
     defaults?: Partial<ChatParams>
 }
 
@@ -290,7 +254,6 @@ export interface ConsumedResult {
     responseMessage: UIMessage
     toolCalls: ToolCallRecord[]
     usage: { inputTokens: number | undefined; outputTokens: number | undefined }
-    contextManifest: ContextManifest
 }
 
 export interface ChatOutput {
@@ -302,7 +265,6 @@ export interface ChatOutput {
     consumeStream(): Promise<ConsumedResult>
     finalize(responseMessage: UIMessage): Promise<void>
     recordFailure(error: unknown): Promise<void>
-    getContextManifest(): ContextManifest
 }
 
 export interface AIRuntime {

@@ -41,7 +41,9 @@ export function promptPlugin(options?: PromptPluginOptions): AIPlugin {
                     kind: 'system.base',
                     payload: {
                         format: 'text',
-                        text: deps.buildGlobalBasePrompt({ symbol: ctx.symbol }),
+                        text: deps.buildGlobalBasePrompt({
+                            symbol: ctx.symbol,
+                        }),
                     },
                     source: { plugin: 'prompt' },
                     priority: 'required',

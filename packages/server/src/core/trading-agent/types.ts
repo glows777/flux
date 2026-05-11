@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client'
-import type { MemoryDeps } from '@/core/ai/memory/types'
+import type { StoreDeps } from '@/core/ai/memory/store'
 import type { ResearchDeps } from '@/core/ai/research'
 import type { ToolDeps } from '@/core/ai/tools'
 import type { AlpacaClient } from '@/core/broker/alpaca-client'
@@ -29,7 +29,7 @@ export interface TradingAgentDeps {
     readonly alpacaClient: AlpacaClient
     readonly db: PrismaClient
     readonly toolDeps: ToolDeps
-    readonly memoryDeps?: MemoryDeps
+    readonly memoryDeps?: StoreDeps
     readonly researchDeps?: ResearchDeps
 }
 

@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import { HTTPException } from 'hono/http-exception'
+import type { AgentRunTraceStore } from '@/core/ai/agent-run-trace'
 import type { Gateway } from '@/gateway/gateway'
 import type { CronScheduler } from '@/scheduler/engine'
 import { createChatRoutes } from './chat'
@@ -10,6 +11,7 @@ import type { HealthStatus } from './health'
 import { createHealthRoute } from './health'
 import macro from './macro'
 import memory from './memory'
+import { createRunsRoutes } from './runs'
 import sessions from './sessions'
 import stocks from './stocks'
 import watchlist from './watchlist'
@@ -18,9 +20,13 @@ export function createHonoApp(deps?: {
     getHealthStatus?: () => HealthStatus
     cron?: { scheduler?: CronScheduler }
     gateway?: Gateway
+    agentRunTraceStore?: AgentRunTraceStore
 }) {
     const health = createHealthRoute(deps)
     const cronRoute = createCronRoutes(deps?.cron)
+    const runsRoute = createRunsRoutes({
+        traceStore: deps?.agentRunTraceStore,
+    })
     const chatRoute = deps?.gateway
         ? createChatRoutes(deps.gateway)
         : createChatRoutes(undefined as unknown as Gateway)
@@ -60,6 +66,7 @@ export function createHonoApp(deps?: {
         .route('/watchlist', watchlist)
         .route('/stocks', stocks)
         .route('/sessions', sessions)
+        .route('/runs', runsRoute)
         .route('/chat', chatRoute)
         .route('/memory', memory)
         .route('/health', health)

@@ -1,19 +1,17 @@
 'use client'
 
-import type { MessageContextState } from '@/lib/ai/context-visibility'
-import { buildMessageContextSummaryModel } from '@/lib/ai/context-visibility'
+import type { RunTraceState } from '@/lib/ai/run-trace-visibility'
+import { buildRunTraceSummaryModel } from '@/lib/ai/run-trace-visibility'
 
-export interface MessageContextSummaryStripProps {
-    readonly state: MessageContextState
+export interface RunTraceSummaryStripProps {
+    readonly state: RunTraceState
     readonly isSelected: boolean
     readonly onOpen: () => void
     readonly onRetry?: () => void
     readonly actionLabel?: string
 }
 
-function chipToneClassName(
-    tone: 'neutral' | 'emerald' | 'warning' | 'rose',
-) {
+function chipToneClassName(tone: 'neutral' | 'emerald' | 'warning' | 'rose') {
     switch (tone) {
         case 'emerald':
             return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
@@ -42,27 +40,25 @@ function Chip({
     )
 }
 
-export function MessageContextSummaryStrip({
+export function RunTraceSummaryStrip({
     state,
     isSelected,
     onOpen,
     onRetry,
     actionLabel,
-}: MessageContextSummaryStripProps) {
-    const model = buildMessageContextSummaryModel(state, { isSelected })
+}: RunTraceSummaryStripProps) {
+    const model = buildRunTraceSummaryModel(state, { isSelected })
     const isError = state.status === 'error'
     const canRetry = !isError || onRetry != null
-    const onClick = isError
-        ? onRetry ?? undefined
-        : onOpen
+    const onClick = isError ? (onRetry ?? undefined) : onOpen
     const actionAriaLabel =
         actionLabel == null
             ? model.actionLabel
             : state.status === 'error'
-              ? `Retry loading context for ${actionLabel}`
+              ? `Retry loading trace for ${actionLabel}`
               : isSelected
-                ? `Viewing context for ${actionLabel}`
-                : `View context for ${actionLabel}`
+                ? `Viewing trace for ${actionLabel}`
+                : `View trace for ${actionLabel}`
 
     return (
         <div
@@ -96,10 +92,10 @@ export function MessageContextSummaryStrip({
                     !canRetry
                         ? 'cursor-not-allowed border-rose-500/10 bg-rose-500/5 text-rose-300/60'
                         : state.status === 'error'
-                        ? 'border-rose-500/20 bg-rose-500/10 text-rose-200 hover:border-rose-400/30 hover:bg-rose-500/15'
-                        : isSelected
-                          ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/15'
-                          : 'border-white/10 bg-black/20 text-slate-200 hover:border-white/20 hover:bg-white/[0.04]'
+                          ? 'border-rose-500/20 bg-rose-500/10 text-rose-200 hover:border-rose-400/30 hover:bg-rose-500/15'
+                          : isSelected
+                            ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200 hover:border-emerald-400/30 hover:bg-emerald-500/15'
+                            : 'border-white/10 bg-black/20 text-slate-200 hover:border-white/20 hover:bg-white/[0.04]'
                 }`}
             >
                 {model.actionLabel}

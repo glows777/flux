@@ -73,25 +73,9 @@ describe('POST /api/chat', () => {
                     },
                     toolCalls: [],
                     usage: { inputTokens: 100, outputTokens: 50 },
-                    contextManifest: {
-                        runId: 'run-1',
-                        createdAt: new Date().toISOString(),
-                        input: {} as never,
-                        pluginOutputs: [],
-                        assembledContext: {} as never,
-                        modelRequest: {} as never,
-                    },
                 }),
             finalize: mockRuntimeFinalize,
             recordFailure: mock(() => Promise.resolve()),
-            getContextManifest: mock(() => ({
-                runId: 'run-1',
-                createdAt: new Date().toISOString(),
-                input: {} as never,
-                pluginOutputs: [],
-                assembledContext: {} as never,
-                modelRequest: {} as never,
-            })),
         })
 
         mockGatewayChat.mockImplementation((_input: unknown) =>
@@ -188,14 +172,6 @@ describe('POST /api/chat', () => {
             finalize: mock(() => Promise.resolve()),
             recordFailure,
             consumeStream: mock(() => Promise.resolve({})),
-            getContextManifest: mock(() => ({
-                runId: 'run-1',
-                createdAt: new Date().toISOString(),
-                input: {} as never,
-                pluginOutputs: [],
-                assembledContext: {} as never,
-                modelRequest: {} as never,
-            })),
         } as never)
 
         const res = await app.request('/api/chat', {
@@ -217,6 +193,13 @@ describe('POST /api/chat', () => {
         expect(message).toBe('Failed to generate chat response')
         expect(recordFailure).toHaveBeenCalledWith(expect.any(Error))
         expect(capturedOptions?.consumeSseStream).toBeDefined()
+        expect(
+            (
+                capturedOptions?.messageMetadata as
+                    | (() => Record<string, unknown>)
+                    | undefined
+            )?.(),
+        ).toEqual({ sessionId: 'session-1', runId: 'run-1' })
     })
 
     test('stream onError returns message when failure recording rejects', async () => {
@@ -239,7 +222,6 @@ describe('POST /api/chat', () => {
             finalize: mock(() => Promise.resolve()),
             recordFailure,
             consumeStream: mock(() => Promise.resolve({})),
-            getContextManifest: mock(() => ({ runId: 'run-1' }) as never),
         } as never)
 
         await app.request('/api/chat', {
@@ -292,7 +274,6 @@ describe('POST /api/chat', () => {
             finalize,
             recordFailure,
             consumeStream: mock(() => Promise.resolve({})),
-            getContextManifest: mock(() => ({ runId: 'run-1' }) as never),
         } as never)
 
         await app.request('/api/chat', {
@@ -355,7 +336,6 @@ describe('POST /api/chat', () => {
             finalize,
             recordFailure,
             consumeStream: mock(() => Promise.resolve({})),
-            getContextManifest: mock(() => ({ runId: 'run-1' }) as never),
         } as never)
 
         await app.request('/api/chat', {

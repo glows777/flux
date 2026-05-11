@@ -16,7 +16,10 @@ import './setup'
 
 // Import after mock setup (handled by preload)
 import { createHonoApp } from '@/routes/index'
-import { mockGetQuoteWithCache, mockGetStockInfo } from './helpers/mock-boundaries'
+import {
+    mockGetQuoteWithCache,
+    mockGetStockInfo,
+} from './helpers/mock-boundaries'
 
 // ==================== Test app ====================
 

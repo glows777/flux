@@ -1,6 +1,10 @@
 import { DiscordAdapter } from './channels/discord/bot'
 import { getDiscordConfig } from './channels/discord/config'
 import { createPrismaAgentRunStore } from './core/ai/agent-run'
+import {
+    createPrismaAgentRunTraceStore,
+    TraceRecorder,
+} from './core/ai/agent-run-trace'
 import { tradingAgentPreset } from './core/ai/presets'
 import { autoTradingAgentPreset } from './core/ai/presets/auto-trading-agent'
 import { getModel, THINKING_BUDGET } from './core/ai/providers'
@@ -46,6 +50,8 @@ async function main() {
     const model = getModel('main')
     const defaults = { thinkingBudget: THINKING_BUDGET }
     const agentRunStore = createPrismaAgentRunStore(prisma)
+    const agentRunTraceStore = createPrismaAgentRunTraceStore(prisma)
+    const traceRecorder = new TraceRecorder({ store: agentRunTraceStore })
     await agentRunStore.reconcileStaleRunningRuns({
         olderThan: new Date(Date.now() - 30 * 60 * 1000),
         reason: 'Server startup reconciled stale running run',
@@ -56,6 +62,7 @@ async function main() {
         plugins: tradingAgentPreset(),
         defaults,
         agentRunStore,
+        traceRecorder,
     })
     const autoTradingRuntime = await createAIRuntime({
         model,
@@ -72,6 +79,7 @@ async function main() {
         }),
         defaults,
         agentRunStore,
+        traceRecorder,
     })
 
     // 1.5 Order sync service (WebSocket — real-time order status to DB + Discord)
@@ -95,7 +103,12 @@ async function main() {
     const channels = new Map()
 
     // Create Gateway with channels map (discord adapter added below)
-    const gateway = new Gateway({ router, channels })
+    const gateway = new Gateway({
+        router,
+        channels,
+        agentRunStore,
+        traceRecorder,
+    })
 
     if (hasDiscordConfig && discordConfig) {
         discord = new DiscordAdapter(discordConfig, gateway)
@@ -121,7 +134,12 @@ async function main() {
         console.error('Failed to seed cron jobs:', error)
     }
 
-    scheduler = new CronScheduler({ gateway, prisma, agentRunStore })
+    scheduler = new CronScheduler({
+        gateway,
+        prisma,
+        agentRunStore,
+        traceRecorder,
+    })
     await scheduler.start()
 
     // 5. Health monitor
@@ -161,6 +179,7 @@ async function main() {
         getHealthStatus: () => healthMonitor.getHealthStatus(),
         cron: { scheduler },
         gateway,
+        agentRunTraceStore,
     })
     Bun.serve({ fetch: app.fetch, port, idleTimeout: 255 })
     console.log(`Flux API server running on http://localhost:${port}`)

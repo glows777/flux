@@ -17,7 +17,12 @@ describe('researchPlugin', () => {
 
     test('contribute returns webSearch and webFetch tools', () => {
         const plugin = researchPlugin({
-            deps: { createResearchTools: mock(() => ({ webSearch: {}, webFetch: {} })) },
+            deps: {
+                createResearchTools: mock(() => ({
+                    webSearch: {},
+                    webFetch: {},
+                })),
+            },
         })
 
         const output = plugin.contribute?.({} as never)

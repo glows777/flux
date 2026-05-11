@@ -7,9 +7,9 @@
         "packages/*"
     ],
     "scripts": {
-        "dev": "bun run --filter '*' dev",
+        "dev": "bash -lc 'bun packages/server/src/index.ts & server_pid=$!; bun run --filter @flux/web dev & web_pid=$!; trap \"kill $server_pid $web_pid 2>/dev/null\" INT TERM EXIT; wait $server_pid $web_pid'",
         "dev:web": "bun run --filter @flux/web dev",
-        "dev:server": "bun run --filter @flux/server dev",
+        "dev:server": "bun packages/server/src/index.ts",
         "build": "bun run --filter '*' build",
         "test:all": "bun run --filter @flux/server test:all && bun run --filter @flux/web test",
         "test:server": "bun run --filter @flux/server test:all",
@@ -33,7 +33,7 @@
         "@radix-ui/react-select": "^2.2.6",
         "@radix-ui/react-tooltip": "^1.2.8",
         "@tavily/core": "^0.7.2",
-        "ai": "^6.0.73",
+        "ai": "6.0.73",
         "dotenv": "^17.2.3",
         "fast-xml-parser": "^5.3.5",
         "hono": "^4.11.7",

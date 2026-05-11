@@ -5,6 +5,7 @@ interface UIMessageLike {
     role: string
     parts?: Array<{ type: string; text?: string }>
     content?: string
+    metadata?: JsonRecord
 }
 
 interface StreamRun {
@@ -16,10 +17,12 @@ interface StreamRun {
     parsedEvents: number
 }
 
-interface MessageContextRecord {
-    version?: number
-    runId?: string
-    manifest?: JsonRecord
+interface RunTraceResponse {
+    success: boolean
+    data?: {
+        trace?: JsonRecord
+    }
+    error?: string
 }
 
 interface ReportLine {
@@ -336,43 +339,37 @@ async function waitForMessages(params: {
     return lastMessages
 }
 
-async function loadManifest(
+function runIdFromAssistantMetadata(
+    message: UIMessageLike,
+): string | undefined {
+    return asString(message.metadata?.runId)
+}
+
+async function loadTrace(
     baseUrl: string,
-    sessionId: string,
-    messageId: string,
-): Promise<MessageContextRecord | null> {
-    const json = await fetchJson<{
-        success: boolean
-        data?: MessageContextRecord | null
-        error?: string
-    }>(
-        `${baseUrl}/api/sessions/${encodeURIComponent(
-            sessionId,
-        )}/messages/${encodeURIComponent(messageId)}/context`,
+    runId: string,
+): Promise<JsonRecord | null> {
+    const json = await fetchJson<RunTraceResponse>(
+        `${baseUrl}/api/runs/${encodeURIComponent(runId)}/trace`,
     )
 
     if (!json.success) {
-        throw new Error(json.error ?? 'context endpoint returned success=false')
+        throw new Error(json.error ?? 'trace endpoint returned success=false')
     }
 
-    return json.data ?? null
+    return asRecord(json.data?.trace) ?? null
 }
 
-async function waitForManifest(params: {
+async function waitForTrace(params: {
     baseUrl: string
-    sessionId: string
-    messageId: string
-}): Promise<MessageContextRecord | null> {
+    runId: string
+}): Promise<JsonRecord | null> {
     const deadline = Date.now() + POLL_TIMEOUT_MS
-    let last: MessageContextRecord | null = null
+    let last: JsonRecord | null = null
 
     while (Date.now() < deadline) {
-        last = await loadManifest(
-            params.baseUrl,
-            params.sessionId,
-            params.messageId,
-        )
-        if (last?.manifest) return last
+        last = await loadTrace(params.baseUrl, params.runId)
+        if (last) return last
         await Bun.sleep(POLL_INTERVAL_MS)
     }
 
@@ -396,12 +393,16 @@ function textFromMessage(message: UIMessageLike): string {
     return partText || message.content || ''
 }
 
-function cachePlan(manifest: JsonRecord): JsonRecord | undefined {
-    return asRecord(manifest.cachePlan)
+function cachePlan(trace: JsonRecord): JsonRecord | undefined {
+    return asRecord(getPath(trace, ['cache', 'plan']))
 }
 
-function cacheResult(manifest: JsonRecord): JsonRecord | undefined {
-    return asRecord(getPath(manifest, ['result', 'cacheResult']))
+function cacheResult(trace: JsonRecord): JsonRecord | undefined {
+    return asRecord(getPath(trace, ['cache', 'result']))
+}
+
+function providerRequest(trace: JsonRecord): JsonRecord | undefined {
+    return asRecord(getPath(trace, ['cache', 'providerRequest']))
 }
 
 function cacheHashes(plan: JsonRecord): JsonRecord | undefined {
@@ -441,7 +442,7 @@ function cacheEvidence(
     result: JsonRecord | undefined,
     kind: 'read' | 'write',
 ): { observed: boolean; source: string; value?: number } {
-    if (!result) return { observed: false, source: 'missing cacheResult' }
+    if (!result) return { observed: false, source: 'missing cache.result' }
 
     const flagKey = kind === 'read' ? 'cacheReadObserved' : 'cacheWriteObserved'
     if (result[flagKey] === true) {
@@ -499,25 +500,15 @@ function optionalFieldFallbackNote(
     }
 }
 
-function modelIdFromManifest(manifest: JsonRecord): string | undefined {
-    const candidatePaths = [
-        ['cachePlan', 'modelId'],
-        ['cachePlan', 'model'],
-        ['cachePlan', 'modelName'],
-        ['cachePlan', 'resolvedModelId'],
-        ['modelRequest', 'modelId'],
-        ['modelRequest', 'model'],
-        ['modelRequest', 'modelName'],
-        ['input', 'modelId'],
-        ['input', 'model'],
-    ]
+function modelIdFromTrace(trace: JsonRecord): string | undefined {
+    return asString(getPath(trace, ['result', 'provider', 'modelId']))
+}
 
-    for (const path of candidatePaths) {
-        const value = asString(getPath(manifest, path))
-        if (value) return value
-    }
-
-    return undefined
+function providerIdFromTrace(trace: JsonRecord): string | undefined {
+    return (
+        asString(getPath(trace, ['result', 'provider', 'id'])) ??
+        asString(getPath(trace, ['cache', 'plan', 'provider']))
+    )
 }
 
 function thresholdFromPlan(plan: JsonRecord): number | undefined {
@@ -566,46 +557,60 @@ function add(
     })
 }
 
-function validateManifestPair(params: {
-    run1Manifest: JsonRecord | undefined
-    run2Manifest: JsonRecord | undefined
+function validateTracePair(params: {
+    run1Trace: JsonRecord | undefined
+    run2Trace: JsonRecord | undefined
 }): ReportLine[] {
     const lines: ReportLine[] = []
-    const { run1Manifest, run2Manifest } = params
+    const { run1Trace, run2Trace } = params
 
-    if (!run1Manifest || !run2Manifest) {
-        add(lines, false, '', 'both context manifests must exist')
+    if (!run1Trace || !run2Trace) {
+        add(lines, false, '', 'both run traces must exist')
         return lines
     }
 
-    const run1Plan = cachePlan(run1Manifest)
-    const run2Plan = cachePlan(run2Manifest)
-    const run1Result = cacheResult(run1Manifest)
-    const run2Result = cacheResult(run2Manifest)
+    const run1Plan = cachePlan(run1Trace)
+    const run2Plan = cachePlan(run2Trace)
+    const run1Result = cacheResult(run1Trace)
+    const run2Result = cacheResult(run2Trace)
+    const run1ProviderRequest = providerRequest(run1Trace)
+    const run2ProviderRequest = providerRequest(run2Trace)
 
     add(
         lines,
         Boolean(run1Plan),
-        'run1 cachePlan exists',
-        'run1 cachePlan missing',
+        'run1 cache.plan exists',
+        'run1 cache.plan missing',
     )
     add(
         lines,
         Boolean(run2Plan),
-        'run2 cachePlan exists',
-        'run2 cachePlan missing',
+        'run2 cache.plan exists',
+        'run2 cache.plan missing',
     )
     add(
         lines,
         Boolean(run1Result),
-        'run1 cacheResult exists',
-        'run1 cacheResult missing',
+        'run1 cache.result exists',
+        'run1 cache.result missing',
     )
     add(
         lines,
         Boolean(run2Result),
-        'run2 cacheResult exists',
-        'run2 cacheResult missing',
+        'run2 cache.result exists',
+        'run2 cache.result missing',
+    )
+    add(
+        lines,
+        Boolean(run1ProviderRequest),
+        'run1 cache.providerRequest exists',
+        'run1 cache.providerRequest missing',
+    )
+    add(
+        lines,
+        Boolean(run2ProviderRequest),
+        'run2 cache.providerRequest exists',
+        'run2 cache.providerRequest missing',
     )
 
     if (!run1Plan || !run2Plan || !run1Result || !run2Result) return lines
@@ -655,8 +660,8 @@ function validateManifestPair(params: {
     const readNote = optionalFieldFallbackNote(run2Result, 'read', readEvidence)
     if (readNote) lines.push(readNote)
 
-    const provider1 = asString(run1Plan.provider)
-    const provider2 = asString(run2Plan.provider)
+    const provider1 = providerIdFromTrace(run1Trace)
+    const provider2 = providerIdFromTrace(run2Trace)
     add(
         lines,
         Boolean(provider1 && provider2 && provider1 === provider2),
@@ -666,8 +671,8 @@ function validateManifestPair(params: {
         )}`,
     )
 
-    const model1 = modelIdFromManifest(run1Manifest)
-    const model2 = modelIdFromManifest(run2Manifest)
+    const model1 = modelIdFromTrace(run1Trace)
+    const model2 = modelIdFromTrace(run2Trace)
     if (model1 || model2) {
         add(
             lines,
@@ -679,7 +684,7 @@ function validateManifestPair(params: {
         lines.push({
             status: 'INCONCLUSIVE',
             message:
-                'model id field is missing; provider and stable prefix checks were used',
+                'trace result provider modelId is missing; provider and stable prefix checks were used',
         })
     }
 
@@ -729,8 +734,8 @@ function validateManifestPair(params: {
         add(
             lines,
             getPath(plan, ['eligibility', 'cacheExpected']) === true,
-            `${label} cachePlan eligibility cacheExpected=true`,
-            `${label} cachePlan eligibility cacheExpected must be true`,
+            `${label} cache.plan eligibility cacheExpected=true`,
+            `${label} cache.plan eligibility cacheExpected must be true`,
         )
 
         const tokens = asFiniteNumber(plan.effectivePrefixEstimatedTokens)
@@ -752,7 +757,7 @@ function validateManifestPair(params: {
         } else {
             lines.push({
                 status: 'INCONCLUSIVE',
-                message: `${label} manifest threshold field missing; relied on cacheExpected eligibility`,
+                message: `${label} trace threshold field missing; relied on cacheExpected eligibility`,
             })
         }
     }
@@ -821,7 +826,7 @@ function printReport(params: {
     if (inconclusive.length > 0 && failures.length === 0) {
         console.log('')
         console.log(
-            'Inconclusive lines are optional/new manifest fields with backward-compatible fallback evidence.',
+            'Inconclusive lines are optional/new trace fields with backward-compatible fallback evidence.',
         )
     }
 }
@@ -856,8 +861,8 @@ async function main(): Promise<void> {
     let sessionId: string | undefined
     let assistant1: UIMessageLike | undefined
     let assistant2: UIMessageLike | undefined
-    let run1Manifest: JsonRecord | undefined
-    let run2Manifest: JsonRecord | undefined
+    let run1Trace: JsonRecord | undefined
+    let run2Trace: JsonRecord | undefined
 
     try {
         run1 = await postChat({
@@ -928,39 +933,55 @@ async function main(): Promise<void> {
         )
 
         if (assistant1) {
-            const record = await waitForManifest({
-                baseUrl,
-                sessionId,
-                messageId: assistant1.id,
-            })
-            run1Manifest = asRecord(record?.manifest)
+            const assistantRunId = runIdFromAssistantMetadata(assistant1)
             add(
                 lines,
-                Boolean(run1Manifest),
-                `run1 manifest exists for ${assistant1.id}`,
-                `run1 manifest missing for ${assistant1.id}`,
+                Boolean(assistantRunId),
+                `run1 assistant metadata exposed runId ${assistantRunId}`,
+                `run1 assistant metadata missing runId for ${assistant1.id}`,
+            )
+            if (assistantRunId) {
+                run1Trace =
+                    (await waitForTrace({
+                        baseUrl,
+                        runId: assistantRunId,
+                    })) ?? undefined
+            }
+            add(
+                lines,
+                Boolean(run1Trace),
+                `run1 trace exists for ${assistant1.id}`,
+                `run1 trace missing for ${assistant1.id}`,
             )
         }
 
         if (assistant2) {
-            const record = await waitForManifest({
-                baseUrl,
-                sessionId,
-                messageId: assistant2.id,
-            })
-            run2Manifest = asRecord(record?.manifest)
+            const assistantRunId = runIdFromAssistantMetadata(assistant2)
             add(
                 lines,
-                Boolean(run2Manifest),
-                `run2 manifest exists for ${assistant2.id}`,
-                `run2 manifest missing for ${assistant2.id}`,
+                Boolean(assistantRunId),
+                `run2 assistant metadata exposed runId ${assistantRunId}`,
+                `run2 assistant metadata missing runId for ${assistant2.id}`,
+            )
+            if (assistantRunId) {
+                run2Trace =
+                    (await waitForTrace({
+                        baseUrl,
+                        runId: assistantRunId,
+                    })) ?? undefined
+            }
+            add(
+                lines,
+                Boolean(run2Trace),
+                `run2 trace exists for ${assistant2.id}`,
+                `run2 trace missing for ${assistant2.id}`,
             )
         }
 
         lines.push(
-            ...validateManifestPair({
-                run1Manifest,
-                run2Manifest,
+            ...validateTracePair({
+                run1Trace,
+                run2Trace,
             }),
         )
     } catch (error) {

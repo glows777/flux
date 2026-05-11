@@ -52,6 +52,7 @@ export function createChatRoutes(gateway: Gateway) {
                     sendSources: false,
                     messageMetadata: () => ({
                         sessionId: output.sessionId,
+                        runId: output.runId,
                     }),
                     onFinish: async ({
                         responseMessage,

@@ -14,9 +14,9 @@ export function autoTradingToolsPlugin(
 
     // Exclude memory tools (provided by shared memoryPlugin) to avoid ToolConflictError
     const MEMORY_TOOL_NAMES = new Set([
-        'memory_read',
-        'memory_write',
-        'memory_list',
+        'update_core_memory',
+        'save_lesson',
+        'read_history',
     ])
 
     const tools: Record<string, ToolDefinition> = {}

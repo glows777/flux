@@ -8,17 +8,16 @@ export {
 export type {
     AIPlugin,
     AIRuntime,
-    ChatInput,
-    ChatOutput,
-    ChatParams,
     CacheBreakpointSnapshot,
     CacheEligibilitySnapshot,
     CacheEvidenceSource,
     CachePlanHashesSnapshot,
     CachePlanSnapshot,
     CacheResultSnapshot,
+    ChatInput,
+    ChatOutput,
+    ChatParams,
     ConsumedResult,
-    ContextManifest,
     ContextSegment,
     PluginOutput,
     RunContext,
@@ -28,12 +27,3 @@ export type {
     ToolDisplayMeta,
 } from './types'
 export { DEFAULT_CHAT_PARAMS } from './types'
-export {
-    attachAssembledContextSnapshot,
-    attachCachePlanSnapshot,
-    attachCacheResultSnapshot,
-    attachModelRequestSnapshot,
-    attachPluginOutputsSnapshot,
-    attachResultSnapshot,
-    createBaseManifest,
-} from './context-manifest'
