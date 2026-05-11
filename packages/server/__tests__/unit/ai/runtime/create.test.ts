@@ -850,7 +850,7 @@ describe('createAIRuntime', () => {
                 {
                     name: 'bad',
                     afterRun() {
-                        throw new Error('manifest failed')
+                        throw new Error('afterRun failed')
                     },
                 },
             ],
@@ -866,7 +866,7 @@ describe('createAIRuntime', () => {
         expect(agentRunStore.succeedIfRunning).toHaveBeenCalled()
         expect(agentRunStore.recordWarnings).toHaveBeenCalledWith(
             output.runId,
-            [{ source: 'bad.afterRun', message: 'manifest failed' }],
+            [{ source: 'bad.afterRun', message: 'afterRun failed' }],
         )
     })
 
@@ -904,7 +904,7 @@ describe('createAIRuntime', () => {
         )
     })
 
-    test('chat manifest stores normalized segments and the resolved max output cap', async () => {
+    test('chat trace stores normalized segments and the resolved max output cap', async () => {
         mockStreamText.mockClear()
 
         const createAIRuntime = await loadCreateAIRuntime()
@@ -1014,7 +1014,7 @@ describe('createAIRuntime', () => {
         expect('maxOutputTokens' in streamArgs).toBe(false)
     })
 
-    test('chat builds and attaches cachePlan to the manifest', async () => {
+    test('chat builds and attaches cachePlan to the trace', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const cachePlan = createCachePlanFixture()
         mockBuildCachePlan.mockImplementationOnce(() => cachePlan)

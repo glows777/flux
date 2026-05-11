@@ -14,10 +14,10 @@
 - 第一轮真实 chat 观察到 cache write 证据
 - 第二轮同 session chat 观察到 cache read 证据
 - 两轮稳定 prefix 一致，并达到当前 model 的最小 cacheable token 阈值
-- 两轮 context manifest 都存在，且能证明实际请求走过 cache-shaped provider request
+- 两轮 run trace 都存在，且能证明实际请求走过 cache-shaped provider request
 - web UI smoke 不破坏完整 chat 流程
 
-如果缺少 `ANTHROPIC_API_KEY`、无法访问真实 provider、manifest 缺失、只有 write 没有 read、或证据无法区分 read/write，都不能算通过。
+如果缺少 `ANTHROPIC_API_KEY`、无法访问真实 provider、run trace 缺失、只有 write 没有 read、或证据无法区分 read/write，都不能算通过。
 
 ---
 
@@ -28,7 +28,7 @@
 - [ ] server 使用真实数据库，不使用 mock provider 或测试替身
 - [ ] prompt cache rollout/gate 处于 enabled 状态
 - [ ] server 端口可访问，默认 `http://localhost:3001`
-- [ ] 验收脚本使用真实 `/api/chat` 和 message context API
+- [ ] 验收脚本使用真实 `/api/chat` 和 run trace API
 
 推荐启动 server：
 
@@ -61,19 +61,19 @@ MAIN_MODEL='~anthropic/claude-sonnet-latest' bun run verify:prompt-cache-chat-fl
 
 - [ ] 第一轮 `POST /api/chat` streaming 完整结束
 - [ ] 第一轮 assistant message 成功持久化
-- [ ] 第一轮 assistant message 的 context manifest 可读取
-- [ ] 第一轮 manifest 中 `rolloutGateStatus` 为 `enabled`
-- [ ] 第一轮 manifest 中 `cacheExpected` 为 `true`
-- [ ] 第一轮 manifest 中存在 cache write evidence
+- [ ] 第一轮 assistant message 的 run trace 可读取
+- [ ] 第一轮 run trace 中 `rolloutGateStatus` 为 `enabled`
+- [ ] 第一轮 run trace 中 `cacheExpected` 为 `true`
+- [ ] 第一轮 run trace 中存在 cache write evidence
 - [ ] 第一轮 write evidence 来源清晰，来自 normalized usage 或 Anthropic raw provider metadata
 - [ ] 第二轮复用同一个 session
 - [ ] 第二轮请求携带第一轮后的完整 `UIMessage` history
 - [ ] 第二轮 `POST /api/chat` streaming 完整结束
 - [ ] 第二轮 assistant message 成功持久化
-- [ ] 第二轮 assistant message 的 context manifest 可读取
-- [ ] 第二轮 manifest 中 `rolloutGateStatus` 为 `enabled`
-- [ ] 第二轮 manifest 中 `cacheExpected` 为 `true`
-- [ ] 第二轮 manifest 中存在 cache read evidence
+- [ ] 第二轮 assistant message 的 run trace 可读取
+- [ ] 第二轮 run trace 中 `rolloutGateStatus` 为 `enabled`
+- [ ] 第二轮 run trace 中 `cacheExpected` 为 `true`
+- [ ] 第二轮 run trace 中存在 cache read evidence
 - [ ] 第二轮 read evidence 来源清晰，来自 normalized usage 或 Anthropic raw provider metadata
 - [ ] 两轮 `provider` 一致
 - [ ] 两轮 `modelId` 一致
@@ -85,7 +85,7 @@ MAIN_MODEL='~anthropic/claude-sonnet-latest' bun run verify:prompt-cache-chat-fl
 
 ## 4. Prefix 稳定性验收
 
-两轮 manifest 必须满足：
+两轮 run trace 必须满足：
 
 - [ ] `systemHash` 一致
 - [ ] `memoryHash` 一致
@@ -104,18 +104,18 @@ MAIN_MODEL='~anthropic/claude-sonnet-latest' bun run verify:prompt-cache-chat-fl
 
 ## 5. Provider Request 观测验收
 
-manifest 必须能证明实际 provider request 是 cache-shaped request：
+run trace 必须能证明实际 provider request 是 cache-shaped request：
 
-- [ ] 记录 `modelRequest.provider`
-- [ ] 记录 `modelRequest.modelId`
-- [ ] 记录 `modelRequest.preparedCacheRequest`
-- [ ] 记录 `modelRequest.usedCacheRequest`
+- [ ] 记录 `trace.result.provider.id`
+- [ ] 记录 `trace.result.provider.modelId`
+- [ ] 记录 `trace.cache.providerRequest.preparedCacheRequest`
+- [ ] 记录 `trace.cache.providerRequest.usedCacheRequest`
 - [ ] 记录 provider messages 摘要
 - [ ] 记录 message-level cache-control breakpoint 数量
 - [ ] 记录 tool-level cache-control breakpoint 数量
 - [ ] 记录 cached tool names 或 cached tool count
 
-注意：manifest 不需要保存完整用户内容，但必须保存足够的结构化摘要，用来判断 cache-control 是否真的被放入 provider request。
+注意：run trace 不需要保存完整用户内容，但必须保存足够的结构化摘要，用来判断 cache-control 是否真的被放入 provider request。
 
 ---
 
@@ -141,7 +141,7 @@ NEXT_PUBLIC_SERVER_URL='http://localhost:3001' bun run dev
 - [ ] UI 不丢消息
 - [ ] UI 不重复消息
 - [ ] UI 不破坏 session 续接
-- [ ] message context detail 能打开，且能看到对应 assistant message 的 context 信息
+- [ ] run trace detail 能打开，且能看到对应 assistant message 的 trace 信息
 
 通过标准：
 
@@ -160,8 +160,8 @@ NEXT_PUBLIC_SERVER_URL='http://localhost:3001' bun run dev
 - [ ] 只有第一轮 cache write，没有第二轮 cache read
 - [ ] 只有 `cacheObserved: true`，但无法区分 read/write
 - [ ] streaming 成功，但 assistant message 未持久化
-- [ ] assistant message 已持久化，但 context manifest 缺失
-- [ ] manifest 中没有实际 provider request 摘要
+- [ ] assistant message 已持久化，但 run trace 缺失
+- [ ] run trace 中没有实际 provider request 摘要
 - [ ] rollout gate 不是 `enabled`
 - [ ] cache path 被 circuit breaker、fallback 或 gate disabled 绕过
 - [ ] provider/model 在两轮之间变化

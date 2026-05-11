@@ -55,7 +55,7 @@
 | 新闻聚合 (RSS + Finnhub 兜底) | v0.02 | 真实数据 |
 | AI 研报 (Gemini + 24h 缓存) | v0.02 | 真实数据 |
 | AI 问答 (流式对话 + 上下文注入) | v0.03 P1 | 真实数据 |
-| Chat context visibility (summary strip + detail sheet) | v0.07 | UI 完成 |
+| Run trace visibility (summary strip + detail sheet) | v0.07 | UI 完成 |
 | Dashboard 持仓管理 (Portfolio CRUD + 统计卡片) | v0.03 P2 | 真实数据 |
 | Agentic AI (Tool Calling + 多轮对话 + 会话管理) | v0.04 | 真实数据 |
 | AI 深度推理 (Thinking + 结构化输出 + 模型路由) | v0.05 | 真实数据 |
@@ -206,9 +206,9 @@ v0.03           v0.04                          v0.05
 Anthropic prompt cache 与完整聊天链路采用 **server-only mandatory + web UI smoke** 验收：
 
 - 必跑 server-only verifier：在本地 server 已启动后，执行 `cd packages/server && bun run verify:prompt-cache-chat-flow`；默认请求 `http://localhost:3001`，可通过 `SERVER_URL` 或 `FLUX_SERVER_URL` 覆盖。
-- verifier 必须完成两轮真实 `POST /api/chat` 流式请求，第二轮使用同一 session 并发送完整 `UIMessage` history，随后读取两个 assistant message 的 context manifest。
-- verifier 必须确认 prompt cache rollout 已启用、第一轮有 cache write 证据、第二轮有 cache read 证据、provider/model 与稳定前缀 hash 一致、cache plan 预期可缓存且 prefix token 达到 manifest 阈值。
-- web UI smoke：在 web 与 server 均启动后，手动在同一 chat session 连续发送两条消息，确认流式回复、session 续接、历史不丢失，并能打开 assistant message 的 context detail。
+- verifier 必须完成两轮真实 `POST /api/chat` 流式请求，第二轮使用同一 session 并发送完整 `UIMessage` history，随后通过 assistant message metadata 的 `runId` 读取两个 run trace。
+- verifier 必须确认 prompt cache rollout 已启用、第一轮有 cache write 证据、第二轮有 cache read 证据、provider/model 与稳定前缀 hash 一致、cache plan 预期可缓存且 prefix token 达到 trace 阈值。
+- web UI smoke：在 web 与 server 均启动后，手动在同一 chat session 连续发送两条消息，确认流式回复、session 续接、历史不丢失，并能打开 assistant message 的 run trace detail。
 
 完整执行清单见 [Prompt Cache Chat Flow 验收清单](./prompt-cache-acceptance-checklist.md)。
 
@@ -304,4 +304,4 @@ Anthropic prompt cache 与完整聊天链路采用 **server-only mandatory + web
 | v0.03 P2 | ✅ 完成 | Dashboard 持仓管理 (Portfolio CRUD + 统计卡片 + 风险评分) |
 | v0.04 | ✅ 完成 | Agentic AI (多轮对话 + Tool Calling + 会话管理)，合并原 v0.04+v0.05 |
 | v0.05 | ✅ 完成 | Thinking + 结构化输出 + 模型路由 |
-| v0.07 | 🚧 进行中 | Detail 页面 UI/UX 打磨 + Chat context visibility (summary strip + detail sheet) |
+| v0.07 | 🚧 进行中 | Detail 页面 UI/UX 打磨 + run trace visibility (summary strip + detail sheet) |

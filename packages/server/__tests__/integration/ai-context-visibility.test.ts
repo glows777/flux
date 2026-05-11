@@ -224,7 +224,7 @@ async function loadModules() {
     }
 }
 
-describe('ai context visibility integration', () => {
+describe('ai run trace integration', () => {
     beforeEach(() => {
         mockLoadMemoryContext.mockReset()
         mockSessionCreate.mockReset()

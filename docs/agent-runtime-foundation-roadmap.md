@@ -4,18 +4,18 @@
 >
 > 它不是单个功能 spec，也不是马上启动完整 harness 的计划；它定义的是 Flux 要长期支持 Copilot、Auto Trading、后台研究、sub-agent、长期任务时，底层必须先稳定下来的运行能力。
 >
-> 最后更新：2026-05-08
+> 最后更新：2026-05-11
 
 ---
 
 ## 1. 为什么需要这份 roadmap
 
-Flux 现在已经有能跑的 agent runtime：web chat、Discord、cron、trading-agent、auto-trading-agent、context manifest、cron run log 都已经存在。
+Flux 现在已经有能跑的 agent runtime：web chat、Discord、cron、trading-agent、auto-trading-agent、run trace、cron run log 都已经存在。
 
 但这些能力目前还是分散的：
 
 - chat 有 `ChatSession` / `ChatMessage`
-- 每轮上下文有 `ChatMessageManifest`
+- 每轮运行有 `AgentRunTrace`
 - cron 有 `CronJobRun`
 - auto trading 有 broker guard、heartbeat、memory slot
 - 未来 background research / sub-agent 还没有统一归宿
@@ -113,7 +113,7 @@ Auto Trading 这类 agent 可以越来越自主，但系统边界必须先存在
 
 ### 4.3 保留现有 runtime
 
-当前 `createAIRuntime`、plugin hook、`ContextManifest`、session plugin 都有价值。短期不做 big-bang rewrite，而是在现有 runtime 外补运行底账和关联关系。
+当前 `createAIRuntime`、plugin hook、`AgentRunTrace`、session plugin 都有价值。短期不做 big-bang rewrite，而是在现有 runtime 外补运行底账和关联关系。
 
 ### 4.4 Memory 不替 AI 做决定
 
@@ -145,15 +145,17 @@ Auto Trading 这类 agent 可以越来越自主，但系统边界必须先存在
 
 - 能从一个 `runId` 查到这次 agent 运行的入口、状态、结果和关联对象
 - `CronJobRun` 不再是唯一 cron 执行事实来源，而是 cron 视角的辅助记录
-- `ChatMessageManifest.runId` 能和 `AgentRun.id` 对齐
+- assistant message metadata 中的 `runId` 能和 `AgentRun.id` 对齐
 
 ### R1：Trace Unification
 
 目标：把上下文、工具、token、错误都挂到统一 run 上。
 
+R1 uses `AgentRunTrace` as the canonical run-scoped trace and removes `ChatMessageManifest`. `ChatMessage` remains the visible transcript artifact.
+
 核心交付：
 
-- 将现有 `ContextManifest` 关联到 `AgentRun`
+- 使用 `AgentRunTrace` 记录运行期上下文、模型请求、工具、cache、结果和失败信息
 - 结构化记录 tool calls / tool results
 - 记录 cache / compaction 结果
 - 记录 provider、model、token usage、finish reason
@@ -244,19 +246,19 @@ Auto Trading 这类 agent 可以越来越自主，但系统边界必须先存在
 
 - [ ] 设计 `AgentRun` Prisma model
 - [ ] 明确 `AgentRun.status`、`source`、`mode`、`agentType` 字段枚举
-- [ ] 设计 `AgentRun` 与 `ChatSession` / `ChatMessageManifest` / `CronJob` / `CronJobRun` 的关系
+- [ ] 设计 `AgentRun` 与 `ChatSession` / `ChatMessage` / `CronJob` / `CronJobRun` 的关系
 - [ ] 在 runtime chat start 时创建 `AgentRun`
 - [ ] 在 stream consume / finalize 后更新 run success
 - [ ] 在 runtime error path 更新 run failure
 - [ ] 在 cron executor 中传递 `cronJobId` 并关联 run
-- [ ] 让 `ChatMessageManifest.runId` 使用同一个 `AgentRun.id`
+- [ ] 让 assistant message metadata 的 `runId` 使用同一个 `AgentRun.id`
 - [ ] 增加 unit tests：web chat success / error
 - [ ] 增加 unit tests：cron success / error
 
 ### R1：Trace Unification
 
 - [ ] 定义 tool event 存储形态
-- [ ] 将 `ContextManifest` 挂到 `AgentRun`
+- [ ] 将 `AgentRunTrace` 挂到 `AgentRun`
 - [ ] 标准化 provider / model / usage / finish reason 字段
 - [ ] 标准化 error payload
 - [ ] 增加 run trace 查询 helper

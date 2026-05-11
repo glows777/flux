@@ -429,14 +429,14 @@ describe('AgentRunStore', () => {
         })
 
         await store.recordWarnings('run-3', [
-            { source: 'session.afterRun', message: 'manifest failed' },
+            { source: 'session.afterRun', message: 'afterRun failed' },
         ])
         await store.recordWarnings('run-3', [
             { source: 'session.afterRun', message: 'tool skipped' },
         ])
 
         expect(fixture.rows.get('run-3')?.warnings).toEqual([
-            { source: 'session.afterRun', message: 'manifest failed' },
+            { source: 'session.afterRun', message: 'afterRun failed' },
             { source: 'session.afterRun', message: 'tool skipped' },
         ])
     })
@@ -445,7 +445,7 @@ describe('AgentRunStore', () => {
         const store = createPrismaAgentRunStore(fixture.db as never)
         const initialWarning = {
             source: 'session.afterRun',
-            message: 'manifest failed',
+            message: 'afterRun failed',
         }
         const concurrentWarning = {
             source: 'session.afterRun',
