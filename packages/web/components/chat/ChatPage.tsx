@@ -24,7 +24,7 @@ import { MessageContextSummaryStrip } from './messages/MessageContextSummaryStri
 import { TruncationNotice } from './messages/TruncationNotice'
 import { UserMessage } from './messages/UserMessage'
 
-type ChatMetadata = { sessionId?: string }
+type ChatMetadata = { sessionId?: string; runId?: string }
 
 type PersistedSessionError = {
     readonly message: string

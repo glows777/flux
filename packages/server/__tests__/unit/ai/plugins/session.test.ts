@@ -39,31 +39,6 @@ function makeAfterRunContext(
         } as UIMessage,
         toolCalls: [],
         usage: { inputTokens: 0, outputTokens: 0 },
-        contextManifest: {
-            runId: 'run-1',
-            createdAt: new Date().toISOString(),
-            input: {
-                channel: 'web',
-                mode: 'conversation',
-                agentType: 'trading-agent',
-                rawMessages: [],
-                defaults: {},
-            },
-            pluginOutputs: [],
-            assembledContext: {
-                segments: [],
-                tools: [],
-                params: { candidates: [], resolved: {} },
-                totalEstimatedInputTokens: 0,
-            },
-            modelRequest: {
-                systemText: '',
-                modelMessages: [],
-                toolNames: [],
-                resolvedParams: {},
-                providerOptions: {},
-            },
-        },
         ...overrides,
     }
 }
@@ -73,7 +48,6 @@ function makeDeps(overrides: Record<string, unknown> = {}) {
         createSession: mock(async () => 'new-session-id'),
         loadMessages: mock(async () => []),
         appendMessage: mock(async () => {}),
-        saveMessageManifest: mock(async () => {}),
         touchSession: mock(async () => {}),
         resolveSession: mock(async () => 'resolved-session-id'),
         saveSessionError: mock(async () => {}),
@@ -250,46 +224,8 @@ describe('sessionPlugin', () => {
             's1',
             ctx.responseMessage,
         )
-        expect(deps.saveMessageManifest).toHaveBeenCalledWith(
-            's1',
-            'assistant-1',
-            ctx.contextManifest,
-        )
         expect(deps.touchSession).toHaveBeenCalledWith('s1')
         expect(deps.clearSessionError).toHaveBeenCalledWith('s1')
-    })
-
-    test('afterRun continues bookkeeping when manifest persistence fails', async () => {
-        const deps = makeDeps({
-            saveMessageManifest: mock(async () => {
-                throw new Error('manifest write failed')
-            }),
-        })
-        const plugin = sessionPlugin({ deps })
-        const ctx = makeAfterRunContext()
-        const errorSpy = mock(() => {})
-        const originalConsoleError = console.error
-        console.error = errorSpy as typeof console.error
-
-        try {
-            await expect(plugin.afterRun?.(ctx)).rejects.toThrow(
-                'manifest write failed',
-            )
-        } finally {
-            console.error = originalConsoleError
-        }
-
-        expect(deps.appendMessage).toHaveBeenCalledWith(
-            's1',
-            ctx.responseMessage,
-        )
-        expect(deps.touchSession).toHaveBeenCalledWith('s1')
-        expect(deps.clearSessionError).toHaveBeenCalledWith('s1')
-        expect(errorSpy).toHaveBeenCalledTimes(1)
-        expect(errorSpy).toHaveBeenCalledWith(
-            'Failed to save message manifest',
-            expect.any(Error),
-        )
     })
 
     test('onError persists error with name, message, and code when sessionId resolved', async () => {
