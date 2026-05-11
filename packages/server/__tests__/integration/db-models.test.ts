@@ -43,10 +43,6 @@ describe('P2-02: Data Model Integration Tests', () => {
                 /model AgentRunTrace \{[\s\S]*?\n\}/,
             )?.[0]
 
-            expect(schemaContent).not.toContain('model ChatMessageManifest')
-            expect(schemaContent).not.toContain(
-                'manifests ChatMessageManifest[]',
-            )
             expect(agentRunModel).toContain('trace         AgentRunTrace?')
             expect(traceModel).toContain('runId     String   @unique')
             expect(traceModel).toContain('onDelete: Restrict')

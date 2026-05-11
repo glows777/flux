@@ -229,45 +229,6 @@ function createCachePlanFixture(
     }
 }
 
-function createPreviousManifestFixture(
-    overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
-    return {
-        runId: 'run-prev',
-        createdAt: new Date().toISOString(),
-        input: {
-            channel: 'web',
-            mode: 'conversation',
-            agentType: 'trading-agent',
-            rawMessages: [],
-            defaults: {},
-        },
-        pluginOutputs: [],
-        assembledContext: {
-            segments: [],
-            systemSegments: [],
-            tools: [],
-            params: { candidates: [], resolved: {} },
-            totalEstimatedInputTokens: 0,
-        },
-        modelRequest: {
-            systemText: 'base prompt',
-            modelMessages: [],
-            toolNames: ['searchStock'],
-            resolvedParams: {
-                thinkingBudget: 128,
-            },
-            providerOptions: {
-                anthropic: {
-                    thinking: { type: 'enabled', budgetTokens: 128 },
-                },
-            },
-        },
-        cachePlan: createCachePlanFixture(),
-        ...overrides,
-    }
-}
-
 const mockBuildCachePlan = mock(() => createCachePlanFixture())
 const mockBuildProviderCacheRequest = mock(
     (input: {
@@ -548,11 +509,9 @@ describe('createAIRuntime', () => {
             channel: 'web',
             mode: 'conversation',
         })
-        const consumed = await output.consumeStream()
+        await output.consumeStream()
         const trace = expectTrace(traceRecorder, output.runId)
 
-        expect(output).not.toHaveProperty('getContextManifest')
-        expect(consumed).not.toHaveProperty('contextManifest')
         expect(trace.traceStatus).toBe('complete')
         expect(trace.runOutcome).toBe('succeeded')
         expect(trace.currentPhase).toBe('after_run')
@@ -1284,54 +1243,6 @@ describe('createAIRuntime', () => {
         )
     })
 
-    test('chat builds cache plan from current request inputs only', async () => {
-        const createAIRuntime = await loadCreateAIRuntime()
-        const previousManifest = createPreviousManifestFixture()
-
-        const runtime = await createAIRuntime({
-            model: {
-                provider: 'anthropic',
-                modelId: 'claude-sonnet-4-6',
-            } as never,
-            defaults: { thinkingBudget: 256 },
-            agentRunStore: createFakeAgentRunStore(),
-            traceRecorder: createFakeTraceRecorder(),
-            plugins: [
-                {
-                    name: 'seed-previous-manifest',
-                    beforeRun(ctx) {
-                        ctx.meta.set(
-                            'previousContextManifest',
-                            previousManifest,
-                        )
-                    },
-                },
-            ],
-        })
-
-        await runtime.chat({
-            messages: [],
-            channel: 'web',
-            mode: 'conversation',
-        })
-
-        expect(mockBuildCachePlan).toHaveBeenCalledTimes(1)
-
-        const cachePlanInput = mockBuildCachePlan.mock.calls[0]?.[0] as Record<
-            string,
-            unknown
-        >
-
-        expect(cachePlanInput).toMatchObject({
-            provider: 'anthropic',
-            modelId: 'claude-sonnet-4-6',
-        })
-        expect(cachePlanInput.assembledContext).toBeDefined()
-        expect(cachePlanInput).not.toHaveProperty('providerChangeFlags')
-        expect(cachePlanInput).not.toHaveProperty('previousPlan')
-        expect(cachePlanInput).not.toHaveProperty('previousContextManifest')
-    })
-
     test('consumeStream normalizes cache usage into trace cache result', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const cachePlan = createCachePlanFixture()
@@ -1613,13 +1524,11 @@ describe('createAIRuntime', () => {
             channel: 'web',
             mode: 'conversation',
         })
-        const belowThresholdConsumed =
-            await belowThresholdOutput.consumeStream()
+        await belowThresholdOutput.consumeStream()
         const belowThresholdTrace = expectLatestTrace(
             belowThresholdOutput.runId,
         )
 
-        expect(belowThresholdConsumed).not.toHaveProperty('contextManifest')
         expect(belowThresholdTrace.cache?.plan).toMatchObject({
             provider: belowThresholdPlan.provider,
             effectivePrefixEstimatedTokens:
@@ -1643,10 +1552,9 @@ describe('createAIRuntime', () => {
             channel: 'web',
             mode: 'conversation',
         })
-        const finalConsumed = await finalOutput.consumeStream()
+        await finalOutput.consumeStream()
         const finalTrace = expectLatestTrace(finalOutput.runId)
 
-        expect(finalConsumed).not.toHaveProperty('contextManifest')
         expect(finalTrace.cache?.result).toMatchObject({
             cacheObserved: false,
             cacheDisabledReason: 'circuit_breaker_open',
@@ -1813,10 +1721,9 @@ describe('createAIRuntime', () => {
             channel: 'discord',
             mode: 'conversation',
         })
-        const consumed = await output.consumeStream()
+        await output.consumeStream()
         const trace = expectLatestTrace(output.runId)
 
-        expect(consumed).not.toHaveProperty('contextManifest')
         expect(trace.cache?.result).toMatchObject({
             cacheObserved: false,
             cacheDisabledReason: 'circuit_breaker_open',

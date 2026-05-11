@@ -98,21 +98,6 @@ export interface PluginDiagnostic {
     readonly data?: unknown
 }
 
-export interface ManifestInputSnapshot {
-    readonly channel: RunContext['channel']
-    readonly mode: RunContext['mode']
-    readonly agentType: RunContext['agentType']
-    readonly rawMessages: RunContext['rawMessages']
-    readonly initialSessionId?: string
-    readonly resolvedSessionId?: string
-    readonly defaults: Record<string, unknown>
-}
-
-export interface PluginOutputSnapshot {
-    readonly plugin: string
-    readonly output: PluginOutput
-}
-
 export interface AssembledParamsSnapshot {
     readonly candidates: Array<{
         readonly plugin: string
@@ -219,28 +204,6 @@ export interface CacheResultSnapshot {
     readonly cacheDisabledReason?: string
     readonly rolloutGateStatus: 'observe-only' | 'enabled' | 'disabled'
     readonly circuitBreakerState: 'closed' | 'open'
-}
-
-export interface ResultSnapshot {
-    readonly text: string
-    readonly responseMessage: UIMessage
-    readonly toolCalls: ToolCallRecord[]
-    readonly usage: {
-        readonly inputTokens: number | undefined
-        readonly outputTokens: number | undefined
-    }
-    readonly cacheResult?: CacheResultSnapshot
-}
-
-export interface ContextManifest {
-    readonly runId: string
-    readonly createdAt: string
-    readonly input: ManifestInputSnapshot
-    readonly pluginOutputs: PluginOutputSnapshot[]
-    readonly assembledContext: AssembledContextSnapshot
-    readonly modelRequest: ModelRequestSnapshot
-    readonly cachePlan?: CachePlanSnapshot
-    readonly result?: ResultSnapshot
 }
 
 // ── Plugin Interface ──

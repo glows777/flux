@@ -19,22 +19,8 @@ function makeMockRouter(overrides?: Partial<MockRouter>): MockRouter {
     }
 }
 
-function makeContextManifest(
-    runId: string,
-): ReturnType<ChatOutput['getContextManifest']> {
-    return {
-        runId,
-        createdAt: new Date().toISOString(),
-        input: {} as never,
-        pluginOutputs: [],
-        assembledContext: {} as never,
-        modelRequest: {} as never,
-    }
-}
-
 function makeConsumedResult(
     text: string,
-    runId = 'run-123',
 ): Awaited<ReturnType<ChatOutput['consumeStream']>> {
     return {
         text,
@@ -45,7 +31,6 @@ function makeConsumedResult(
         },
         toolCalls: [],
         usage: { inputTokens: 10, outputTokens: 20 },
-        contextManifest: makeContextManifest(runId),
     }
 }
 
@@ -57,12 +42,9 @@ function makeMockChatOutput(
         streamResult: {} as ChatOutput['streamResult'],
         runId,
         sessionId: 'session-123',
-        consumeStream: mock(() =>
-            Promise.resolve(makeConsumedResult(text, runId)),
-        ),
+        consumeStream: mock(() => Promise.resolve(makeConsumedResult(text))),
         finalize: mock(() => Promise.resolve()),
         recordFailure: mock(() => Promise.resolve()),
-        getContextManifest: () => makeContextManifest(runId),
     }
 }
 

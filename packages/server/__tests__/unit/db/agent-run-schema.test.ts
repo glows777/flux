@@ -19,9 +19,6 @@ describe('AgentRun Prisma schema', () => {
         const agentRunModel = extractModelBlock(schema, 'AgentRun')
         const traceModel = extractModelBlock(schema, 'AgentRunTrace')
 
-        expect(schema).not.toContain('model ChatMessageManifest')
-        expect(schema).not.toContain('manifests ChatMessageManifest[]')
-
         expect(agentRunModel).toContain('trace         AgentRunTrace?')
         expect(agentRunModel).toContain('id            String   @id')
         expect(agentRunModel).toContain('status        String')

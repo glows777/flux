@@ -22,9 +22,7 @@ const mockSessionCreate = mock(async () => ({
     updatedAt: new Date(),
 }))
 const mockSessionLoadMessages = mock(async () => [])
-const mockSessionLoadMessageManifest = mock(async () => null)
 const mockSessionAppendMessage = mock(async () => {})
-const mockSessionSaveMessageManifest = mock(async () => {})
 const mockSessionTouchSession = mock(async () => {})
 const mockSessionSaveSessionError = mock(async () => {})
 const mockSessionClearSessionError = mock(async () => {})
@@ -36,9 +34,7 @@ mock.module('../../src/core/ai/memory/loader', () => ({
 mock.module('../../src/core/ai/session', () => ({
     createSession: mockSessionCreate,
     loadMessages: mockSessionLoadMessages,
-    loadMessageManifest: mockSessionLoadMessageManifest,
     appendMessage: mockSessionAppendMessage,
-    saveMessageManifest: mockSessionSaveMessageManifest,
     touchSession: mockSessionTouchSession,
     saveSessionError: mockSessionSaveSessionError,
     clearSessionError: mockSessionClearSessionError,
@@ -233,9 +229,7 @@ describe('ai context visibility integration', () => {
         mockLoadMemoryContext.mockReset()
         mockSessionCreate.mockReset()
         mockSessionLoadMessages.mockReset()
-        mockSessionLoadMessageManifest.mockReset()
         mockSessionAppendMessage.mockReset()
-        mockSessionSaveMessageManifest.mockReset()
         mockSessionTouchSession.mockReset()
         mockSessionSaveSessionError.mockReset()
         mockSessionClearSessionError.mockReset()
@@ -252,9 +246,7 @@ describe('ai context visibility integration', () => {
             updatedAt: new Date(),
         })
         mockSessionLoadMessages.mockResolvedValue([])
-        mockSessionLoadMessageManifest.mockResolvedValue(null)
         mockSessionAppendMessage.mockResolvedValue(undefined)
-        mockSessionSaveMessageManifest.mockResolvedValue(undefined)
         mockSessionTouchSession.mockResolvedValue(undefined)
         mockSessionSaveSessionError.mockResolvedValue(undefined)
         mockSessionClearSessionError.mockResolvedValue(undefined)
@@ -352,10 +344,9 @@ describe('ai context visibility integration', () => {
             channel: 'web',
             mode: 'conversation',
         })
-        const consumed = await output.consumeStream()
+        await output.consumeStream()
         const trace = traceRecorder.traces.get(output.runId)
 
-        expect(consumed).not.toHaveProperty('contextManifest')
         expect(trace?.plugins?.contributions.length).toBeGreaterThan(0)
         expect(
             trace?.prompt?.segments.some(

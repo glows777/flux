@@ -4,7 +4,6 @@ import { z } from 'zod'
 import {
     deleteSession,
     listAllSessions,
-    loadMessageManifest,
     loadMessages,
     loadSessionError,
     renameSession,
@@ -110,27 +109,6 @@ const sessions = new Hono()
             }
             return c.json(
                 { success: false, error: 'Failed to load messages' },
-                500,
-            )
-        }
-    })
-
-    .get('/:id/messages/:messageId/context', async (c) => {
-        try {
-            const id = c.req.param('id')
-            const messageId = c.req.param('messageId')
-            const record = await loadMessageManifest(id, messageId)
-            return c.json({ success: true, data: record })
-        } catch (error) {
-            if (error instanceof SessionError) {
-                const status = SESSION_ERROR_CODE_TO_STATUS[error.code] ?? 500
-                return c.json(
-                    { success: false, error: error.message },
-                    status as 400 | 404 | 409 | 500,
-                )
-            }
-            return c.json(
-                { success: false, error: 'Failed to load message context' },
                 500,
             )
         }

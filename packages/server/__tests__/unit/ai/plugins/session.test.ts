@@ -104,10 +104,7 @@ describe('sessionPlugin', () => {
         expect(history.payload.messages[0].id).toBe('db-1')
     })
 
-    test('contribute does not load previous assistant manifests into meta', async () => {
-        const loadMessageManifest = mock(async () => {
-            throw new Error('previous manifest lookup should not run')
-        })
+    test('contribute keeps previous assistant messages in db-backed history', async () => {
         const deps = makeDeps({
             loadMessages: async () => [
                 makeUserMessage('u-1', 'first'),
@@ -117,7 +114,6 @@ describe('sessionPlugin', () => {
                     parts: [{ type: 'text', text: 'prev' }],
                 } as UIMessage,
             ],
-            loadMessageManifest,
         })
         const plugin = sessionPlugin({ deps })
         const ctx = makeRunContext({
@@ -130,9 +126,6 @@ describe('sessionPlugin', () => {
         })
 
         const output = await plugin.contribute?.(ctx as never)
-
-        expect(loadMessageManifest).not.toHaveBeenCalled()
-        expect(ctx.meta.has('previousContextManifest')).toBe(false)
 
         const history = output?.segments?.[0]
         if (!history || history.payload.format !== 'messages') {
