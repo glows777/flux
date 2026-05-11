@@ -88,12 +88,44 @@ function normalizeValue(
 
     if (value instanceof Error) {
         const record: Record<string, unknown> = {
-            name: value.name,
-            message: value.message,
+            name: normalizeValue(
+                value.name,
+                options,
+                seen,
+                depth + 1,
+                notes,
+                redacted,
+            ),
+            message: normalizeValue(
+                value.message,
+                options,
+                seen,
+                depth + 1,
+                notes,
+                redacted,
+            ),
         }
         const code = (value as { code?: unknown }).code
-        if (typeof code === 'string') record.code = code
-        if (typeof value.stack === 'string') record.stack = value.stack
+        if (typeof code === 'string') {
+            record.code = normalizeValue(
+                code,
+                options,
+                seen,
+                depth + 1,
+                notes,
+                redacted,
+            )
+        }
+        if (typeof value.stack === 'string') {
+            record.stack = normalizeValue(
+                value.stack,
+                options,
+                seen,
+                depth + 1,
+                notes,
+                redacted,
+            )
+        }
         return record
     }
 

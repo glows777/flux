@@ -81,6 +81,30 @@ describe('trace JSON hygiene', () => {
         expect(result.keptSizeBytes).toBe(29)
     })
 
+    test('truncates long error fields', () => {
+        const error = Object.assign(new Error('x'.repeat(20)), {
+            code: `E_${'Y'.repeat(20)}`,
+        })
+        error.stack = `stack-${'z'.repeat(20)}`
+
+        const result = sanitizeTraceJson(error, {
+            maxBytes: 10_000,
+            maxDepth: 8,
+            maxArrayItems: 50,
+            maxStringBytes: 5,
+            redactKeys: [],
+        })
+
+        expect(result.truncated).toBe(true)
+        expect(result.notes).toContain('string_truncated')
+        expect(result.value).toMatchObject({
+            name: 'Error',
+            message: 'xxxxx[Truncated string from 20 bytes]',
+            code: 'E_YYY[Truncated string from 22 bytes]',
+            stack: 'stack[Truncated string from 26 bytes]',
+        })
+    })
+
     test('stable stringify and hash are deterministic', () => {
         const left = { b: 2, a: { d: 4, c: 3 } }
         const right = { a: { c: 3, d: 4 }, b: 2 }
