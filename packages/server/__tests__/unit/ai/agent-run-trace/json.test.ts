@@ -176,6 +176,55 @@ describe('trace JSON hygiene', () => {
         })
     })
 
+    test('redacts secret-shaped map keys', () => {
+        const result = sanitizeTraceJson(
+            new Map<unknown, unknown>([['token', 'secret']]),
+            {
+                maxBytes: 10_000,
+                maxDepth: 8,
+                maxArrayItems: 50,
+                maxStringBytes: 10_000,
+                redactKeys: ['token'],
+            },
+        )
+
+        expect(result.redacted).toBe(true)
+        expect(result.value).toEqual({
+            type: 'Map',
+            entries: [['token', '[Redacted]']],
+        })
+    })
+
+    test('redacts nested container values', () => {
+        const result = sanitizeTraceJson(
+            {
+                nestedMap: new Map<unknown, unknown>([
+                    ['safe', { apiKey: 'secret' }],
+                ]),
+                nestedSet: new Set<unknown>([{ token: 'secret' }]),
+            },
+            {
+                maxBytes: 10_000,
+                maxDepth: 8,
+                maxArrayItems: 50,
+                maxStringBytes: 10_000,
+                redactKeys: ['token', 'apiKey'],
+            },
+        )
+
+        expect(result.redacted).toBe(true)
+        expect(result.value).toEqual({
+            nestedMap: {
+                type: 'Map',
+                entries: [['safe', { apiKey: '[Redacted]' }]],
+            },
+            nestedSet: {
+                type: 'Set',
+                values: [{ token: '[Redacted]' }],
+            },
+        })
+    })
+
     test('truncates large arrays and records sizing metadata', () => {
         const result = sanitizeTraceJson(
             Array.from({ length: 5 }, (_, i) => i),

@@ -175,24 +175,29 @@ function normalizeValue(
             let index = 0
             for (const [key, item] of value) {
                 if (index >= options.maxArrayItems) break
-                entries.push([
-                    normalizeValue(
-                        key,
-                        options,
-                        seen,
-                        depth + 1,
-                        notes,
-                        redacted,
-                    ),
-                    normalizeValue(
-                        item,
-                        options,
-                        seen,
-                        depth + 1,
-                        notes,
-                        redacted,
-                    ),
-                ])
+                const normalizedKey = normalizeValue(
+                    key,
+                    options,
+                    seen,
+                    depth + 1,
+                    notes,
+                    redacted,
+                )
+                const shouldRedactMapValue =
+                    typeof key === 'string' &&
+                    shouldRedactKey(key, options.redactKeys)
+                const normalizedItem = shouldRedactMapValue
+                    ? '[Redacted]'
+                    : normalizeValue(
+                          item,
+                          options,
+                          seen,
+                          depth + 1,
+                          notes,
+                          redacted,
+                      )
+                if (shouldRedactMapValue) redacted.value = true
+                entries.push([normalizedKey, normalizedItem])
                 index += 1
             }
             if (value.size > options.maxArrayItems) {
