@@ -63,17 +63,22 @@ describe('trace JSON hygiene', () => {
     })
 
     test('truncates large arrays and records sizing metadata', () => {
-        const result = sanitizeTraceJson(Array.from({ length: 5 }, (_, i) => i), {
-            maxBytes: 10_000,
-            maxDepth: 8,
-            maxArrayItems: 3,
-            maxStringBytes: 10_000,
-            redactKeys: [],
-        })
+        const result = sanitizeTraceJson(
+            Array.from({ length: 5 }, (_, i) => i),
+            {
+                maxBytes: 10_000,
+                maxDepth: 8,
+                maxArrayItems: 3,
+                maxStringBytes: 10_000,
+                redactKeys: [],
+            },
+        )
 
         expect(result.truncated).toBe(true)
         expect(result.value).toEqual([0, 1, 2, '[Truncated 2 items]'])
         expect(result.notes).toContain('array_items_truncated')
+        expect(result.originalSizeBytes).toBe(29)
+        expect(result.keptSizeBytes).toBe(29)
     })
 
     test('stable stringify and hash are deterministic', () => {

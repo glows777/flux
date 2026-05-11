@@ -105,7 +105,9 @@ function normalizeValue(
             )
         if (value.length > options.maxArrayItems) {
             notes.add('array_items_truncated')
-            kept.push(`[Truncated ${value.length - options.maxArrayItems} items]`)
+            kept.push(
+                `[Truncated ${value.length - options.maxArrayItems} items]`,
+            )
         }
         return kept
     }

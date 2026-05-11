@@ -176,7 +176,11 @@ export interface CacheProviderRequestTrace {
     }
 }
 
-export type CacheEvidenceSource = 'totalUsage' | 'providerMetadata' | 'both' | 'none'
+export type CacheEvidenceSource =
+    | 'totalUsage'
+    | 'providerMetadata'
+    | 'both'
+    | 'none'
 
 export interface CacheResultTrace {
     cacheObserved: boolean
@@ -197,7 +201,12 @@ export interface CacheResultTrace {
 
 export interface CompactionTrace {
     applied: boolean
-    reason: 'not_needed' | 'not_implemented' | 'token_budget' | 'manual' | 'failed'
+    reason:
+        | 'not_needed'
+        | 'not_implemented'
+        | 'token_budget'
+        | 'manual'
+        | 'failed'
     beforeEstimatedInputTokens?: number
     afterEstimatedInputTokens?: number
     affectedSegmentIds?: string[]
