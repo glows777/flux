@@ -56,6 +56,27 @@ function truncateStringByBytes(value: string, maxBytes: number): string {
     return kept
 }
 
+function normalizeNonJsonPrimitive(value: unknown): unknown {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+        if (Number.isNaN(value)) return '[NonJsonNumber:NaN]'
+        return value > 0
+            ? '[NonJsonNumber:Infinity]'
+            : '[NonJsonNumber:-Infinity]'
+    }
+    if (typeof value === 'symbol') {
+        return value.description == null
+            ? '[Symbol]'
+            : `[Symbol:${value.description}]`
+    }
+    return value
+}
+
+function compareCodeUnits(left: string, right: string): number {
+    if (left < right) return -1
+    if (left > right) return 1
+    return 0
+}
+
 function normalizeValue(
     value: unknown,
     options: TraceJsonOptions,
@@ -69,6 +90,7 @@ function normalizeValue(
         return '[MaxDepth]'
     }
 
+    value = normalizeNonJsonPrimitive(value)
     if (value === undefined) return '[Undefined]'
     if (typeof value === 'bigint') return value.toString()
     if (typeof value === 'function') return '[Function]'
@@ -86,6 +108,134 @@ function normalizeValue(
     }
     seen.add(value)
     try {
+        if (value instanceof Date) {
+            return {
+                type: 'Date',
+                value: Number.isNaN(value.getTime())
+                    ? '[Invalid Date]'
+                    : value.toISOString(),
+            }
+        }
+
+        if (value instanceof URL) {
+            return {
+                type: 'URL',
+                value: normalizeValue(
+                    value.toString(),
+                    options,
+                    seen,
+                    depth + 1,
+                    notes,
+                    redacted,
+                ),
+            }
+        }
+
+        if (value instanceof RegExp) {
+            return {
+                type: 'RegExp',
+                source: normalizeValue(
+                    value.source,
+                    options,
+                    seen,
+                    depth + 1,
+                    notes,
+                    redacted,
+                ),
+                flags: normalizeValue(
+                    value.flags,
+                    options,
+                    seen,
+                    depth + 1,
+                    notes,
+                    redacted,
+                ),
+            }
+        }
+
+        if (value instanceof ArrayBuffer) {
+            return {
+                type: 'ArrayBuffer',
+                byteLength: value.byteLength,
+            }
+        }
+
+        if (ArrayBuffer.isView(value)) {
+            const record: Record<string, unknown> = {
+                type: value.constructor.name,
+                byteLength: value.byteLength,
+            }
+            const length = (value as { length?: unknown }).length
+            if (typeof length === 'number') record.length = length
+            return record
+        }
+
+        if (value instanceof Map) {
+            const entries: unknown[] = []
+            let index = 0
+            for (const [key, item] of value) {
+                if (index >= options.maxArrayItems) break
+                entries.push([
+                    normalizeValue(
+                        key,
+                        options,
+                        seen,
+                        depth + 1,
+                        notes,
+                        redacted,
+                    ),
+                    normalizeValue(
+                        item,
+                        options,
+                        seen,
+                        depth + 1,
+                        notes,
+                        redacted,
+                    ),
+                ])
+                index += 1
+            }
+            if (value.size > options.maxArrayItems) {
+                notes.add('array_items_truncated')
+                entries.push(
+                    `[Truncated ${value.size - options.maxArrayItems} entries]`,
+                )
+            }
+            return {
+                type: 'Map',
+                entries,
+            }
+        }
+
+        if (value instanceof Set) {
+            const values: unknown[] = []
+            let index = 0
+            for (const item of value) {
+                if (index >= options.maxArrayItems) break
+                values.push(
+                    normalizeValue(
+                        item,
+                        options,
+                        seen,
+                        depth + 1,
+                        notes,
+                        redacted,
+                    ),
+                )
+                index += 1
+            }
+            if (value.size > options.maxArrayItems) {
+                notes.add('array_items_truncated')
+                values.push(
+                    `[Truncated ${value.size - options.maxArrayItems} values]`,
+                )
+            }
+            return {
+                type: 'Set',
+                values,
+            }
+        }
+
         if (value instanceof Error) {
             const record: Record<string, unknown> = {
                 name: normalizeValue(
@@ -183,6 +333,7 @@ function sortForStableStringify(
     value: unknown,
     seen: WeakSet<object>,
 ): unknown {
+    value = normalizeNonJsonPrimitive(value)
     if (value === undefined) return '[Undefined]'
     if (typeof value === 'bigint') return value.toString()
     if (typeof value === 'function') return '[Function]'
@@ -197,7 +348,7 @@ function sortForStableStringify(
 
         return Object.fromEntries(
             Object.entries(value as Record<string, unknown>)
-                .sort(([left], [right]) => left.localeCompare(right))
+                .sort(([left], [right]) => compareCodeUnits(left, right))
                 .map(([key, item]) => [
                     key,
                     sortForStableStringify(item, seen),

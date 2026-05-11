@@ -60,6 +60,98 @@ describe('trace JSON hygiene', () => {
         })
     })
 
+    test('sanitizes and hashes distinct dates without collapsing them', () => {
+        const first = new Date('2026-01-01T00:00:00.000Z')
+        const second = new Date('2026-01-02T00:00:00.000Z')
+
+        expect(sanitizeTraceJson(first).value).toEqual({
+            type: 'Date',
+            value: '2026-01-01T00:00:00.000Z',
+        })
+        expect(sanitizeTraceJson(new Date(Number.NaN)).value).toEqual({
+            type: 'Date',
+            value: '[Invalid Date]',
+        })
+        expect(hashTraceValue(first)).not.toBe(hashTraceValue(second))
+    })
+
+    test('normalizes non-json primitives to json-safe sentinels', () => {
+        const result = sanitizeTraceJson({
+            nan: Number.NaN,
+            positive: Number.POSITIVE_INFINITY,
+            negative: Number.NEGATIVE_INFINITY,
+            symbol: Symbol('s'),
+        })
+
+        expect(result.value).toEqual({
+            nan: '[NonJsonNumber:NaN]',
+            positive: '[NonJsonNumber:Infinity]',
+            negative: '[NonJsonNumber:-Infinity]',
+            symbol: '[Symbol:s]',
+        })
+        expect(hashTraceValue({ x: Number.NaN })).not.toBe(
+            hashTraceValue({ x: null }),
+        )
+    })
+
+    test('sanitizes built-ins into meaningful json-safe summaries', () => {
+        const result = sanitizeTraceJson(
+            {
+                map: new Map<unknown, unknown>([
+                    ['first', { count: 1 }],
+                    ['second', Number.NaN],
+                    ['third', 'truncated'],
+                ]),
+                set: new Set<unknown>(['a', Symbol('b'), 'c']),
+                url: new URL('https://example.com/path?q=1'),
+                regexp: /flux/gi,
+                bytes: new Uint8Array([1, 2, 3]),
+                buffer: new ArrayBuffer(4),
+            },
+            {
+                maxBytes: 10_000,
+                maxDepth: 8,
+                maxArrayItems: 2,
+                maxStringBytes: 10_000,
+                redactKeys: [],
+            },
+        )
+
+        expect(result.value).toEqual({
+            map: {
+                type: 'Map',
+                entries: [
+                    ['first', { count: 1 }],
+                    ['second', '[NonJsonNumber:NaN]'],
+                    '[Truncated 1 entries]',
+                ],
+            },
+            set: {
+                type: 'Set',
+                values: ['a', '[Symbol:b]', '[Truncated 1 values]'],
+            },
+            url: {
+                type: 'URL',
+                value: 'https://example.com/path?q=1',
+            },
+            regexp: {
+                type: 'RegExp',
+                source: 'flux',
+                flags: 'gi',
+            },
+            bytes: {
+                type: 'Uint8Array',
+                byteLength: 3,
+                length: 3,
+            },
+            buffer: {
+                type: 'ArrayBuffer',
+                byteLength: 4,
+            },
+        })
+        expect(result.notes).toContain('array_items_truncated')
+    })
+
     test('redacts secret-shaped keys recursively', () => {
         const result = sanitizeTraceJson(
             {
