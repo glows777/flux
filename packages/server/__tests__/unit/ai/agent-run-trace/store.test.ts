@@ -399,4 +399,40 @@ describe('AgentRunTraceStore', () => {
         )
         expect(data.skipped).toBeUndefined()
     })
+
+    test('normalizes oversized checkpoint payload before enforcing the storage cap', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        await store.createRecording(createPayload('run-oversized'))
+
+        const longText = 'x'.repeat(600 * 1024)
+
+        await expect(
+            store.mergeCheckpoint('run-oversized', {
+                status: 'recording',
+                phase: 'assemble_context',
+                patch: {
+                    prompt: {
+                        finalInput: {
+                            systemText: longText,
+                            modelMessages: [
+                                { role: 'user', content: longText },
+                            ],
+                            tools: [],
+                            params: { resolved: {}, candidates: [] },
+                        },
+                        segments: [],
+                        totalEstimatedInputTokens: 42,
+                    },
+                },
+            }),
+        ).resolves.toBeUndefined()
+
+        const payload = rows.get('run-oversized')?.payload
+        expect(payload?.prompt?.totalEstimatedInputTokens).toBe(42)
+        expect(payload?.prompt?.finalInput.systemText).toContain(
+            '[Truncated string from',
+        )
+        expect(JSON.stringify(payload).length).toBeLessThan(512 * 1024)
+    })
 })

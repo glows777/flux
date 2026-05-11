@@ -87,6 +87,12 @@ export interface AgentRunTraceStore {
 
 const MERGE_ATTEMPTS = 3
 const MAX_TRACE_PAYLOAD_BYTES = 512 * 1024
+const STORAGE_STRING_BYTE_LIMITS = [
+    Math.floor(MAX_TRACE_PAYLOAD_BYTES / 2),
+    64 * 1024,
+    16 * 1024,
+    4 * 1024,
+]
 
 function isUniqueConstraintError(error: unknown): boolean {
     return (error as { code?: unknown } | null)?.code === 'P2002'
@@ -149,22 +155,37 @@ function stripUndefinedObjectFields(value: unknown): unknown {
 function normalizePayloadForStorage(
     payload: AgentRunTracePayload,
 ): AgentRunTracePayload {
-    const safe = sanitizeTraceJson(stripUndefinedObjectFields(payload), {
-        ...DEFAULT_TRACE_JSON_OPTIONS,
-        maxBytes: MAX_TRACE_PAYLOAD_BYTES,
-        maxDepth: 32,
-        maxArrayItems: 10_000,
-        maxStringBytes: MAX_TRACE_PAYLOAD_BYTES,
-    })
-    if (!safe.value || typeof safe.value !== 'object') {
-        throw Object.assign(
-            new Error('Trace payload normalized to non-object'),
-            {
-                code: 'TRACE_PAYLOAD_INVALID',
-            },
-        )
+    const stripped = stripUndefinedObjectFields(payload)
+
+    for (const maxStringBytes of STORAGE_STRING_BYTE_LIMITS) {
+        const safe = sanitizeTraceJson(stripped, {
+            ...DEFAULT_TRACE_JSON_OPTIONS,
+            maxBytes: MAX_TRACE_PAYLOAD_BYTES,
+            maxDepth: 32,
+            maxArrayItems: 10_000,
+            maxStringBytes,
+        })
+
+        if (
+            safe.value &&
+            typeof safe.value === 'object' &&
+            !Array.isArray(safe.value)
+        ) {
+            const storedPayload = safe.value as AgentRunTracePayload
+            if (
+                measureTraceJsonBytes(storedPayload) <= MAX_TRACE_PAYLOAD_BYTES
+            ) {
+                return storedPayload
+            }
+        }
     }
-    return safe.value as AgentRunTracePayload
+
+    throw Object.assign(
+        new Error(
+            `Agent run trace payload exceeds ${MAX_TRACE_PAYLOAD_BYTES} bytes after normalization`,
+        ),
+        { code: 'TRACE_PAYLOAD_TOO_LARGE' },
+    )
 }
 
 function assertPayloadFits(payload: AgentRunTracePayload): void {
@@ -180,9 +201,15 @@ function assertPayloadFits(payload: AgentRunTracePayload): void {
 }
 
 function toPrismaJson(payload: AgentRunTracePayload): Prisma.InputJsonValue {
-    return normalizePayloadForStorage(
-        payload,
-    ) as unknown as Prisma.InputJsonValue
+    return payload as unknown as Prisma.InputJsonValue
+}
+
+function preparePayloadForStorage(
+    payload: AgentRunTracePayload,
+): AgentRunTracePayload {
+    const storedPayload = normalizePayloadForStorage(payload)
+    assertPayloadFits(storedPayload)
+    return storedPayload
 }
 
 function shouldKeepExistingCompletedFailure(
@@ -202,8 +229,6 @@ export function createPrismaAgentRunTraceStore(
 ): AgentRunTraceStore {
     return {
         async createRecording(payload) {
-            assertPayloadFits(payload)
-
             for (let attempt = 0; attempt < MERGE_ATTEMPTS; attempt++) {
                 const existing = await db.agentRunTrace.findUnique({
                     where: { runId: payload.runId },
@@ -213,7 +238,8 @@ export function createPrismaAgentRunTraceStore(
                     return
                 }
 
-                const storedPayload = toPrismaJson(payload)
+                const storedPayload = preparePayloadForStorage(payload)
+                const storedJson = toPrismaJson(storedPayload)
                 if (existing) {
                     const result = await db.agentRunTrace.updateMany({
                         where: {
@@ -223,9 +249,9 @@ export function createPrismaAgentRunTraceStore(
                                 : {}),
                         },
                         data: {
-                            status: payload.traceStatus,
-                            phase: payload.currentPhase,
-                            payload: storedPayload,
+                            status: storedPayload.traceStatus,
+                            phase: storedPayload.currentPhase,
+                            payload: storedJson,
                         },
                     })
                     if (result.count > 0) return
@@ -236,9 +262,9 @@ export function createPrismaAgentRunTraceStore(
                     await db.agentRunTrace.create({
                         data: {
                             runId: payload.runId,
-                            status: payload.traceStatus,
-                            phase: payload.currentPhase,
-                            payload: storedPayload,
+                            status: storedPayload.traceStatus,
+                            phase: storedPayload.currentPhase,
+                            payload: storedJson,
                         },
                     })
                     return
@@ -282,16 +308,16 @@ export function createPrismaAgentRunTraceStore(
                     return
                 }
 
-                assertPayloadFits(payload)
+                const storedPayload = preparePayloadForStorage(payload)
                 const result = await db.agentRunTrace.updateMany({
                     where: {
                         runId,
                         ...(row?.updatedAt ? { updatedAt: row.updatedAt } : {}),
                     },
                     data: {
-                        status: payload.traceStatus,
-                        phase: payload.currentPhase,
-                        payload: toPrismaJson(payload),
+                        status: storedPayload.traceStatus,
+                        phase: storedPayload.currentPhase,
+                        payload: toPrismaJson(storedPayload),
                     },
                 })
                 if (result.count > 0) return
@@ -326,16 +352,16 @@ export function createPrismaAgentRunTraceStore(
                     updatedAt: new Date().toISOString(),
                 }
 
-                assertPayloadFits(payload)
+                const storedPayload = preparePayloadForStorage(payload)
                 const result = await db.agentRunTrace.updateMany({
                     where: {
                         runId,
                         ...(row?.updatedAt ? { updatedAt: row.updatedAt } : {}),
                     },
                     data: {
-                        status: payload.traceStatus,
-                        phase: payload.currentPhase,
-                        payload: toPrismaJson(payload),
+                        status: storedPayload.traceStatus,
+                        phase: storedPayload.currentPhase,
+                        payload: toPrismaJson(storedPayload),
                     },
                 })
                 if (result.count > 0) return

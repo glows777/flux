@@ -1202,7 +1202,7 @@ describe('createAIRuntime', () => {
             anthropic: {
                 thinking: {
                     type: 'enabled',
-                    budgetTokens: '[Redacted]',
+                    budgetTokens: 256,
                 },
             },
         })

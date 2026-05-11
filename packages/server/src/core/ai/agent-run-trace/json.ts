@@ -71,12 +71,15 @@ function isSecretTokenKey(compactKey: string): boolean {
 }
 
 function truncateStringByBytes(value: string, maxBytes: number): string {
-    let kept = ''
+    const kept: string[] = []
+    let keptBytes = 0
     for (const char of value) {
-        if (byteLength(kept + char) > maxBytes) break
-        kept += char
+        const charBytes = byteLength(char)
+        if (keptBytes + charBytes > maxBytes) break
+        kept.push(char)
+        keptBytes += charBytes
     }
-    return kept
+    return kept.join('')
 }
 
 function normalizeNonJsonPrimitive(value: unknown): unknown {
