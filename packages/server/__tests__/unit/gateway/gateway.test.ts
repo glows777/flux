@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
 import type { ChannelAdapter } from '../../../src/channels/types'
+import type { AgentRunStore } from '../../../src/core/ai/agent-run'
+import type { TraceRecorder } from '../../../src/core/ai/agent-run-trace'
 import type { ChatOutput } from '../../../src/core/ai/runtime/types'
 import { Gateway } from '../../../src/gateway/gateway'
 import type { GatewayInput, Router } from '../../../src/gateway/router'
@@ -74,16 +76,53 @@ function makeMockAdapter(overrides?: Partial<ChannelAdapter>): ChannelAdapter {
     }
 }
 
+function makeFakeAgentRunStore(
+    overrides?: Partial<AgentRunStore>,
+): AgentRunStore {
+    return {
+        createRunningRun: mock(() => Promise.resolve()),
+        createFailedRun: mock(async (input) => ({
+            runId: input.runId ?? 'generated-failed-run',
+        })),
+        attachSession: mock(() => Promise.resolve()),
+        succeedIfRunning: mock(() => Promise.resolve()),
+        failIfRunning: mock(() => Promise.resolve()),
+        recordWarnings: mock(() => Promise.resolve()),
+        reconcileStaleRunningRuns: mock(() => Promise.resolve({ count: 0 })),
+        ...overrides,
+    }
+}
+
+function makeFakeTraceRecorder(
+    overrides?: Partial<TraceRecorder>,
+): TraceRecorder {
+    return {
+        recordMinimalFailure: mock(() => Promise.resolve()),
+        ...overrides,
+    } as unknown as TraceRecorder
+}
+
+function makeGateway(params: {
+    router: MockRouter
+    channels?: Map<string, ChannelAdapter>
+    agentRunStore?: AgentRunStore
+    traceRecorder?: TraceRecorder
+}): Gateway {
+    return new Gateway({
+        router: params.router as unknown as Router,
+        channels: params.channels ?? new Map(),
+        agentRunStore: params.agentRunStore ?? makeFakeAgentRunStore(),
+        traceRecorder: params.traceRecorder ?? makeFakeTraceRecorder(),
+    })
+}
+
 describe('Gateway', () => {
     test('conversation mode returns ChatOutput directly', async () => {
         const chatOutput = makeMockChatOutput()
         const router = makeMockRouter({
             chat: mock(() => Promise.resolve(chatOutput)),
         })
-        const gateway = new Gateway({
-            router: router as unknown as Router,
-            channels: new Map(),
-        })
+        const gateway = makeGateway({ router })
         const messages: NonNullable<GatewayInput['messages']> = [
             {
                 id: '1',
@@ -111,10 +150,7 @@ describe('Gateway', () => {
                 ),
             ),
         })
-        const gateway = new Gateway({
-            router: router as unknown as Router,
-            channels: new Map(),
-        })
+        const gateway = makeGateway({ router })
 
         const input: GatewayInput = {
             channel: 'cron',
@@ -141,10 +177,7 @@ describe('Gateway', () => {
         })
         const adapter = makeMockAdapter()
         const channels = new Map<string, ChannelAdapter>([['discord', adapter]])
-        const gateway = new Gateway({
-            router: router as unknown as Router,
-            channels,
-        })
+        const gateway = makeGateway({ router, channels })
 
         const input: GatewayInput = {
             channel: 'cron',
@@ -174,10 +207,7 @@ describe('Gateway', () => {
         })
         const adapter = makeMockAdapter()
         const channels = new Map<string, ChannelAdapter>([['discord', adapter]])
-        const gateway = new Gateway({
-            router: router as unknown as Router,
-            channels,
-        })
+        const gateway = makeGateway({ router, channels })
 
         const input: GatewayInput = {
             channel: 'cron',
@@ -198,10 +228,7 @@ describe('Gateway', () => {
             send: mock(() => Promise.reject(new Error('network error'))),
         })
         const channels = new Map<string, ChannelAdapter>([['discord', adapter]])
-        const gateway = new Gateway({
-            router: router as unknown as Router,
-            channels,
-        })
+        const gateway = makeGateway({ router, channels })
 
         const input: GatewayInput = {
             channel: 'cron',
@@ -233,8 +260,8 @@ describe('Gateway', () => {
             chat: mock(() => Promise.resolve(chatOutput)),
         })
         const adapter = makeMockAdapter()
-        const gateway = new Gateway({
-            router: router as unknown as Router,
+        const gateway = makeGateway({
+            router,
             channels: new Map([['discord', adapter]]),
         })
 
@@ -279,8 +306,8 @@ describe('Gateway', () => {
             chat: mock(() => Promise.resolve(chatOutput)),
         })
         const adapter = makeMockAdapter()
-        const gateway = new Gateway({
-            router: router as unknown as Router,
+        const gateway = makeGateway({
+            router,
             channels: new Map([['discord', adapter]]),
         })
 
@@ -307,10 +334,7 @@ describe('Gateway', () => {
         const router = makeMockRouter({
             chat: mock(() => Promise.reject(new Error('AI service down'))),
         })
-        const gateway = new Gateway({
-            router: router as unknown as Router,
-            channels: new Map(),
-        })
+        const gateway = makeGateway({ router })
 
         const input: GatewayInput = {
             channel: 'cron',
@@ -329,14 +353,82 @@ describe('Gateway', () => {
         })
     })
 
+    test('trigger mode records minimal failure when router throws before runtime output', async () => {
+        const error = new Error('AI service down')
+        const calls: string[] = []
+        const agentRunStore = makeFakeAgentRunStore({
+            createFailedRun: mock(async (input) => {
+                calls.push('createFailedRun')
+                return { runId: input.runId ?? 'generated-failed-run' }
+            }),
+        })
+        const traceRecorder = makeFakeTraceRecorder({
+            recordMinimalFailure: mock(async () => {
+                calls.push('recordMinimalFailure')
+            }),
+        })
+        const router = makeMockRouter({
+            chat: mock(() => Promise.reject(error)),
+        })
+        const gateway = makeGateway({
+            router,
+            agentRunStore,
+            traceRecorder,
+        })
+
+        const input: GatewayInput = {
+            channel: 'cron',
+            mode: 'trigger',
+            content: 'run analysis',
+            runId: 'run-ai-fail',
+            cronJobId: 'job-1',
+            userId: 'user-1',
+            sourceId: 'cron:job-1',
+        }
+
+        const result = await gateway.chat(input)
+
+        expect(result).toEqual({
+            text: '',
+            sessionId: '',
+            runId: 'run-ai-fail',
+            success: false,
+            error: 'AI service down',
+        })
+        expect(agentRunStore.createFailedRun).toHaveBeenCalledWith(
+            expect.objectContaining({
+                runId: 'run-ai-fail',
+                source: 'cron',
+                mode: 'trigger',
+                agentType: 'trading-agent',
+                cronJobId: 'job-1',
+                userId: 'user-1',
+                sourceId: 'cron:job-1',
+                error,
+            }),
+        )
+        expect(traceRecorder.recordMinimalFailure).toHaveBeenCalledWith({
+            runId: 'run-ai-fail',
+            source: 'gateway',
+            phase: 'before_run',
+            error,
+            runContext: {
+                source: 'cron',
+                mode: 'trigger',
+                agentType: 'trading-agent',
+                cronJobId: 'job-1',
+                userId: 'user-1',
+                sourceId: 'cron:job-1',
+            },
+        })
+        expect(calls).toEqual(['createFailedRun', 'recordMinimalFailure'])
+    })
+
     test('trigger mode AI failure returns input sessionId and runId', async () => {
         const router = makeMockRouter({
             chat: mock(() => Promise.reject(new Error('AI service down'))),
         })
-        const gateway = new Gateway({
-            router: router as unknown as Router,
-            channels: new Map(),
-        })
+        const gateway = makeGateway({ router })
 
         const input: GatewayInput = {
             channel: 'cron',
@@ -364,10 +456,7 @@ describe('Gateway', () => {
         const router = makeMockRouter({
             chat: mock(() => Promise.resolve(chatOutput)),
         })
-        const gateway = new Gateway({
-            router: router as unknown as Router,
-            channels: new Map(),
-        })
+        const gateway = makeGateway({ router })
 
         const input: GatewayInput = {
             channel: 'cron',
@@ -388,10 +477,7 @@ describe('Gateway', () => {
 
     test('clearSession delegates to router', async () => {
         const router = makeMockRouter()
-        const gateway = new Gateway({
-            router: router as unknown as Router,
-            channels: new Map(),
-        })
+        const gateway = makeGateway({ router })
 
         const params = {
             channel: 'discord',

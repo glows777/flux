@@ -1,6 +1,7 @@
 import type { CronJob, PrismaClient } from '@prisma/client'
 import { Cron } from 'croner'
 import type { AgentRunStore } from '@/core/ai/agent-run'
+import type { TraceRecorder } from '@/core/ai/agent-run-trace'
 import type { Gateway } from '@/gateway/gateway'
 import { type ExecutionResult, TaskExecutor } from './executor'
 
@@ -58,6 +59,7 @@ interface CronSchedulerDeps {
     readonly gateway: Gateway
     readonly prisma: Pick<PrismaClient, 'cronJob' | 'cronJobRun'>
     readonly agentRunStore: AgentRunStore
+    readonly traceRecorder?: TraceRecorder
 }
 
 export interface SchedulerHealthResult {
@@ -83,6 +85,7 @@ export class CronScheduler {
         this.executor = new TaskExecutor({
             gateway: deps.gateway,
             agentRunStore: deps.agentRunStore,
+            traceRecorder: deps.traceRecorder,
         })
     }
 
