@@ -209,10 +209,7 @@ export function createPrismaAgentRunTraceStore(
                     where: { runId: payload.runId },
                 })
                 const existingPayload = asPayload(existing?.payload)
-                if (
-                    existingPayload?.traceStatus === 'complete' ||
-                    existingPayload?.traceStatus === 'incomplete'
-                ) {
+                if (existingPayload) {
                     return
                 }
 
@@ -264,6 +261,9 @@ export function createPrismaAgentRunTraceStore(
                 const existing = asPayload(row?.payload)
                 if (!existing) {
                     throw new Error(`AgentRunTrace ${runId} does not exist`)
+                }
+                if (existing.traceStatus !== 'recording') {
+                    return
                 }
 
                 const payload = mergePayload(existing, input.phase, {

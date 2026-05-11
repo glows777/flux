@@ -115,22 +115,25 @@ describe('AgentRunTraceStore', () => {
         expect(rows.get('run-1')?.payload.currentPhase).toBe('after_run')
     })
 
-    test('createRecording retries after one optimistic update conflict', async () => {
+    test('createRecording does not overwrite an existing recording trace', async () => {
         const { db, rows } = createDb()
         const store = createPrismaAgentRunTraceStore(db as never)
-        rows.set('run-1', {
-            runId: 'run-1',
+        await store.createRecording(createPayload('run-1'))
+        await store.mergeCheckpoint('run-1', {
             status: 'recording',
-            phase: 'created',
-            payload: createPayload('run-1'),
-            updatedAt: new Date('2026-05-11T00:00:00.000Z'),
-        })
-        const originalUpdateMany = db.agentRunTrace.updateMany
-        db.agentRunTrace.updateMany = mock(async (input) => {
-            if (db.agentRunTrace.updateMany.mock.calls.length === 1) {
-                return { count: 0 }
-            }
-            return originalUpdateMany(input)
+            phase: 'assemble_context',
+            patch: {
+                prompt: {
+                    finalInput: {
+                        systemText: 'preserve me',
+                        modelMessages: [],
+                        tools: [],
+                        params: { resolved: {}, candidates: [] },
+                    },
+                    segments: [],
+                    totalEstimatedInputTokens: 0,
+                },
+            },
         })
 
         await store.createRecording({
@@ -138,10 +141,9 @@ describe('AgentRunTraceStore', () => {
             updatedAt: '2026-05-11T00:00:02.000Z',
         })
 
-        expect(db.agentRunTrace.updateMany).toHaveBeenCalledTimes(2)
-        expect(rows.get('run-1')?.payload.updatedAt).toBe(
-            '2026-05-11T00:00:02.000Z',
-        )
+        const payload = rows.get('run-1')?.payload
+        expect(payload?.currentPhase).toBe('assemble_context')
+        expect(payload?.prompt?.finalInput.systemText).toBe('preserve me')
     })
 
     test('merges checkpoint payload without dropping existing sections', async () => {
@@ -202,6 +204,35 @@ describe('AgentRunTraceStore', () => {
 
         expect(rows.get('run-1')?.payload.runOutcome).toBe('succeeded')
         expect(rows.get('run-1')?.payload.failure).toBeUndefined()
+    })
+
+    test('does not regress a completed trace with a late recording checkpoint', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        await store.createRecording(createPayload('run-1'))
+        await store.mergeCheckpoint('run-1', {
+            status: 'complete',
+            phase: 'after_run',
+            patch: { runOutcome: 'succeeded' },
+        })
+
+        await store.mergeCheckpoint('run-1', {
+            status: 'recording',
+            phase: 'finalize',
+            patch: {
+                result: {
+                    finalOutput: { text: 'late', textHash: 'hash' },
+                    usage: {},
+                    provider: { id: 'mock' },
+                },
+            },
+        })
+
+        const payload = rows.get('run-1')?.payload
+        expect(payload?.traceStatus).toBe('complete')
+        expect(payload?.runOutcome).toBe('succeeded')
+        expect(payload?.currentPhase).toBe('after_run')
+        expect(payload?.result).toBeUndefined()
     })
 
     test('does not overwrite a completed detailed failure with a later minimal failure', async () => {
@@ -275,6 +306,29 @@ describe('AgentRunTraceStore', () => {
         expect(payload?.traceStatus).toBe('complete')
         expect(payload?.runOutcome).toBe('succeeded')
         expect(payload?.recordingError).toBeUndefined()
+    })
+
+    test('does not overwrite an incomplete trace with a late checkpoint', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        await store.createRecording(createPayload('run-1'))
+        await store.mergeCheckpoint('run-1', {
+            status: 'recording',
+            phase: 'model_stream',
+            patch: {},
+        })
+        await store.markIncomplete('run-1', new Error('trace failed'))
+
+        await store.mergeCheckpoint('run-1', {
+            status: 'complete',
+            phase: 'after_run',
+            patch: { runOutcome: 'succeeded' },
+        })
+
+        const payload = rows.get('run-1')?.payload
+        expect(payload?.traceStatus).toBe('incomplete')
+        expect(payload?.currentPhase).toBe('model_stream')
+        expect(payload?.runOutcome).toBe('unknown')
     })
 
     test('normalizes undefined payload fields before writing Prisma JSON', async () => {
