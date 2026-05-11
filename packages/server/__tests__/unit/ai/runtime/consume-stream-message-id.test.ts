@@ -57,6 +57,16 @@ function createFakeAgentRunStore(): AgentRunStore {
     }
 }
 
+function createFakeTraceRecorder() {
+    return {
+        startRun: mock(() => Promise.resolve()),
+        checkpoint: mock(() => Promise.resolve()),
+        recordFailure: mock(() => Promise.resolve()),
+        recordMinimalFailure: mock(() => Promise.resolve()),
+        markIncomplete: mock(() => Promise.resolve()),
+    }
+}
+
 async function loadCreateAIRuntime() {
     return (await import('../../../../src/core/ai/runtime/create'))
         .createAIRuntime
@@ -69,6 +79,7 @@ describe('consumeStream message ids', () => {
             model: { modelId: 'gpt-4.1-mini' } as never,
             plugins: [],
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder() as never,
         })
 
         const output = await runtime.chat({

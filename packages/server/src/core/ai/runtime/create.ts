@@ -1,17 +1,35 @@
-import type { LanguageModelUsage, ProviderMetadata, UIMessage } from 'ai'
+import type {
+    LanguageModelUsage,
+    ModelMessage,
+    ProviderMetadata,
+    UIMessage,
+} from 'ai'
 import { convertToModelMessages, stepCountIs, streamText } from 'ai'
 import { createRunId } from '@/core/ai/agent-run'
+import {
+    DEFAULT_TRACE_JSON_OPTIONS,
+    hashTraceText,
+    hashTraceValue,
+    sanitizeTraceJson,
+    truncateTraceText,
+} from '@/core/ai/agent-run-trace/json'
+import type {
+    AgentRunTracePayload,
+    CachePlanTrace,
+    CacheProviderRequestTrace,
+    CacheResultTrace,
+    FailureTrace,
+    PluginTrace,
+    PromptTrace,
+    ResultTrace,
+    ToolCallTrace,
+    ToolTrace,
+    TracePhase,
+    TraceStatus,
+    TraceWarning,
+} from '@/core/ai/agent-run-trace/types'
 import { assembleContextRequest } from './assembly'
 import { buildCachePlan } from './cache-plan'
-import {
-    attachAssembledContextSnapshot,
-    attachCachePlanSnapshot,
-    attachCacheResultSnapshot,
-    attachModelRequestSnapshot,
-    attachPluginOutputsSnapshot,
-    attachResultSnapshot,
-    createBaseManifest,
-} from './context-manifest'
 import {
     collectPluginOutputs,
     runAfterRunHooks,
@@ -29,20 +47,27 @@ import type {
     ChatParams,
     ConsumedResult,
     ModelRequestSnapshot,
+    PluginOutput,
     RunContext,
     RuntimeOptions,
     ToolCallRecord,
+    ToolContributionSnapshot,
 } from './types'
 import { DEFAULT_CHAT_PARAMS } from './types'
 
 interface StepWithToolCalls {
     readonly toolCalls?: Array<{
         readonly toolName: string
+        readonly toolCallId?: string
+        readonly id?: string
         readonly args: unknown
     }>
     readonly toolResults?: Array<{
+        readonly toolCallId?: string
         readonly result?: unknown
+        readonly error?: unknown
     }>
+    readonly toolErrors?: Array<unknown>
 }
 
 type ProviderKind = 'anthropic' | 'openai' | 'unknown'
@@ -135,6 +160,355 @@ function extractToolCalls(steps: unknown): ToolCallRecord[] {
     }
 
     return records
+}
+
+function normalizeError(error: unknown): {
+    message: string
+    name?: string
+    code?: string
+    stack?: string
+} {
+    const code = (error as { code?: unknown } | null)?.code
+    return {
+        message: error instanceof Error ? error.message : String(error),
+        name: error instanceof Error ? error.name : 'Error',
+        ...(typeof code === 'string' ? { code } : {}),
+        ...(error instanceof Error && typeof error.stack === 'string'
+            ? { stack: error.stack }
+            : {}),
+    }
+}
+
+function buildFailureTrace(params: {
+    phase: TracePhase
+    error: unknown
+}): FailureTrace {
+    return {
+        phase: params.phase,
+        source: 'runtime',
+        error: normalizeError(params.error),
+        occurredAt: new Date().toISOString(),
+    }
+}
+
+function getPartType(part: unknown): string {
+    return isPlainRecord(part) && typeof part.type === 'string'
+        ? part.type
+        : 'unknown'
+}
+
+function buildResultTrace(params: {
+    text: string
+    responseMessage: UIMessage
+    usage: ConsumedResult['usage']
+    provider: ProviderKind
+    modelId?: string
+}): ResultTrace {
+    const parts = Array.isArray(params.responseMessage.parts)
+        ? params.responseMessage.parts
+        : []
+    const partsSummary = parts.reduce(
+        (summary, part) => {
+            const type = getPartType(part)
+            if (type === 'text') summary.textPartCount += 1
+            else if (type === 'reasoning') summary.reasoningPartCount += 1
+            else if (type.startsWith('tool-')) summary.toolPartCount += 1
+            else summary.otherPartCount += 1
+            return summary
+        },
+        {
+            textPartCount: 0,
+            reasoningPartCount: 0,
+            toolPartCount: 0,
+            otherPartCount: 0,
+        },
+    )
+    const bounded = truncateTraceText(params.text)
+
+    return {
+        finalOutput: {
+            text: bounded.text,
+            textHash: hashTraceText(params.text),
+            messageId: params.responseMessage.id,
+            partsSummary,
+        },
+        usage: {
+            inputTokens: params.usage.inputTokens,
+            outputTokens: params.usage.outputTokens,
+            totalTokens:
+                params.usage.inputTokens != null &&
+                params.usage.outputTokens != null
+                    ? params.usage.inputTokens + params.usage.outputTokens
+                    : undefined,
+        },
+        provider: {
+            id: params.provider,
+            modelId: params.modelId,
+        },
+    }
+}
+
+function buildPluginTrace(
+    outputs: Array<{ plugin: string; output: PluginOutput }>,
+): PluginTrace {
+    return {
+        contributions: outputs.map(({ plugin, output }) => ({
+            plugin,
+            segmentIds: (output.segments ?? []).map((segment) => segment.id),
+            toolNames: (output.tools ?? []).map((tool) => tool.name),
+            paramKeys: Object.keys(output.params ?? {}) as Array<
+                keyof ChatParams
+            >,
+            diagnosticCount: output.diagnostics?.length ?? 0,
+        })),
+        diagnostics: outputs.flatMap(({ plugin, output }) =>
+            (output.diagnostics ?? []).map((diagnostic) => ({
+                plugin,
+                level: diagnostic.level,
+                message: diagnostic.message,
+                origin: diagnostic.origin,
+                data:
+                    diagnostic.data === undefined
+                        ? undefined
+                        : sanitizeTraceJson(
+                              diagnostic.data,
+                              DEFAULT_TRACE_JSON_OPTIONS,
+                          ),
+            })),
+        ),
+    }
+}
+
+function buildRuntimeOwnership(
+    outputs: Array<{ plugin: string; output: PluginOutput }>,
+): {
+    segmentOwners: Map<string, string>
+    toolOwners: Map<string, string>
+} {
+    const segmentOwners = new Map<string, string>()
+    const toolOwners = new Map<string, string>()
+
+    for (const { plugin, output } of outputs) {
+        for (const segment of output.segments ?? []) {
+            segmentOwners.set(segment.id, plugin)
+        }
+        for (const tool of output.tools ?? []) {
+            toolOwners.set(tool.name, plugin)
+        }
+    }
+
+    return { segmentOwners, toolOwners }
+}
+
+function buildToolSummaries(params: {
+    tools: ToolContributionSnapshot[]
+    toolOwners: Map<string, string>
+}): PromptTrace['finalInput']['tools'] {
+    return params.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.manifestSpec.description,
+        inputSchemaSummary: tool.manifestSpec.inputSchemaSummary,
+        sourcePlugin: params.toolOwners.get(tool.name) ?? tool.source,
+        category: tool.definition.display?.category,
+        estimatedTokens: tool.estimatedTokens,
+    }))
+}
+
+function buildPromptTrace(params: {
+    assembled: ReturnType<typeof assembleContextRequest> & {
+        providerOptions: Record<string, unknown>
+        resolvedMaxOutputTokens?: number
+    }
+    convertedMessages: ModelMessage[]
+    segmentOwners: Map<string, string>
+    toolOwners: Map<string, string>
+}): PromptTrace {
+    return {
+        finalInput: {
+            systemText: truncateTraceText(params.assembled.systemText).text,
+            modelMessages: params.convertedMessages,
+            tools: buildToolSummaries({
+                tools: params.assembled.manifestTools,
+                toolOwners: params.toolOwners,
+            }),
+            params: {
+                candidates: params.assembled.candidates.map((candidate) => ({
+                    plugin: candidate.plugin,
+                    key: candidate.key,
+                    value: candidate.value,
+                })),
+                resolved: params.assembled.resolved,
+            },
+        },
+        segments: params.assembled.segments.map((segment) => {
+            const sourcePlugin =
+                params.segmentOwners.get(segment.id) ?? segment.source.plugin
+            if (segment.target === 'system') {
+                const text = segment.payload.text
+                return {
+                    id: segment.id,
+                    target: 'system',
+                    kind: segment.kind,
+                    sourcePlugin,
+                    origin: segment.source.origin,
+                    finalOrder: segment.finalOrder,
+                    content: {
+                        format: 'text',
+                        text: truncateTraceText(text).text,
+                    },
+                    contentHash: hashTraceText(text),
+                    estimatedTokens: segment.estimatedTokens,
+                    cacheability: segment.cacheability,
+                    compactability: segment.compactability,
+                }
+            }
+
+            const messages = segment.payload.messages
+            return {
+                id: segment.id,
+                target: 'messages',
+                kind: segment.kind,
+                sourcePlugin,
+                origin: segment.source.origin,
+                messageIds: messages.map((message) => message.id),
+                messageCount: messages.length,
+                roles: messages.map((message) => message.role),
+                contentHash: hashTraceValue(messages),
+                cacheability: segment.cacheability,
+                compactability: segment.compactability,
+            }
+        }),
+        totalEstimatedInputTokens: params.assembled.totalEstimatedInputTokens,
+    }
+}
+
+function buildCachePlanTrace(
+    cachePlan: ReturnType<typeof buildCachePlan> | undefined,
+): CachePlanTrace | undefined {
+    if (!cachePlan) return undefined
+
+    return {
+        provider: cachePlan.provider,
+        modelId: cachePlan.modelId,
+        stableCoreSegmentIds: cachePlan.stableCoreSegmentIds,
+        cacheableSessionSegmentIds: cachePlan.cacheableSessionSegmentIds,
+        dynamicTailSegmentIds: cachePlan.dynamicTailSegmentIds,
+        effectivePrefixSegmentIds: cachePlan.effectivePrefixSegmentIds,
+        effectivePrefixEstimatedTokens:
+            cachePlan.effectivePrefixEstimatedTokens,
+        hashes: cachePlan.hashes,
+        eligibility: cachePlan.eligibility,
+    }
+}
+
+function buildCacheProviderRequestTrace(
+    snapshot: ObservedModelRequestSnapshot,
+): CacheProviderRequestTrace {
+    return {
+        preparedCacheRequest: snapshot.preparedCacheRequest,
+        usedCacheRequest: snapshot.usedCacheRequest,
+        providerOptions: sanitizeTraceJson(snapshot.providerOptions),
+        providerMessages: snapshot.providerMessages,
+        cachedToolNames: snapshot.cachedToolNames,
+        cachedToolCount: snapshot.cachedToolCount,
+        cacheControlBreakpoints: snapshot.cacheControlBreakpoints,
+    }
+}
+
+function buildCacheResultTrace(
+    result: CacheResultTrace | undefined,
+): CacheResultTrace | undefined {
+    if (!result) return undefined
+    return {
+        ...result,
+        providerRawCacheUsage:
+            result.providerRawCacheUsage === undefined
+                ? undefined
+                : sanitizeTraceJson(result.providerRawCacheUsage),
+    }
+}
+
+function extractTraceToolCalls(steps: unknown): ToolCallTrace[] {
+    const records: ToolCallTrace[] = []
+
+    try {
+        if (!Array.isArray(steps)) return records
+
+        for (const [stepIndex, step] of steps.entries()) {
+            const {
+                toolCalls: calls = [],
+                toolResults: results = [],
+                toolErrors: errors = [],
+            } = step as StepWithToolCalls
+
+            for (let i = 0; i < calls.length; i++) {
+                const call = calls[i]
+                const result = results[i]
+                const error = result?.error ?? errors[i]
+
+                records.push({
+                    index: records.length,
+                    stepIndex,
+                    toolName: call.toolName,
+                    toolCallId:
+                        call.toolCallId ?? call.id ?? result?.toolCallId,
+                    args: sanitizeTraceJson(call.args),
+                    result:
+                        result != null && 'result' in result
+                            ? sanitizeTraceJson(result.result)
+                            : undefined,
+                    status:
+                        error != null
+                            ? 'failed'
+                            : result != null
+                              ? 'succeeded'
+                              : 'unknown',
+                    error:
+                        error == null
+                            ? undefined
+                            : {
+                                  message:
+                                      error instanceof Error
+                                          ? error.message
+                                          : String(error),
+                                  name:
+                                      error instanceof Error
+                                          ? error.name
+                                          : undefined,
+                                  code:
+                                      typeof (
+                                          error as { code?: unknown } | null
+                                      )?.code === 'string'
+                                          ? (
+                                                error as {
+                                                    code: string
+                                                }
+                                            ).code
+                                          : undefined,
+                              },
+                })
+            }
+        }
+    } catch {
+        // Best-effort extraction for partially mocked stream results.
+    }
+
+    return records
+}
+
+function buildToolTrace(params: {
+    tools: ToolContributionSnapshot[]
+    toolOwners: Map<string, string>
+    steps: unknown
+}): ToolTrace {
+    return {
+        available: params.tools.map((tool) => ({
+            name: tool.name,
+            sourcePlugin: params.toolOwners.get(tool.name) ?? tool.source,
+            category: tool.definition.display?.category,
+        })),
+        calls: extractTraceToolCalls(params.steps),
+    }
 }
 
 function buildProviderOptions(
@@ -387,7 +761,7 @@ function summarizeCacheControlBreakpoints(params: {
 export async function createAIRuntime(
     options: RuntimeOptions,
 ): Promise<AIRuntime> {
-    const { model, plugins, defaults, agentRunStore } = options
+    const { model, plugins, defaults, agentRunStore, traceRecorder } = options
 
     validatePluginNames(plugins)
 
@@ -405,8 +779,12 @@ export async function createAIRuntime(
     async function chat(input: ChatInput): Promise<ChatOutput> {
         const runId = input.runId ?? createRunId()
         let runCreated = false
+        let traceStarted = false
+        let providerRequestStarted = false
+        let currentTracePhase: TracePhase = 'created'
         let streamAbortError: Error | undefined
         const recordedFailures = new WeakSet<object>()
+        const traceWarnings: TraceWarning[] = []
         const runCtx: RunContext = {
             sessionId: input.sessionId ?? '',
             symbol: input.symbol,
@@ -419,6 +797,46 @@ export async function createAIRuntime(
 
         if (input.sourceId) runCtx.meta.set('sourceId', input.sourceId)
         if (input.userId) runCtx.meta.set('userId', input.userId)
+
+        async function writeTraceCheckpoint(
+            phase: TracePhase,
+            patch: Partial<AgentRunTracePayload>,
+            status: TraceStatus = 'recording',
+        ): Promise<void> {
+            currentTracePhase = phase
+            if (!traceStarted) return
+
+            try {
+                await traceRecorder.checkpoint(runId, phase, patch, status)
+            } catch (error) {
+                if (!providerRequestStarted) throw error
+
+                const message =
+                    error instanceof Error ? error.message : String(error)
+                const warning: TraceWarning = {
+                    source: 'trace.recorder',
+                    message,
+                    data: sanitizeTraceJson({ phase, status }),
+                    occurredAt: new Date().toISOString(),
+                }
+                traceWarnings.push(warning)
+
+                await safeLedgerUpdate('recordWarnings', () =>
+                    agentRunStore.recordWarnings(runId, [
+                        { source: warning.source, message: warning.message },
+                    ]),
+                )
+
+                try {
+                    await traceRecorder.markIncomplete(runId, error)
+                } catch (markError) {
+                    console.warn(
+                        '[ai-runtime][trace recorder] markIncomplete failed',
+                        markError,
+                    )
+                }
+            }
+        }
 
         async function recordFailure(
             error: unknown,
@@ -451,6 +869,18 @@ export async function createAIRuntime(
             await safeLedgerUpdate('failIfRunning', () =>
                 agentRunStore.failIfRunning(runId, failureInput),
             )
+
+            await writeTraceCheckpoint(
+                currentTracePhase,
+                {
+                    runOutcome: 'failed',
+                    failure: buildFailureTrace({
+                        phase: currentTracePhase,
+                        error,
+                    }),
+                },
+                'complete',
+            )
         }
 
         async function throwIfInputAborted(): Promise<void> {
@@ -476,8 +906,11 @@ export async function createAIRuntime(
                 inputSummary: buildInputSummary(input),
             })
             runCreated = true
+            await traceRecorder.startRun(runId)
+            traceStarted = true
 
             await runBeforeRunHooks(plugins, runCtx)
+            await writeTraceCheckpoint('before_run', {})
 
             const resolvedSessionId = runCtx.meta.get('sessionId')
             if (
@@ -491,6 +924,10 @@ export async function createAIRuntime(
             }
 
             const collectedOutputs = await collectPluginOutputs(plugins, runCtx)
+            const runtimeOwnership = buildRuntimeOwnership(collectedOutputs)
+            await writeTraceCheckpoint('collect_context', {
+                plugins: buildPluginTrace(collectedOutputs),
+            })
             const assembledBase = assembleContextRequest({
                 rawMessages: input.messages,
                 outputs: collectedOutputs,
@@ -514,6 +951,9 @@ export async function createAIRuntime(
                 providerOptions,
                 resolvedMaxOutputTokens,
             }
+            const convertedMessages = (await convertToModelMessages(
+                assembled.modelMessages,
+            )) as ModelMessage[]
             const assembledSnapshot = {
                 segments: assembled.segments,
                 systemSegments: assembled.systemSegments,
@@ -553,25 +993,26 @@ export async function createAIRuntime(
                 }
             }
 
-            let manifest = createBaseManifest({
-                runId,
-                input,
-                resolvedSessionId: runCtx.sessionId || undefined,
-                defaults: baseParams as unknown as Record<string, unknown>,
+            await writeTraceCheckpoint('assemble_context', {
+                prompt: buildPromptTrace({
+                    assembled,
+                    convertedMessages,
+                    segmentOwners: runtimeOwnership.segmentOwners,
+                    toolOwners: runtimeOwnership.toolOwners,
+                }),
+                tools: {
+                    available: assembled.manifestTools.map((tool) => ({
+                        name: tool.name,
+                        sourcePlugin:
+                            runtimeOwnership.toolOwners.get(tool.name) ??
+                            tool.source,
+                        category: tool.definition.display?.category,
+                    })),
+                    calls: [],
+                },
+                compaction: { applied: false, reason: 'not_implemented' },
             })
 
-            manifest = attachPluginOutputsSnapshot(manifest, collectedOutputs)
-            manifest = attachAssembledContextSnapshot(
-                manifest,
-                assembledSnapshot,
-            )
-            if (cachePlan) {
-                manifest = attachCachePlanSnapshot(manifest, cachePlan)
-            }
-
-            const convertedMessages = await convertToModelMessages(
-                assembled.modelMessages,
-            )
             const fallbackProviderCacheRequest = {
                 system: assembled.systemText || undefined,
                 messages: convertedMessages,
@@ -588,7 +1029,6 @@ export async function createAIRuntime(
                 ? cachePlan
                 : undefined
             let preparedCacheRequest = false
-            let usedCacheRequest = false
 
             if (activeCachePlan) {
                 try {
@@ -617,6 +1057,46 @@ export async function createAIRuntime(
                     )
                 }
             }
+
+            let usedCacheRequest = preparedCacheRequest
+            const buildModelRequestSnapshot =
+                (): ObservedModelRequestSnapshot => {
+                    const providerMessages = summarizeProviderMessages(
+                        providerCacheRequest.messages,
+                    )
+                    const cachedToolNames = listCachedToolNames(
+                        providerCacheRequest.tools,
+                    )
+                    return {
+                        systemText: providerCacheRequest.system ?? '',
+                        modelMessages: assembled.modelMessages,
+                        toolNames: Object.keys(assembled.aiTools),
+                        resolvedParams: assembled.resolved,
+                        maxOutputTokens: assembled.resolvedMaxOutputTokens,
+                        providerOptions: providerCacheRequest.providerOptions,
+                        provider,
+                        modelId: resolveModelId(model),
+                        preparedCacheRequest,
+                        usedCacheRequest,
+                        providerMessages,
+                        cachedToolNames,
+                        cachedToolCount: cachedToolNames.length,
+                        cacheControlBreakpoints:
+                            summarizeCacheControlBreakpoints({
+                                providerMessages,
+                                cachedToolNames,
+                                cachePlan,
+                            }),
+                    }
+                }
+            await writeTraceCheckpoint('prepare_model_request', {
+                cache: {
+                    plan: buildCachePlanTrace(cachePlan),
+                    providerRequest: buildCacheProviderRequestTrace(
+                        buildModelRequestSnapshot(),
+                    ),
+                },
+            })
 
             function startStream(
                 request: typeof fallbackProviderCacheRequest,
@@ -650,7 +1130,7 @@ export async function createAIRuntime(
             let streamResult: ChatOutput['streamResult']
             try {
                 streamResult = startStream(providerCacheRequest)
-                usedCacheRequest = preparedCacheRequest
+                providerRequestStarted = true
                 if (usedCacheRequest) {
                     rolloutState.plannerFailures = 0
                     rolloutState.adapterFailures = 0
@@ -673,39 +1153,18 @@ export async function createAIRuntime(
                 )
 
                 providerCacheRequest = fallbackProviderCacheRequest
+                usedCacheRequest = false
                 streamResult = startStream(providerCacheRequest)
+                providerRequestStarted = true
             }
 
-            const providerMessages = summarizeProviderMessages(
-                providerCacheRequest.messages,
-            )
-            const cachedToolNames = listCachedToolNames(
-                providerCacheRequest.tools,
-            )
-            const modelRequestSnapshot: ObservedModelRequestSnapshot = {
-                systemText: providerCacheRequest.system ?? '',
-                modelMessages: assembled.modelMessages,
-                toolNames: Object.keys(assembled.aiTools),
-                resolvedParams: assembled.resolved,
-                maxOutputTokens: assembled.resolvedMaxOutputTokens,
-                providerOptions: providerCacheRequest.providerOptions,
-                provider,
-                modelId: resolveModelId(model),
-                preparedCacheRequest,
-                usedCacheRequest,
-                providerMessages,
-                cachedToolNames,
-                cachedToolCount: cachedToolNames.length,
-                cacheControlBreakpoints: summarizeCacheControlBreakpoints({
-                    providerMessages,
-                    cachedToolNames,
-                    cachePlan,
-                }),
-            }
-            manifest = attachModelRequestSnapshot(
-                manifest,
-                modelRequestSnapshot,
-            )
+            const modelRequestSnapshot = buildModelRequestSnapshot()
+            await writeTraceCheckpoint('model_stream', {
+                cache: {
+                    providerRequest:
+                        buildCacheProviderRequestTrace(modelRequestSnapshot),
+                },
+            })
 
             let finalizePromise: Promise<void> | undefined
             let finalizedData:
@@ -713,6 +1172,7 @@ export async function createAIRuntime(
                       text: string
                       usage: ConsumedResult['usage']
                       toolCalls: ToolCallRecord[]
+                      steps: unknown
                       totalUsage?: LanguageModelUsage
                       providerMetadata?: ProviderMetadata
                   }
@@ -745,6 +1205,7 @@ export async function createAIRuntime(
                         outputTokens: usage.outputTokens,
                     },
                     toolCalls: extractToolCalls(steps),
+                    steps,
                     totalUsage,
                     providerMetadata,
                 }
@@ -763,6 +1224,7 @@ export async function createAIRuntime(
                             text,
                             usage,
                             toolCalls,
+                            steps,
                             totalUsage,
                             providerMetadata,
                         } = await resolveFinalizedData()
@@ -773,30 +1235,24 @@ export async function createAIRuntime(
                         const circuitBreakerState = rolloutState.disabled
                             ? 'open'
                             : 'closed'
-                        manifest = attachResultSnapshot(manifest, {
-                            text,
-                            responseMessage,
-                            toolCalls,
-                            usage,
-                        })
+                        let cacheResult: ReturnType<
+                            typeof normalizeProviderCacheResult
+                        >
                         try {
-                            manifest = attachCacheResultSnapshot(
-                                manifest,
-                                normalizeProviderCacheResult({
-                                    cachePlan,
-                                    totalUsage,
-                                    providerMetadata,
-                                    rolloutGateStatus,
-                                    circuitBreakerState,
-                                    cacheDisabledReason,
-                                }),
-                            )
+                            cacheResult = normalizeProviderCacheResult({
+                                cachePlan,
+                                totalUsage,
+                                providerMetadata,
+                                rolloutGateStatus,
+                                circuitBreakerState,
+                                cacheDisabledReason,
+                            })
                         } catch (error) {
                             console.error(
                                 '[ai-runtime][cache normalization] failed; attaching fallback cache result',
                                 error,
                             )
-                            manifest = attachCacheResultSnapshot(manifest, {
+                            cacheResult = {
                                 cacheObserved: false,
                                 evidenceSource: 'none',
                                 cacheReadObserved: false,
@@ -807,8 +1263,26 @@ export async function createAIRuntime(
                                     'cache_result_normalization_failed',
                                 rolloutGateStatus,
                                 circuitBreakerState,
-                            })
+                            }
                         }
+
+                        await writeTraceCheckpoint('finalize', {
+                            result: buildResultTrace({
+                                text,
+                                responseMessage,
+                                usage,
+                                provider,
+                                modelId: resolveModelId(model),
+                            }),
+                            tools: buildToolTrace({
+                                tools: assembled.manifestTools,
+                                toolOwners: runtimeOwnership.toolOwners,
+                                steps,
+                            }),
+                            cache: {
+                                result: buildCacheResultTrace(cacheResult),
+                            },
+                        })
 
                         await throwIfInputAborted()
 
@@ -831,7 +1305,6 @@ export async function createAIRuntime(
                             responseMessage,
                             toolCalls,
                             usage,
-                            contextManifest: manifest,
                         })
 
                         if (warnings.length > 0) {
@@ -839,6 +1312,23 @@ export async function createAIRuntime(
                                 agentRunStore.recordWarnings(runId, warnings),
                             )
                         }
+
+                        const afterRunWarnings = warnings.map((warning) => ({
+                            source: warning.source,
+                            message: warning.message,
+                            occurredAt: new Date().toISOString(),
+                        }))
+                        await writeTraceCheckpoint(
+                            'after_run',
+                            {
+                                runOutcome: 'succeeded',
+                                warnings: [
+                                    ...traceWarnings,
+                                    ...afterRunWarnings,
+                                ],
+                            },
+                            'complete',
+                        )
                     } catch (error) {
                         await recordFailure(error)
                         throw error
@@ -887,7 +1377,6 @@ export async function createAIRuntime(
                         responseMessage: capturedResponseMessage,
                         toolCalls,
                         usage,
-                        contextManifest: manifest,
                     }
                 } catch (error) {
                     await recordFailure(error)
@@ -902,7 +1391,6 @@ export async function createAIRuntime(
                 consumeStream,
                 finalize,
                 recordFailure,
-                getContextManifest: () => manifest,
             }
         } catch (error) {
             const err =

@@ -9,6 +9,11 @@
 import 'dotenv/config'
 import type { UIMessage } from 'ai'
 import type { AgentRunStore } from '../src/core/ai/agent-run'
+import type {
+    AgentRunTracePayload,
+    TracePhase,
+    TraceStatus,
+} from '../src/core/ai/agent-run-trace/types'
 import { promptPlugin } from '../src/core/ai/plugins/prompt'
 import { tradingAgentPreset } from '../src/core/ai/presets'
 import { getModel } from '../src/core/ai/providers'
@@ -30,14 +35,73 @@ function createFakeAgentRunStore(): AgentRunStore {
     }
 }
 
+function createFakeTraceRecorder() {
+    const traces = new Map<string, AgentRunTracePayload>()
+    return {
+        traces,
+        startRun: async (runId: string) => {
+            traces.set(runId, {
+                version: 1,
+                runId,
+                traceStatus: 'recording',
+                runOutcome: 'unknown',
+                currentPhase: 'created',
+                completedPhases: [],
+                compaction: { applied: false, reason: 'not_implemented' },
+                updatedAt: new Date().toISOString(),
+            })
+        },
+        checkpoint: async (
+            runId: string,
+            phase: TracePhase,
+            patch: Partial<AgentRunTracePayload>,
+            status: TraceStatus = 'recording',
+        ) => {
+            const existing = traces.get(runId)
+            if (!existing) return
+            traces.set(runId, {
+                ...existing,
+                ...patch,
+                cache: patch.cache
+                    ? { ...existing.cache, ...patch.cache }
+                    : existing.cache,
+                traceStatus: status,
+                currentPhase: phase,
+                completedPhases: Array.from(
+                    new Set([...existing.completedPhases, phase]),
+                ),
+                updatedAt: new Date().toISOString(),
+            })
+        },
+        recordFailure: async () => {},
+        recordMinimalFailure: async () => {},
+        markIncomplete: async (runId: string, error: unknown) => {
+            const existing = traces.get(runId)
+            if (!existing) return
+            traces.set(runId, {
+                ...existing,
+                traceStatus: 'incomplete',
+                recordingError: {
+                    message:
+                        error instanceof Error ? error.message : String(error),
+                    occurredAt: new Date().toISOString(),
+                },
+                updatedAt: new Date().toISOString(),
+            })
+        },
+    }
+}
+
 // ── Test 1: 最小 runtime ──
 
 async function testMinimal() {
     console.log('\n📦 Test 1: 最小 runtime（prompt only, 无 tools）')
 
+    const traceRecorder = createFakeTraceRecorder()
     const runtime = await createAIRuntime({
         model: getModel('main'),
         agentRunStore: createFakeAgentRunStore(),
+        traceRecorder: traceRecorder as never,
         plugins: [
             promptPlugin({ mode: 'global' }),
             // 跳过 session（避免 DB 依赖）
@@ -60,9 +124,10 @@ async function testMinimal() {
     })
 
     const result = await output.consumeStream()
+    const trace = traceRecorder.traces.get(output.runId)
     console.log(
-        '   ✅ manifest tools:',
-        result.contextManifest.modelRequest.toolNames.length,
+        '   ✅ trace tools:',
+        trace?.prompt?.finalInput.tools.length ?? 0,
     )
     console.log('   ✅ 回复:', result.text.slice(0, 150))
     console.log('   ✅ usage:', result.usage)
@@ -88,9 +153,11 @@ async function testFullPreset() {
         return
     }
 
+    const traceRecorder = createFakeTraceRecorder()
     const runtime = await createAIRuntime({
         model: getModel('main'),
         agentRunStore: createFakeAgentRunStore(),
+        traceRecorder: traceRecorder as never,
         plugins,
         defaults: { thinkingBudget: 4096 },
     })
@@ -121,8 +188,9 @@ async function testFullPreset() {
         result.toolCalls.map((t) => t.toolName),
     )
     console.log(
-        '   ✅ manifest tools:',
-        result.contextManifest.modelRequest.toolNames.length,
+        '   ✅ trace tools:',
+        traceRecorder.traces.get(output.runId)?.prompt?.finalInput.tools
+            .length ?? 0,
     )
     console.log('   ✅ usage:', result.usage)
     await runtime.dispose()
@@ -137,6 +205,7 @@ async function testToolConflict() {
         await createAIRuntime({
             model: getModel('main'),
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder() as never,
             plugins: [
                 {
                     name: 'a',

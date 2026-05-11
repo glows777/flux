@@ -1,5 +1,6 @@
 import type { LanguageModel, Tool, UIMessage } from 'ai'
 import type { AgentRunStore } from '@/core/ai/agent-run'
+import type { TraceRecorder } from '@/core/ai/agent-run-trace/recorder'
 import type { GatewayMode } from '@/gateway/router'
 
 // ── Tool Definition ──
@@ -54,7 +55,6 @@ export interface AfterRunContext extends RunContext {
     responseMessage: UIMessage
     toolCalls: ToolCallRecord[]
     usage: { inputTokens: number | undefined; outputTokens: number | undefined }
-    contextManifest: ContextManifest
 }
 
 // ── Context Manifest ──
@@ -268,6 +268,7 @@ export interface RuntimeOptions {
     model: LanguageModel
     plugins: AIPlugin[]
     agentRunStore: AgentRunStore
+    traceRecorder: TraceRecorder
     defaults?: Partial<ChatParams>
 }
 
@@ -290,7 +291,6 @@ export interface ConsumedResult {
     responseMessage: UIMessage
     toolCalls: ToolCallRecord[]
     usage: { inputTokens: number | undefined; outputTokens: number | undefined }
-    contextManifest: ContextManifest
 }
 
 export interface ChatOutput {
@@ -302,7 +302,6 @@ export interface ChatOutput {
     consumeStream(): Promise<ConsumedResult>
     finalize(responseMessage: UIMessage): Promise<void>
     recordFailure(error: unknown): Promise<void>
-    getContextManifest(): ContextManifest
 }
 
 export interface AIRuntime {

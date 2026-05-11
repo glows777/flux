@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import type { AgentRunStore } from '@/core/ai/agent-run'
+import type {
+    AgentRunTracePayload,
+    TracePhase,
+    TraceStatus,
+} from '@/core/ai/agent-run-trace/types'
 import {
     mockConvertToModelMessages,
     mockGenerateText,
@@ -159,6 +164,54 @@ function createFakeAgentRunStore(): AgentRunStore {
     }
 }
 
+function createFakeTraceRecorder() {
+    const traces = new Map<string, AgentRunTracePayload>()
+    return {
+        traces,
+        startRun: mock((runId: string) => {
+            traces.set(runId, {
+                version: 1,
+                runId,
+                traceStatus: 'recording',
+                runOutcome: 'unknown',
+                currentPhase: 'created',
+                completedPhases: [],
+                compaction: { applied: false, reason: 'not_implemented' },
+                updatedAt: new Date().toISOString(),
+            })
+            return Promise.resolve()
+        }),
+        checkpoint: mock(
+            (
+                runId: string,
+                phase: TracePhase,
+                patch: Partial<AgentRunTracePayload>,
+                status: TraceStatus = 'recording',
+            ) => {
+                const existing = traces.get(runId)
+                if (!existing) throw new Error(`missing trace ${runId}`)
+                traces.set(runId, {
+                    ...existing,
+                    ...patch,
+                    cache: patch.cache
+                        ? { ...existing.cache, ...patch.cache }
+                        : existing.cache,
+                    traceStatus: status,
+                    currentPhase: phase,
+                    completedPhases: Array.from(
+                        new Set([...existing.completedPhases, phase]),
+                    ),
+                    updatedAt: new Date().toISOString(),
+                })
+                return Promise.resolve()
+            },
+        ),
+        recordFailure: mock(() => Promise.resolve()),
+        recordMinimalFailure: mock(() => Promise.resolve()),
+        markIncomplete: mock(() => Promise.resolve()),
+    }
+}
+
 async function loadModules() {
     const runtimeMod = await import('../../src/core/ai/runtime')
     const tradingPresetMod = await import(
@@ -251,14 +304,16 @@ describe('ai context visibility integration', () => {
         }))
     })
 
-    test('trading-agent manifest includes base prompt, memory, history, tools, resolved params, and cache metadata', async () => {
+    test('trading-agent trace includes base prompt, memory, history, tools, resolved params, and cache metadata', async () => {
         const { createAIRuntime, tradingAgentPreset } = await loadModules()
+        const traceRecorder = createFakeTraceRecorder()
         const runtime = await createAIRuntime({
             model: {
                 provider: 'anthropic',
                 modelId: 'claude-sonnet-4-6',
             } as Parameters<typeof createAIRuntime>[0]['model'],
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: traceRecorder as never,
             plugins: tradingAgentPreset({
                 toolDeps: {
                     getQuote: async () => ({
@@ -298,41 +353,47 @@ describe('ai context visibility integration', () => {
             mode: 'conversation',
         })
         const consumed = await output.consumeStream()
+        const trace = traceRecorder.traces.get(output.runId)
 
-        const manifest = consumed.contextManifest
-
-        expect(manifest.pluginOutputs.length).toBeGreaterThan(0)
+        expect(consumed).not.toHaveProperty('contextManifest')
+        expect(trace?.plugins?.contributions.length).toBeGreaterThan(0)
         expect(
-            manifest.assembledContext.systemSegments.some(
+            trace?.prompt?.segments.some(
                 (segment) => segment.kind === 'system.base',
             ),
         ).toBe(true)
         expect(
-            manifest.assembledContext.systemSegments.some(
+            trace?.prompt?.segments.some(
                 (segment) => segment.kind === 'memory.long_lived',
             ),
         ).toBe(true)
         expect(
-            manifest.assembledContext.segments.some(
+            trace?.prompt?.segments.some(
                 (segment) => segment.kind === 'history.recent',
             ),
         ).toBe(true)
-        expect(manifest.modelRequest.toolNames.length).toBeGreaterThan(0)
-        expect(manifest.modelRequest.resolvedParams.maxSteps).toBe(50)
-        expect(manifest.modelRequest.maxOutputTokens).toBeUndefined()
-        expect(manifest.cachePlan?.stableCoreSegmentIds).toContain('base')
-        expect(manifest.cachePlan?.cacheableSessionSegmentIds).toContain(
+        expect(trace?.prompt?.finalInput.tools.length).toBeGreaterThan(0)
+        expect(trace?.prompt?.finalInput.params.resolved.maxSteps).toBe(50)
+        expect(
+            trace?.prompt?.finalInput.params.resolved.maxTokens,
+        ).toBeUndefined()
+        expect(trace?.cache?.plan?.stableCoreSegmentIds).toContain('base')
+        expect(trace?.cache?.plan?.cacheableSessionSegmentIds).toContain(
             'memory',
         )
-        expect(manifest.cachePlan?.breakpoints).toEqual([
-            { layer: 'stableCore', segmentId: 'base' },
-            { layer: 'cacheableSession', segmentId: 'memory' },
-        ])
-        expect(manifest.cachePlan?.eligibility.cacheExpected).toBe(false)
-        expect(manifest.cachePlan?.eligibility.cacheExpectationReason).toBe(
+        expect(trace?.cache?.providerRequest?.cacheControlBreakpoints).toEqual({
+            count: 0,
+            sources: {
+                providerMessages: 0,
+                tools: 0,
+                cachePlan: 2,
+            },
+        })
+        expect(trace?.cache?.plan?.eligibility.cacheExpected).toBe(false)
+        expect(trace?.cache?.plan?.eligibility.cacheExpectationReason).toBe(
             'below_cache_threshold',
         )
-        expect(manifest.result?.cacheResult).toMatchObject({
+        expect(trace?.cache?.result).toMatchObject({
             cacheObserved: false,
             evidenceSource: 'none',
             rolloutGateStatus: 'observe-only',
@@ -347,11 +408,13 @@ describe('ai context visibility integration', () => {
         await runtime.dispose()
     })
 
-    test('auto-trading manifest includes live runtime segment', async () => {
+    test('auto-trading trace includes live runtime segment', async () => {
         const { createAIRuntime, autoTradingAgentPreset } = await loadModules()
+        const traceRecorder = createFakeTraceRecorder()
         const runtime = await createAIRuntime({
             model: {} as Parameters<typeof createAIRuntime>[0]['model'],
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: traceRecorder as never,
             plugins: autoTradingAgentPreset({
                 alpacaClient: {
                     getAccount: async () => ({ equity: 100000 }),
@@ -431,15 +494,17 @@ describe('ai context visibility integration', () => {
             agentType: 'auto-trading-agent',
         })
 
-        const manifest = output.getContextManifest()
-        const liveSegment = manifest.assembledContext.systemSegments.find(
+        const trace = traceRecorder.traces.get(output.runId)
+        const liveSegment = trace?.prompt?.segments.find(
             (segment) => segment.kind === 'live.runtime',
         )
 
         expect(liveSegment).toBeDefined()
         expect(liveSegment?.cacheability).toBe('volatile')
-        expect(manifest.modelRequest.resolvedParams.maxSteps).toBe(70)
-        expect(manifest.modelRequest.maxOutputTokens).toBeUndefined()
+        expect(trace?.prompt?.finalInput.params.resolved.maxSteps).toBe(70)
+        expect(
+            trace?.prompt?.finalInput.params.resolved.maxTokens,
+        ).toBeUndefined()
 
         await runtime.dispose()
     })

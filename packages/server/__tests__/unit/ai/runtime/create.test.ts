@@ -8,10 +8,15 @@ import {
     test,
 } from 'bun:test'
 import type { AgentRunStore } from '../../../../src/core/ai/agent-run'
+import type { TraceRecorder } from '../../../../src/core/ai/agent-run-trace/recorder'
+import type {
+    AgentRunTracePayload,
+    TracePhase,
+    TraceStatus,
+} from '../../../../src/core/ai/agent-run-trace/types'
 import type {
     AIPlugin,
     CachePlanSnapshot,
-    ContextManifest,
 } from '../../../../src/core/ai/runtime/types'
 
 const mockConvertToModelMessages = mock(async (messages: unknown[]) => messages)
@@ -76,6 +81,123 @@ function createFakeAgentRunStore(): AgentRunStore {
     }
 }
 
+interface FakeTraceRecorder extends TraceRecorder {
+    traces: Map<string, AgentRunTracePayload>
+    checkpoints: Array<{
+        runId: string
+        phase: TracePhase
+        patch: Partial<AgentRunTracePayload>
+        status: TraceStatus
+    }>
+    startRun: ReturnType<typeof mock>
+    checkpoint: ReturnType<typeof mock>
+    markIncomplete: ReturnType<typeof mock>
+}
+
+let createdTraceRecorders: FakeTraceRecorder[] = []
+
+function mergeTracePayload(
+    existing: AgentRunTracePayload,
+    phase: TracePhase,
+    patch: Partial<AgentRunTracePayload>,
+    status: TraceStatus,
+): AgentRunTracePayload {
+    return {
+        ...existing,
+        ...patch,
+        cache: patch.cache
+            ? { ...existing.cache, ...patch.cache }
+            : existing.cache,
+        currentPhase: phase,
+        completedPhases: Array.from(
+            new Set([...existing.completedPhases, phase]),
+        ),
+        traceStatus: status,
+        runOutcome: patch.runOutcome ?? existing.runOutcome,
+        updatedAt: new Date().toISOString(),
+    }
+}
+
+function createFakeTraceRecorder(
+    params: { failStart?: boolean; failCheckpointPhase?: TracePhase } = {},
+): FakeTraceRecorder {
+    const traces = new Map<string, AgentRunTracePayload>()
+    const checkpoints: FakeTraceRecorder['checkpoints'] = []
+    const recorder = {
+        traces,
+        checkpoints,
+        startRun: mock(async (runId: string) => {
+            if (params.failStart) throw new Error('trace start failed')
+            traces.set(runId, {
+                version: 1,
+                runId,
+                traceStatus: 'recording',
+                runOutcome: 'unknown',
+                currentPhase: 'created',
+                completedPhases: [],
+                compaction: { applied: false, reason: 'not_implemented' },
+                updatedAt: new Date().toISOString(),
+            })
+        }),
+        checkpoint: mock(
+            async (
+                runId: string,
+                phase: TracePhase,
+                patch: Partial<AgentRunTracePayload>,
+                status: TraceStatus = 'recording',
+            ) => {
+                if (params.failCheckpointPhase === phase) {
+                    throw new Error(`trace checkpoint failed: ${phase}`)
+                }
+                checkpoints.push({ runId, phase, patch, status })
+                const existing = traces.get(runId)
+                if (!existing) throw new Error(`missing trace ${runId}`)
+                if (existing.traceStatus !== 'recording') return
+                traces.set(
+                    runId,
+                    mergeTracePayload(existing, phase, patch, status),
+                )
+            },
+        ),
+        markIncomplete: mock(async (runId: string, error: unknown) => {
+            const existing = traces.get(runId)
+            if (!existing) return
+            traces.set(runId, {
+                ...existing,
+                traceStatus: 'incomplete',
+                recordingError: {
+                    message:
+                        error instanceof Error ? error.message : String(error),
+                    occurredAt: new Date().toISOString(),
+                },
+                updatedAt: new Date().toISOString(),
+            })
+        }),
+        recordFailure: mock(async () => {}),
+        recordMinimalFailure: mock(async () => {}),
+    } as unknown as FakeTraceRecorder
+
+    createdTraceRecorders.push(recorder)
+    return recorder
+}
+
+function expectTrace(
+    recorder: FakeTraceRecorder,
+    runId: string,
+): AgentRunTracePayload {
+    const trace = recorder.traces.get(runId)
+    expect(trace).toBeDefined()
+    return trace as AgentRunTracePayload
+}
+
+function expectLatestTrace(runId: string): AgentRunTracePayload {
+    for (const recorder of createdTraceRecorders.slice().reverse()) {
+        const trace = recorder.traces.get(runId)
+        if (trace) return trace
+    }
+    throw new Error(`Trace not found for ${runId}`)
+}
+
 function createCachePlanFixture(
     overrides: Partial<CachePlanSnapshot> = {},
 ): CachePlanSnapshot {
@@ -108,8 +230,8 @@ function createCachePlanFixture(
 }
 
 function createPreviousManifestFixture(
-    overrides: Partial<ContextManifest> = {},
-): ContextManifest {
+    overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
     return {
         runId: 'run-prev',
         createdAt: new Date().toISOString(),
@@ -209,6 +331,7 @@ let mockConsoleWarn: ReturnType<typeof mock>
 let mockConsoleError: ReturnType<typeof mock>
 
 beforeEach(async () => {
+    createdTraceRecorders = []
     mockConvertToModelMessages.mockClear()
     mockStepCountIs.mockClear()
     mockStreamText.mockClear()
@@ -280,6 +403,7 @@ describe('createAIRuntime', () => {
                 model: mockModel,
                 plugins,
                 agentRunStore: createFakeAgentRunStore(),
+                traceRecorder: createFakeTraceRecorder(),
             }),
         ).rejects.toThrow('Duplicate plugin name: "dup"')
     })
@@ -305,6 +429,7 @@ describe('createAIRuntime', () => {
             model: mockModel,
             plugins,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
         })
         expect(order).toEqual(['a', 'b'])
     })
@@ -324,6 +449,7 @@ describe('createAIRuntime', () => {
                 model: mockModel,
                 plugins,
                 agentRunStore: createFakeAgentRunStore(),
+                traceRecorder: createFakeTraceRecorder(),
             }),
         ).rejects.toThrow('init failed')
     })
@@ -334,19 +460,22 @@ describe('createAIRuntime', () => {
             model: mockModel,
             plugins: [],
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
         })
         expect(typeof runtime.chat).toBe('function')
         expect(typeof runtime.dispose).toBe('function')
     })
 
-    test('chat output exposes a context manifest', async () => {
+    test('chat output records runtime-owned plugin provenance in trace checkpoints', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
+        const traceRecorder = createFakeTraceRecorder()
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder,
             plugins: [
                 {
-                    name: 'prompt',
+                    name: 'runtime-owner',
                     contribute: () => ({
                         segments: [
                             {
@@ -357,7 +486,7 @@ describe('createAIRuntime', () => {
                                     format: 'text',
                                     text: 'base prompt',
                                 },
-                                source: { plugin: 'prompt' },
+                                source: { plugin: 'self-reported-source' },
                                 priority: 'high',
                                 cacheability: 'stable',
                                 compactability: 'preserve',
@@ -374,15 +503,30 @@ describe('createAIRuntime', () => {
             mode: 'conversation',
         })
 
-        expect(output.getContextManifest().pluginOutputs).toHaveLength(1)
+        const trace = expectTrace(traceRecorder, output.runId)
+        expect(trace.plugins?.contributions).toEqual([
+            {
+                plugin: 'runtime-owner',
+                segmentIds: ['base'],
+                toolNames: [],
+                paramKeys: [],
+                diagnosticCount: 0,
+            },
+        ])
+        expect(trace.prompt?.segments[0]).toMatchObject({
+            id: 'base',
+            sourcePlugin: 'runtime-owner',
+        })
     })
 
     test('records the successful agent run lifecycle', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const agentRunStore = createFakeAgentRunStore()
+        const traceRecorder = createFakeTraceRecorder()
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder,
             plugins: [
                 {
                     name: 'session',
@@ -405,8 +549,14 @@ describe('createAIRuntime', () => {
             mode: 'conversation',
         })
         const consumed = await output.consumeStream()
+        const trace = expectTrace(traceRecorder, output.runId)
 
-        expect(output.runId).toBe(consumed.contextManifest.runId)
+        expect(output).not.toHaveProperty('getContextManifest')
+        expect(consumed).not.toHaveProperty('contextManifest')
+        expect(trace.traceStatus).toBe('complete')
+        expect(trace.runOutcome).toBe('succeeded')
+        expect(trace.currentPhase).toBe('after_run')
+        expect(trace.completedPhases).toContain('after_run')
         expect(agentRunStore.createRunningRun).toHaveBeenCalledWith(
             expect.objectContaining({
                 runId: output.runId,
@@ -430,6 +580,71 @@ describe('createAIRuntime', () => {
         )
     })
 
+    test('throws when trace start fails before streaming begins', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const traceRecorder = createFakeTraceRecorder({ failStart: true })
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            traceRecorder,
+            plugins: [],
+        })
+
+        await expect(
+            runtime.chat({
+                messages: [],
+                channel: 'web',
+                mode: 'conversation',
+            }),
+        ).rejects.toThrow('trace start failed')
+        expect(mockStreamText).not.toHaveBeenCalled()
+        expect(traceRecorder.markIncomplete).not.toHaveBeenCalled()
+        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
+            expect.any(String),
+            expect.objectContaining({ error: expect.any(Error) }),
+        )
+    })
+
+    test('post-stream trace checkpoint failures warn and mark the trace incomplete', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const traceRecorder = createFakeTraceRecorder({
+            failCheckpointPhase: 'model_stream',
+        })
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            traceRecorder,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        await output.consumeStream()
+
+        expect(traceRecorder.markIncomplete).toHaveBeenCalledWith(
+            output.runId,
+            expect.any(Error),
+        )
+        expect(agentRunStore.recordWarnings).toHaveBeenCalledWith(
+            output.runId,
+            [
+                expect.objectContaining({
+                    source: 'trace.recorder',
+                    message: 'trace checkpoint failed: model_stream',
+                }),
+            ],
+        )
+        expect(agentRunStore.succeedIfRunning).toHaveBeenCalled()
+        expect(expectTrace(traceRecorder, output.runId).traceStatus).toBe(
+            'incomplete',
+        )
+    })
+
     test('records failure when stream consumption fails', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const streamError = new Error('stream broke')
@@ -440,6 +655,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -467,6 +683,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -488,6 +705,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -510,6 +728,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -537,6 +756,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -595,6 +815,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -632,6 +853,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -664,6 +886,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'bad',
@@ -694,6 +917,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: mockModel,
             agentRunStore,
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'session',
@@ -725,10 +949,12 @@ describe('createAIRuntime', () => {
         mockStreamText.mockClear()
 
         const createAIRuntime = await loadCreateAIRuntime()
+        const traceRecorder = createFakeTraceRecorder()
         const runtime = await createAIRuntime({
             model: { modelId: 'gpt-4.1' } as never,
             defaults: { maxTokens: 2048 },
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder,
             plugins: [
                 {
                     name: 'low',
@@ -779,16 +1005,19 @@ describe('createAIRuntime', () => {
             mode: 'conversation',
         })
 
-        const manifest = output.getContextManifest()
+        const trace = expectTrace(traceRecorder, output.runId)
+        const systemSegments =
+            trace.prompt?.segments.filter(
+                (segment) => segment.target === 'system',
+            ) ?? []
 
-        expect(
-            manifest.assembledContext.systemSegments.map(
-                (segment) => segment.id,
-            ),
-        ).toEqual(['high', 'low'])
-        expect(manifest.assembledContext.systemSegments[0].finalOrder).toBe(0)
-        expect(manifest.assembledContext.systemSegments[1].finalOrder).toBe(1)
-        expect(manifest.modelRequest.maxOutputTokens).toBe(2048)
+        expect(systemSegments.map((segment) => segment.id)).toEqual([
+            'high',
+            'low',
+        ])
+        expect(systemSegments[0]).toMatchObject({ finalOrder: 0 })
+        expect(systemSegments[1]).toMatchObject({ finalOrder: 1 })
+        expect(trace.prompt?.finalInput.params.resolved.maxTokens).toBe(2048)
         expect(mockStreamText).toHaveBeenCalledTimes(1)
         expect(
             (mockStreamText.mock.calls[0][0] as Record<string, unknown>)
@@ -800,9 +1029,11 @@ describe('createAIRuntime', () => {
         mockStreamText.mockClear()
 
         const createAIRuntime = await loadCreateAIRuntime()
+        const traceRecorder = createFakeTraceRecorder()
         const runtime = await createAIRuntime({
             model: { modelId: 'gpt-4.1' } as never,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder,
             plugins: [],
         })
 
@@ -812,13 +1043,15 @@ describe('createAIRuntime', () => {
             mode: 'conversation',
         })
 
-        const manifest = output.getContextManifest()
+        const trace = expectTrace(traceRecorder, output.runId)
         const streamArgs = mockStreamText.mock.calls[0][0] as Record<
             string,
             unknown
         >
 
-        expect(manifest.modelRequest.maxOutputTokens).toBeUndefined()
+        expect(
+            trace.prompt?.finalInput.params.resolved.maxTokens,
+        ).toBeUndefined()
         expect('maxOutputTokens' in streamArgs).toBe(false)
     })
 
@@ -830,6 +1063,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'prompt',
@@ -865,7 +1099,18 @@ describe('createAIRuntime', () => {
             provider: 'anthropic',
             modelId: 'claude-3-7-sonnet',
         })
-        expect(output.getContextManifest().cachePlan).toEqual(cachePlan)
+        expect(expectLatestTrace(output.runId).cache?.plan).toMatchObject({
+            provider: cachePlan.provider,
+            modelId: cachePlan.modelId,
+            stableCoreSegmentIds: cachePlan.stableCoreSegmentIds,
+            cacheableSessionSegmentIds: cachePlan.cacheableSessionSegmentIds,
+            dynamicTailSegmentIds: cachePlan.dynamicTailSegmentIds,
+            effectivePrefixSegmentIds: cachePlan.effectivePrefixSegmentIds,
+            effectivePrefixEstimatedTokens:
+                cachePlan.effectivePrefixEstimatedTokens,
+            hashes: cachePlan.hashes,
+            eligibility: cachePlan.eligibility,
+        })
     })
 
     test('chat uses provider cache helper output for eligible Anthropic requests', async () => {
@@ -917,6 +1162,7 @@ describe('createAIRuntime', () => {
             model: { modelId: 'claude-3-7-sonnet' } as never,
             defaults: { thinkingBudget: 256 },
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'prompt',
@@ -952,7 +1198,8 @@ describe('createAIRuntime', () => {
             channel: 'web',
             mode: 'conversation',
         })
-        const manifest = output.getContextManifest()
+        const trace = expectLatestTrace(output.runId)
+        const providerRequest = trace.cache?.providerRequest
         const streamArgs = mockStreamText.mock.calls[0]?.[0] as Record<
             string,
             unknown
@@ -981,23 +1228,27 @@ describe('createAIRuntime', () => {
             tools: rewrittenTools,
         })
         expect(streamArgs.system).toBeUndefined()
-        expect(manifest.modelRequest.systemText).toBe('')
-        expect(manifest.modelRequest.modelMessages).toEqual([
+        expect(trace.prompt?.finalInput.systemText).toBe('base prompt')
+        expect(trace.prompt?.finalInput.modelMessages).toEqual([
             {
                 id: 'u1',
                 role: 'user',
                 parts: [{ type: 'text', text: 'hello' }],
             },
         ])
-        expect(manifest.modelRequest.modelMessages).not.toEqual(
+        expect(trace.prompt?.finalInput.modelMessages).not.toEqual(
             streamArgs.messages,
         )
-        expect(manifest.modelRequest.providerOptions).toEqual(
-            streamArgs.providerOptions,
-        )
-        expect(manifest.modelRequest).toMatchObject({
-            provider: 'anthropic',
-            modelId: 'claude-3-7-sonnet',
+        expect(providerRequest?.providerOptions.value).toEqual({
+            anthropic: {
+                thinking: {
+                    type: 'enabled',
+                    budgetTokens: '[Redacted]',
+                },
+            },
+        })
+        expect(trace.result?.provider).toBeUndefined()
+        expect(providerRequest).toMatchObject({
             preparedCacheRequest: true,
             usedCacheRequest: true,
             cachedToolNames: ['searchStock'],
@@ -1011,9 +1262,7 @@ describe('createAIRuntime', () => {
                 },
             },
         })
-        expect(
-            (manifest.modelRequest as Record<string, unknown>).providerMessages,
-        ).toEqual([
+        expect(providerRequest?.providerMessages).toEqual([
             {
                 index: 0,
                 role: 'system',
@@ -1030,12 +1279,9 @@ describe('createAIRuntime', () => {
                 hasAnthropicCacheControl: false,
             },
         ])
-        expect(
-            (
-                (manifest.modelRequest as Record<string, unknown>)
-                    .providerMessages as Array<Record<string, unknown>>
-            )[0],
-        ).not.toHaveProperty('content')
+        expect(providerRequest?.providerMessages[0]).not.toHaveProperty(
+            'content',
+        )
     })
 
     test('chat builds cache plan from current request inputs only', async () => {
@@ -1049,6 +1295,7 @@ describe('createAIRuntime', () => {
             } as never,
             defaults: { thinkingBudget: 256 },
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'seed-previous-manifest',
@@ -1085,7 +1332,7 @@ describe('createAIRuntime', () => {
         expect(cachePlanInput).not.toHaveProperty('previousContextManifest')
     })
 
-    test('consumeStream normalizes cache usage into manifest.result.cacheResult', async () => {
+    test('consumeStream normalizes cache usage into trace cache result', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const cachePlan = createCachePlanFixture()
         const totalUsage = {
@@ -1127,6 +1374,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -1135,7 +1383,8 @@ describe('createAIRuntime', () => {
             channel: 'web',
             mode: 'conversation',
         })
-        const consumed = await output.consumeStream()
+        await output.consumeStream()
+        const trace = expectLatestTrace(output.runId)
 
         expect(mockNormalizeProviderCacheResult).toHaveBeenCalledTimes(1)
         expect(
@@ -1148,9 +1397,7 @@ describe('createAIRuntime', () => {
             circuitBreakerState: 'closed',
             cacheDisabledReason: undefined,
         })
-        expect(consumed.contextManifest.result?.cacheResult).toEqual(
-            normalizedCacheResult,
-        )
+        expect(trace.cache?.result).toEqual(normalizedCacheResult)
     })
 
     test('chat falls back cleanly when cache planning throws', async () => {
@@ -1182,6 +1429,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1211,18 +1459,16 @@ describe('createAIRuntime', () => {
             channel: 'web',
             mode: 'conversation',
         })
-        const consumed = await output.consumeStream()
-        const manifest = consumed.contextManifest
+        await output.consumeStream()
+        const trace = expectLatestTrace(output.runId)
 
         expect(mockBuildProviderCacheRequest).not.toHaveBeenCalled()
-        expect(manifest.cachePlan).toBeUndefined()
-        expect(manifest.result?.cacheResult).toEqual(normalizedCacheResult)
-        expect(manifest.result?.cacheResult?.cacheDisabledReason).toBe(
+        expect(trace.cache?.plan).toBeUndefined()
+        expect(trace.cache?.result).toEqual(normalizedCacheResult)
+        expect(trace.cache?.result?.cacheDisabledReason).toBe(
             'cache_plan_failed',
         )
-        expect(manifest.result?.cacheResult?.rolloutGateStatus).toBe(
-            'observe-only',
-        )
+        expect(trace.cache?.result?.rolloutGateStatus).toBe('observe-only')
         expect(mockStreamText.mock.calls[0]?.[0]).toMatchObject({
             system: 'base prompt',
         })
@@ -1244,6 +1490,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1276,8 +1523,12 @@ describe('createAIRuntime', () => {
         const consumed = await output.consumeStream()
 
         expect(consumed.text).toBe('mock text')
-        expect(consumed.contextManifest.cachePlan).toEqual(cachePlan)
-        expect(consumed.contextManifest.result?.cacheResult).toMatchObject({
+        const trace = expectLatestTrace(output.runId)
+        expect(trace.cache?.plan).toMatchObject({
+            provider: cachePlan.provider,
+            effectivePrefixSegmentIds: cachePlan.effectivePrefixSegmentIds,
+        })
+        expect(trace.cache?.result).toMatchObject({
             cacheObserved: false,
             cacheDisabledReason: 'cache_adapter_failed',
             rolloutGateStatus: 'observe-only',
@@ -1317,6 +1568,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1363,13 +1615,18 @@ describe('createAIRuntime', () => {
         })
         const belowThresholdConsumed =
             await belowThresholdOutput.consumeStream()
-
-        expect(belowThresholdConsumed.contextManifest.cachePlan).toEqual(
-            belowThresholdPlan,
+        const belowThresholdTrace = expectLatestTrace(
+            belowThresholdOutput.runId,
         )
-        expect(
-            belowThresholdConsumed.contextManifest.result?.cacheResult,
-        ).toMatchObject({
+
+        expect(belowThresholdConsumed).not.toHaveProperty('contextManifest')
+        expect(belowThresholdTrace.cache?.plan).toMatchObject({
+            provider: belowThresholdPlan.provider,
+            effectivePrefixEstimatedTokens:
+                belowThresholdPlan.effectivePrefixEstimatedTokens,
+            eligibility: belowThresholdPlan.eligibility,
+        })
+        expect(belowThresholdTrace.cache?.result).toMatchObject({
             cacheObserved: false,
             cacheDisabledReason: undefined,
             rolloutGateStatus: 'observe-only',
@@ -1387,15 +1644,15 @@ describe('createAIRuntime', () => {
             mode: 'conversation',
         })
         const finalConsumed = await finalOutput.consumeStream()
+        const finalTrace = expectLatestTrace(finalOutput.runId)
 
-        expect(finalConsumed.contextManifest.result?.cacheResult).toMatchObject(
-            {
-                cacheObserved: false,
-                cacheDisabledReason: 'circuit_breaker_open',
-                rolloutGateStatus: 'disabled',
-                circuitBreakerState: 'open',
-            },
-        )
+        expect(finalConsumed).not.toHaveProperty('contextManifest')
+        expect(finalTrace.cache?.result).toMatchObject({
+            cacheObserved: false,
+            cacheDisabledReason: 'circuit_breaker_open',
+            rolloutGateStatus: 'disabled',
+            circuitBreakerState: 'open',
+        })
         expect(mockBuildCachePlan).toHaveBeenCalledTimes(4)
         expect(mockStreamText).toHaveBeenCalledTimes(4)
     })
@@ -1438,6 +1695,7 @@ describe('createAIRuntime', () => {
             model: { modelId: 'claude-3-7-sonnet' } as never,
             defaults: { thinkingBudget: 256 },
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1474,9 +1732,10 @@ describe('createAIRuntime', () => {
             mode: 'conversation',
         })
         const consumed = await output.consumeStream()
+        const trace = expectLatestTrace(output.runId)
 
         expect(consumed.text).toBe('fallback stream text')
-        expect(consumed.contextManifest.result?.cacheResult).toMatchObject({
+        expect(trace.cache?.result).toMatchObject({
             cacheObserved: false,
             cacheDisabledReason: 'cache_request_failed',
             rolloutGateStatus: 'observe-only',
@@ -1503,7 +1762,7 @@ describe('createAIRuntime', () => {
                 },
             },
         })
-        expect(consumed.contextManifest.modelRequest).toMatchObject({
+        expect(trace.cache?.providerRequest).toMatchObject({
             preparedCacheRequest: true,
             usedCacheRequest: false,
             cacheControlBreakpoints: {
@@ -1530,6 +1789,7 @@ describe('createAIRuntime', () => {
                 modelId: 'claude-sonnet-4-6',
             } as never,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -1554,8 +1814,10 @@ describe('createAIRuntime', () => {
             mode: 'conversation',
         })
         const consumed = await output.consumeStream()
+        const trace = expectLatestTrace(output.runId)
 
-        expect(consumed.contextManifest.result?.cacheResult).toMatchObject({
+        expect(consumed).not.toHaveProperty('contextManifest')
+        expect(trace.cache?.result).toMatchObject({
             cacheObserved: false,
             cacheDisabledReason: 'circuit_breaker_open',
             rolloutGateStatus: 'disabled',
@@ -1581,6 +1843,7 @@ describe('createAIRuntime', () => {
                 modelId: 'claude-sonnet-4-6',
             } as never,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [
                 {
                     name: 'prompt',
@@ -1630,10 +1893,11 @@ describe('createAIRuntime', () => {
             agentType: 'auto-trading-agent',
         })
         const consumed = await output.consumeStream()
+        const trace = expectLatestTrace(output.runId)
 
         expect(consumed.text).toBe('mock text')
-        expect(consumed.contextManifest.cachePlan).toBeUndefined()
-        expect(consumed.contextManifest.result?.cacheResult).toMatchObject({
+        expect(trace.cache?.plan).toBeUndefined()
+        expect(trace.cache?.result).toMatchObject({
             cacheObserved: false,
             cacheDisabledReason: 'circuit_breaker_open',
             rolloutGateStatus: 'disabled',
@@ -1656,6 +1920,7 @@ describe('createAIRuntime', () => {
         const runtime = await createAIRuntime({
             model: { modelId: 'claude-3-7-sonnet' } as never,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
             plugins: [],
         })
 
@@ -1665,9 +1930,10 @@ describe('createAIRuntime', () => {
             mode: 'conversation',
         })
         const consumed = await output.consumeStream()
+        const trace = expectLatestTrace(output.runId)
 
         expect(consumed.text).toBe('mock text')
-        expect(consumed.contextManifest.result?.cacheResult).toEqual({
+        expect(trace.cache?.result).toEqual({
             cacheObserved: false,
             evidenceSource: 'none',
             cacheReadObserved: false,
@@ -1705,6 +1971,7 @@ describe('createAIRuntime', () => {
             model: mockModel,
             plugins,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
         })
         await runtime.dispose()
         expect(destroyed).toEqual(['a', 'b'])
@@ -1724,6 +1991,7 @@ describe('createAIRuntime', () => {
             model: mockModel,
             plugins,
             agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
         })
         // Should not throw
         await runtime.dispose()
