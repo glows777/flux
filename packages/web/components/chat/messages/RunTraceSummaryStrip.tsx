@@ -1,10 +1,10 @@
 'use client'
 
-import type { MessageContextState } from '@/lib/ai/context-visibility'
-import { buildMessageContextSummaryModel } from '@/lib/ai/context-visibility'
+import type { RunTraceState } from '@/lib/ai/run-trace-visibility'
+import { buildRunTraceSummaryModel } from '@/lib/ai/run-trace-visibility'
 
-export interface MessageContextSummaryStripProps {
-    readonly state: MessageContextState
+export interface RunTraceSummaryStripProps {
+    readonly state: RunTraceState
     readonly isSelected: boolean
     readonly onOpen: () => void
     readonly onRetry?: () => void
@@ -40,14 +40,14 @@ function Chip({
     )
 }
 
-export function MessageContextSummaryStrip({
+export function RunTraceSummaryStrip({
     state,
     isSelected,
     onOpen,
     onRetry,
     actionLabel,
-}: MessageContextSummaryStripProps) {
-    const model = buildMessageContextSummaryModel(state, { isSelected })
+}: RunTraceSummaryStripProps) {
+    const model = buildRunTraceSummaryModel(state, { isSelected })
     const isError = state.status === 'error'
     const canRetry = !isError || onRetry != null
     const onClick = isError ? (onRetry ?? undefined) : onOpen
@@ -55,10 +55,10 @@ export function MessageContextSummaryStrip({
         actionLabel == null
             ? model.actionLabel
             : state.status === 'error'
-              ? `Retry loading context for ${actionLabel}`
+              ? `Retry loading trace for ${actionLabel}`
               : isSelected
-                ? `Viewing context for ${actionLabel}`
-                : `View context for ${actionLabel}`
+                ? `Viewing trace for ${actionLabel}`
+                : `View trace for ${actionLabel}`
 
     return (
         <div

@@ -10,17 +10,18 @@ import useSWR from 'swr'
 import { ContextInput } from '@/components/detail/ContextInput'
 import { TRUNCATE_LIMIT } from '@/lib/ai/constants'
 import {
-    fetchMessageContext,
-    type MessageContextState,
-} from '@/lib/ai/context-visibility'
+    fetchRunTrace,
+    getRunIdFromMessage,
+    type RunTraceState,
+} from '@/lib/ai/run-trace-visibility'
 import { fetcher } from '@/lib/fetcher'
 import type { ChatSession } from './ChatSessionItem'
 import { ChatSessionSidebar } from './ChatSessionSidebar'
 import { ChatWelcome } from './ChatWelcome'
 import { AssistantMessage } from './messages/AssistantMessage'
 import { ErrorBanner } from './messages/ErrorBanner'
-import { MessageContextDetailSheet } from './messages/MessageContextDetailSheet'
-import { MessageContextSummaryStrip } from './messages/MessageContextSummaryStrip'
+import { RunTraceDetailSheet } from './messages/RunTraceDetailSheet'
+import { RunTraceSummaryStrip } from './messages/RunTraceSummaryStrip'
 import { TruncationNotice } from './messages/TruncationNotice'
 import { UserMessage } from './messages/UserMessage'
 
@@ -87,10 +88,10 @@ export function ChatPage() {
     const [chatId, setChatId] = useState<string | undefined>(undefined)
     const [persistedError, setPersistedError] =
         useState<PersistedSessionError | null>(null)
-    const [messageContextStates, setMessageContextStates] = useState<
-        Record<string, MessageContextState>
+    const [runTraceStates, setRunTraceStates] = useState<
+        Record<string, RunTraceState>
     >({})
-    const [activeContextMessageId, setActiveContextMessageId] = useState<
+    const [activeTraceMessageId, setActiveTraceMessageId] = useState<
         string | null
     >(null)
 
@@ -118,35 +119,45 @@ export function ChatPage() {
     // [C2 fix] Ref to avoid stale closure in onFinish
     const sessionIdRef = useRef(sessionId)
     sessionIdRef.current = sessionId
-    const messageContextStatesRef = useRef(messageContextStates)
-    const activeContextMessageIdRef = useRef(activeContextMessageId)
-    const inFlightMessageContextLoadsRef = useRef<Set<string>>(new Set())
+    const runTraceStatesRef = useRef(runTraceStates)
+    const activeTraceMessageIdRef = useRef(activeTraceMessageId)
+    const inFlightRunTraceLoadsRef = useRef<Set<string>>(new Set())
+    const runTraceGenerationRef = useRef(0)
     const initialRestoreAbortRef = useRef<AbortController | null>(null)
     const initialRestoreRequestIdRef = useRef(0)
 
     useEffect(() => {
-        messageContextStatesRef.current = messageContextStates
-    }, [messageContextStates])
+        runTraceStatesRef.current = runTraceStates
+    }, [runTraceStates])
 
     useEffect(() => {
-        activeContextMessageIdRef.current = activeContextMessageId
-    }, [activeContextMessageId])
+        activeTraceMessageIdRef.current = activeTraceMessageId
+    }, [activeTraceMessageId])
 
-    const resetMessageContextState = useCallback(() => {
-        inFlightMessageContextLoadsRef.current.clear()
-        messageContextStatesRef.current = {}
-        activeContextMessageIdRef.current = null
-        setMessageContextStates({})
-        setActiveContextMessageId(null)
+    const resetRunTraceState = useCallback(() => {
+        runTraceGenerationRef.current += 1
+        inFlightRunTraceLoadsRef.current.clear()
+        runTraceStatesRef.current = {}
+        activeTraceMessageIdRef.current = null
+        setRunTraceStates({})
+        setActiveTraceMessageId(null)
     }, [])
 
-    const loadMessageContext = useCallback(
+    const loadRunTrace = useCallback(
         async (
-            targetSessionId: string,
             messageId: string,
+            runId: string | null,
             options?: { force?: boolean },
         ) => {
-            const cachedState = messageContextStatesRef.current[messageId]
+            if (!runId) {
+                setRunTraceStates((prev) => ({
+                    ...prev,
+                    [messageId]: { status: 'unavailable' },
+                }))
+                return
+            }
+
+            const cachedState = runTraceStatesRef.current[messageId]
             if (
                 !options?.force &&
                 cachedState != null &&
@@ -154,63 +165,61 @@ export function ChatPage() {
             ) {
                 return
             }
-            if (inFlightMessageContextLoadsRef.current.has(messageId)) {
+            if (inFlightRunTraceLoadsRef.current.has(messageId)) {
                 return
             }
 
-            inFlightMessageContextLoadsRef.current.add(messageId)
+            const generation = runTraceGenerationRef.current
+            inFlightRunTraceLoadsRef.current.add(messageId)
 
-            setMessageContextStates((prev) => ({
+            setRunTraceStates((prev) => ({
                 ...prev,
                 [messageId]: { status: 'loading' },
             }))
 
             try {
-                const record = await fetchMessageContext(
-                    targetSessionId,
-                    messageId,
-                )
+                const record = await fetchRunTrace(runId)
 
-                if (sessionIdRef.current !== targetSessionId) return
+                if (runTraceGenerationRef.current !== generation) return
 
-                setMessageContextStates((prev) => ({
+                setRunTraceStates((prev) => ({
                     ...prev,
-                    [messageId]:
-                        record == null
-                            ? { status: 'unavailable' }
-                            : { status: 'ready', record },
+                    [messageId]: { status: 'ready', record },
                 }))
             } catch (error) {
-                if (sessionIdRef.current !== targetSessionId) return
+                if (runTraceGenerationRef.current !== generation) return
 
-                setMessageContextStates((prev) => ({
+                setRunTraceStates((prev) => ({
                     ...prev,
                     [messageId]: {
                         status: 'error',
                         error:
                             error instanceof Error
                                 ? error.message
-                                : 'Failed to load context',
+                                : 'Failed to load run trace',
                     },
                 }))
             } finally {
-                inFlightMessageContextLoadsRef.current.delete(messageId)
+                inFlightRunTraceLoadsRef.current.delete(messageId)
             }
         },
         [],
     )
 
-    const prefetchLatestAssistantContext = useCallback(
-        (targetSessionId: string, nextMessages: readonly UIMessage[]) => {
+    const prefetchLatestAssistantTrace = useCallback(
+        (nextMessages: readonly UIMessage<ChatMetadata>[]) => {
             const latestAssistant = [...nextMessages]
                 .reverse()
                 .find((message) => message.role === 'assistant')
 
             if (!latestAssistant) return
 
-            void loadMessageContext(targetSessionId, latestAssistant.id)
+            const runId = getRunIdFromMessage(latestAssistant)
+            if (!runId) return
+
+            void loadRunTrace(latestAssistant.id, runId)
         },
-        [loadMessageContext],
+        [loadRunTrace],
     )
 
     // Session list (global)
@@ -238,9 +247,6 @@ export function ChatPage() {
             messages: [],
             transport,
             onFinish: ({ message }) => {
-                const nextSessionId =
-                    sessionIdRef.current ?? message.metadata?.sessionId ?? null
-
                 if (!sessionIdRef.current && message.metadata?.sessionId) {
                     sessionIdRef.current = message.metadata.sessionId
                     setSessionId(message.metadata.sessionId)
@@ -250,8 +256,11 @@ export function ChatPage() {
                     initializedRef.current = true
                 }
 
-                if (message.role === 'assistant' && nextSessionId) {
-                    void loadMessageContext(nextSessionId, message.id)
+                if (message.role === 'assistant') {
+                    const runId = getRunIdFromMessage(message)
+                    if (runId) {
+                        void loadRunTrace(message.id, runId)
+                    }
                 }
 
                 mutateSessions()
@@ -259,23 +268,23 @@ export function ChatPage() {
         })
 
     useEffect(() => {
-        if (activeContextMessageId == null) return
+        if (activeTraceMessageId == null) return
 
         const activeAssistantExists = messages.some(
             (message) =>
                 message.role === 'assistant' &&
-                message.id === activeContextMessageId,
+                message.id === activeTraceMessageId,
         )
 
         if (!activeAssistantExists) {
-            setActiveContextMessageId(null)
+            setActiveTraceMessageId(null)
         }
-    }, [activeContextMessageId, messages])
+    }, [activeTraceMessageId, messages])
 
     const clearMessageState = useCallback(() => {
-        resetMessageContextState()
+        resetRunTraceState()
         setMessages([])
-    }, [resetMessageContextState, setMessages])
+    }, [resetRunTraceState, setMessages])
 
     const cancelInitialRestore = useCallback(() => {
         initialRestoreRequestIdRef.current += 1
@@ -314,7 +323,7 @@ export function ChatPage() {
             if (!result) return
             setMessages(result.messages)
             setPersistedError(result.error)
-            prefetchLatestAssistantContext(mostRecent.id, result.messages)
+            prefetchLatestAssistantTrace(result.messages)
         })
 
         return () => {
@@ -323,7 +332,7 @@ export function ChatPage() {
             }
             controller.abort()
         }
-    }, [prefetchLatestAssistantContext, sessions, q, setMessages])
+    }, [prefetchLatestAssistantTrace, sessions, q, setMessages])
 
     // ─── ?q= auto-send with ref guard ───
     const hasSentQRef = useRef(false)
@@ -426,13 +435,13 @@ export function ChatPage() {
                 if (!result) return
                 setMessages(result.messages)
                 setPersistedError(result.error)
-                prefetchLatestAssistantContext(id, result.messages)
+                prefetchLatestAssistantTrace(result.messages)
             })
         },
         [
             cancelInitialRestore,
             clearMessageState,
-            prefetchLatestAssistantContext,
+            prefetchLatestAssistantTrace,
             setMessages,
         ],
     )
@@ -523,28 +532,33 @@ export function ChatPage() {
     }, [messageScrollSignature])
 
     const placeholder = symbol ? `询问关于 ${symbol} 的问题...` : '发送消息...'
-    const activeContextState =
-        activeContextMessageId == null
+    const activeTraceState =
+        activeTraceMessageId == null
             ? { status: 'idle' as const }
-            : (messageContextStates[activeContextMessageId] ?? {
+            : (runTraceStates[activeTraceMessageId] ?? {
                   status: 'idle' as const,
               })
-    const handleOpenContextMessage = useCallback(
-        (messageId: string) => {
-            const isSelected = activeContextMessageIdRef.current === messageId
+    const activeTraceRunId =
+        activeTraceMessageId == null
+            ? null
+            : getRunIdFromMessage(
+                  messages.find(
+                      (message) => message.id === activeTraceMessageId,
+                  ) as UIMessage<ChatMetadata> | undefined,
+              )
+    const handleOpenTraceMessage = useCallback(
+        (messageId: string, runId: string | null) => {
+            const isSelected = activeTraceMessageIdRef.current === messageId
             if (isSelected) {
-                setActiveContextMessageId(null)
+                setActiveTraceMessageId(null)
                 return
             }
 
-            setActiveContextMessageId(messageId)
+            setActiveTraceMessageId(messageId)
 
-            const activeSessionId = sessionIdRef.current
-            if (!activeSessionId) return
-
-            void loadMessageContext(activeSessionId, messageId)
+            void loadRunTrace(messageId, runId)
         },
-        [loadMessageContext],
+        [loadRunTrace],
     )
 
     return (
@@ -616,16 +630,16 @@ export function ChatPage() {
                                             assistantMessageCount += 1
                                             const isLast =
                                                 index === messages.length - 1
-                                            const contextState =
-                                                messageContextStates[
-                                                    msg.id
-                                                ] ?? {
-                                                    status: 'idle',
-                                                }
-                                            const isContextOpen =
-                                                activeContextMessageId ===
+                                            const contextState = runTraceStates[
                                                 msg.id
+                                            ] ?? {
+                                                status: 'idle',
+                                            }
+                                            const isTraceOpen =
+                                                activeTraceMessageId === msg.id
                                             const actionLabel = `assistant message ${assistantMessageCount}`
+                                            const runId =
+                                                getRunIdFromMessage(msg)
                                             messageNode = (
                                                 <div
                                                     key={msg.id}
@@ -636,33 +650,25 @@ export function ChatPage() {
                                                         isLast={isLast}
                                                         isLoading={isLoading}
                                                     />
-                                                    <MessageContextSummaryStrip
+                                                    <RunTraceSummaryStrip
                                                         state={contextState}
-                                                        isSelected={
-                                                            isContextOpen
-                                                        }
+                                                        isSelected={isTraceOpen}
                                                         actionLabel={
                                                             actionLabel
                                                         }
                                                         onOpen={() =>
-                                                            handleOpenContextMessage(
+                                                            handleOpenTraceMessage(
                                                                 msg.id,
+                                                                runId,
                                                             )
                                                         }
                                                         onRetry={() => {
-                                                            const activeSessionId =
-                                                                sessionIdRef.current
-                                                            if (
-                                                                !activeSessionId
-                                                            )
-                                                                return
-
-                                                            setActiveContextMessageId(
+                                                            setActiveTraceMessageId(
                                                                 msg.id,
                                                             )
-                                                            void loadMessageContext(
-                                                                activeSessionId,
+                                                            void loadRunTrace(
                                                                 msg.id,
+                                                                runId,
                                                                 {
                                                                     force: true,
                                                                 },
@@ -716,17 +722,17 @@ export function ChatPage() {
                     </div>
                 </div>
 
-                <MessageContextDetailSheet
-                    state={activeContextState}
-                    isOpen={activeContextMessageId != null}
-                    messageId={activeContextMessageId}
-                    onClose={() => setActiveContextMessageId(null)}
+                <RunTraceDetailSheet
+                    state={activeTraceState}
+                    isOpen={activeTraceMessageId != null}
+                    messageId={activeTraceMessageId}
+                    runId={activeTraceRunId}
+                    onClose={() => setActiveTraceMessageId(null)}
                     onRetry={() => {
-                        const activeSessionId = sessionIdRef.current
-                        const messageId = activeContextMessageIdRef.current
-                        if (!activeSessionId || !messageId) return
+                        const messageId = activeTraceMessageIdRef.current
+                        if (!messageId) return
 
-                        void loadMessageContext(activeSessionId, messageId, {
+                        void loadRunTrace(messageId, activeTraceRunId, {
                             force: true,
                         })
                     }}

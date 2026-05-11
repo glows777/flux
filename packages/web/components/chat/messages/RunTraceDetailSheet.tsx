@@ -4,14 +4,14 @@ import { ChevronDown, ChevronRight, RefreshCcw, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type {
-    MessageContextSegment,
-    MessageContextState,
-} from '@/lib/ai/context-visibility'
+    RunTraceSegment,
+    RunTraceState,
+} from '@/lib/ai/run-trace-visibility'
 import {
-    buildSegmentGroups,
+    buildTraceSegmentGroups,
     formatSegmentSource,
     formatSerializableContent,
-} from '@/lib/ai/context-visibility'
+} from '@/lib/ai/run-trace-visibility'
 
 const DESKTOP_MEDIA_QUERY = '(min-width: 768px)'
 const FOCUSABLE_SELECTOR = [
@@ -55,12 +55,6 @@ function useMatchesMediaQuery(query: string) {
     return matches
 }
 
-function formatFlagLabel(value: boolean | undefined) {
-    if (value === true) return 'Included'
-    if (value === false) return 'Excluded'
-    return null
-}
-
 function SegmentMetadata({
     label,
     value,
@@ -73,14 +67,14 @@ function SegmentMetadata({
             <p className='text-[11px] uppercase tracking-[0.16em] text-slate-500'>
                 {label}
             </p>
-            <p className='mt-1 text-xs text-slate-200'>{value}</p>
+            <p className='mt-1 break-words text-xs text-slate-200'>{value}</p>
         </div>
     )
 }
 
 function JsonBlock({
     value,
-    emptyLabel = '—',
+    emptyLabel = '-',
 }: {
     readonly value: unknown
     readonly emptyLabel?: string
@@ -133,21 +127,25 @@ function SegmentCard({
     isOpen,
     onOpenChange,
 }: {
-    readonly segment: MessageContextSegment
+    readonly segment: RunTraceSegment
     readonly isOpen: boolean
     readonly onOpenChange: (nextOpen: boolean) => void
 }) {
-    const inclusionLabel = formatFlagLabel(segment.included)
     const metadata = [
-        { label: 'Source', value: formatSegmentSource(segment.source) },
-        { label: 'Priority', value: segment.priority },
+        { label: 'Source plugin', value: segment.sourcePlugin },
+        ...(segment.origin ? [{ label: 'Origin', value: segment.origin }] : []),
+        { label: 'Kind', value: segment.kind },
         { label: 'Cacheability', value: segment.cacheability },
         { label: 'Compactability', value: segment.compactability },
-        ...(inclusionLabel
-            ? [{ label: 'Visibility', value: inclusionLabel }]
-            : []),
-        ...(segment.finalOrder != null
-            ? [{ label: 'Final order', value: segment.finalOrder }]
+        { label: 'Content hash', value: segment.contentHash },
+        ...(segment.target === 'messages'
+            ? [
+                  { label: 'Message count', value: segment.messageCount },
+                  { label: 'Roles', value: segment.roles.join(', ') || '-' },
+              ]
+            : [{ label: 'Final order', value: segment.finalOrder }]),
+        ...(segment.estimatedTokens != null
+            ? [{ label: 'Estimated tokens', value: segment.estimatedTokens }]
             : []),
     ]
 
@@ -171,11 +169,11 @@ function SegmentCard({
                         {segment.kind}
                     </span>
                     <span className='rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-slate-400'>
-                        {formatSegmentSource(segment.source)}
+                        {formatSegmentSource(segment)}
                     </span>
-                    {segment.estimatedTokens != null ? (
+                    {segment.target === 'messages' ? (
                         <span className='rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-slate-400'>
-                            ~{segment.estimatedTokens} tk
+                            {segment.messageCount} messages
                         </span>
                     ) : null}
                 </div>
@@ -190,27 +188,29 @@ function SegmentCard({
                         />
                     ))}
                 </div>
-                <JsonBlock value={segment.payload} />
+                <JsonBlock value={segment} />
             </div>
         </details>
     )
 }
 
-export interface MessageContextDetailSheetProps {
-    readonly state: MessageContextState
-    readonly isOpen: boolean
+export interface RunTraceDetailSheetProps {
+    readonly state: RunTraceState
+    readonly runId: string | null
     readonly messageId: string | null
+    readonly isOpen: boolean
     readonly onClose: () => void
     readonly onRetry?: () => void
 }
 
-export function MessageContextDetailSheet({
+export function RunTraceDetailSheet({
     state,
-    isOpen,
+    runId,
     messageId,
+    isOpen,
     onClose,
     onRetry,
-}: MessageContextDetailSheetProps) {
+}: RunTraceDetailSheetProps) {
     const [isRawOpen, setIsRawOpen] = useState(false)
     const [segmentOpenState, setSegmentOpenState] = useState<
         Record<string, boolean>
@@ -224,7 +224,9 @@ export function MessageContextDetailSheet({
 
     const groups = useMemo(
         () =>
-            state.status === 'ready' ? buildSegmentGroups(state.record) : [],
+            state.status === 'ready'
+                ? buildTraceSegmentGroups(state.record)
+                : [],
         [state],
     )
 
@@ -362,13 +364,14 @@ export function MessageContextDetailSheet({
     }
 
     const isModal = !isDesktop
+    const trace = state.status === 'ready' ? state.record.trace : null
 
     return (
         <>
             {isModal ? (
                 <button
                     type='button'
-                    aria-label='Close context details overlay'
+                    aria-label='Close run trace overlay'
                     onClick={onClose}
                     className='fixed inset-0 z-30 bg-black/60 md:hidden'
                 />
@@ -390,42 +393,27 @@ export function MessageContextDetailSheet({
                                 id={titleId}
                                 className='text-sm font-medium text-slate-50'
                             >
-                                Context details
+                                Run trace
                             </p>
                             <p className='mt-1 break-all text-xs text-slate-500'>
                                 Message {messageId}
                             </p>
                             <p className='mt-1 break-all text-xs text-slate-500'>
-                                Run{' '}
-                                {state.status === 'ready'
-                                    ? state.record.runId
-                                    : 'pending'}
+                                Run {runId ?? trace?.runId ?? 'pending'}
                             </p>
-                            {state.status === 'ready' ? (
+                            {trace?.prompt ? (
                                 <p className='mt-2 text-xs text-slate-400'>
-                                    ~
-                                    {
-                                        state.record.manifest.assembledContext
-                                            .totalEstimatedInputTokens
-                                    }{' '}
-                                    input ·{' '}
-                                    {
-                                        state.record.manifest.assembledContext
-                                            .segments.length
-                                    }{' '}
+                                    ~{trace.prompt.totalEstimatedInputTokens}{' '}
+                                    input · {trace.prompt.segments.length}{' '}
                                     segments ·{' '}
-                                    {
-                                        state.record.manifest.assembledContext
-                                            .tools.length
-                                    }{' '}
-                                    tools
+                                    {trace.prompt.finalInput.tools.length} tools
                                 </p>
                             ) : null}
                         </div>
                         <button
                             ref={closeButtonRef}
                             type='button'
-                            aria-label='Close context details'
+                            aria-label='Close run trace'
                             onClick={onClose}
                             className='rounded-full border border-white/10 p-2 text-slate-400 transition-colors hover:text-white'
                         >
@@ -436,7 +424,7 @@ export function MessageContextDetailSheet({
 
                 {state.status === 'loading' ? (
                     <div className='mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-sm text-slate-300'>
-                        Loading context…
+                        Loading trace...
                     </div>
                 ) : null}
 
@@ -458,99 +446,93 @@ export function MessageContextDetailSheet({
 
                 {state.status === 'unavailable' ? (
                     <div className='mt-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4 text-sm text-slate-300'>
-                        Context unavailable.
+                        Trace unavailable.
                     </div>
                 ) : null}
 
                 {state.status === 'ready' ? (
                     <div className='mt-4 space-y-4'>
                         <Section title='Overview'>
-                            <div className='flex flex-wrap gap-2'>
-                                {groups.map((group) => (
-                                    <span
-                                        key={group.key}
-                                        className='rounded-full border border-white/10 px-2 py-1 text-xs text-slate-300'
-                                    >
-                                        {group.title}
-                                    </span>
-                                ))}
+                            <div className='grid gap-2 sm:grid-cols-2'>
+                                <SegmentMetadata
+                                    label='Trace status'
+                                    value={state.record.trace.traceStatus}
+                                />
+                                <SegmentMetadata
+                                    label='Run outcome'
+                                    value={state.record.trace.runOutcome}
+                                />
+                                <SegmentMetadata
+                                    label='Current phase'
+                                    value={state.record.trace.currentPhase}
+                                />
+                                <SegmentMetadata
+                                    label='Completed phases'
+                                    value={
+                                        state.record.trace.completedPhases
+                                            .length
+                                    }
+                                />
                             </div>
                         </Section>
 
                         <Section title='Segments'>
                             <div className='space-y-3'>
-                                {groups.map((group) => (
-                                    <div
-                                        key={group.key}
-                                        className='rounded-2xl border border-white/6 bg-black/20 p-3'
-                                    >
-                                        <h3 className='text-sm font-medium text-slate-100'>
-                                            {group.title}
-                                        </h3>
-                                        <p className='mt-1 text-xs text-slate-500'>
-                                            {group.segments.length} items · ~
-                                            {group.estimatedTokens} tk
-                                        </p>
-                                        <div className='mt-3 space-y-2'>
-                                            {group.segments.map((segment) => (
-                                                <SegmentCard
-                                                    key={getSegmentStateKey(
-                                                        messageId,
-                                                        segment.id,
-                                                    )}
-                                                    segment={segment}
-                                                    isOpen={
-                                                        segmentOpenState[
-                                                            getSegmentStateKey(
+                                {groups.length > 0 ? (
+                                    groups.map((group) => (
+                                        <div
+                                            key={group.key}
+                                            className='rounded-2xl border border-white/6 bg-black/20 p-3'
+                                        >
+                                            <h3 className='text-sm font-medium text-slate-100'>
+                                                {group.title}
+                                            </h3>
+                                            <p className='mt-1 text-xs text-slate-500'>
+                                                {group.segments.length} items ·{' '}
+                                                {group.messageCount} messages ·
+                                                ~{group.estimatedTokens} tk
+                                            </p>
+                                            <div className='mt-3 space-y-2'>
+                                                {group.segments.map(
+                                                    (segment) => (
+                                                        <SegmentCard
+                                                            key={getSegmentStateKey(
                                                                 messageId,
                                                                 segment.id,
-                                                            )
-                                                        ] ??
-                                                        !group.collapsedByDefault
-                                                    }
-                                                    onOpenChange={(nextOpen) =>
-                                                        setSegmentOpenState(
-                                                            (prev) => ({
-                                                                ...prev,
-                                                                [getSegmentStateKey(
-                                                                    messageId,
-                                                                    segment.id,
-                                                                )]: nextOpen,
-                                                            }),
-                                                        )
-                                                    }
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </Section>
-
-                        <Section title='Tools'>
-                            <div className='space-y-2'>
-                                {state.record.manifest.assembledContext.tools
-                                    .length > 0 ? (
-                                    state.record.manifest.assembledContext.tools.map(
-                                        (tool) => (
-                                            <div
-                                                key={`${tool.source}-${tool.name}`}
-                                                className='rounded-xl border border-white/6 bg-black/20 p-3'
-                                            >
-                                                <p className='text-sm text-slate-100'>
-                                                    {tool.name}
-                                                </p>
-                                                <p className='mt-1 text-xs text-slate-500'>
-                                                    {tool.source} · ~
-                                                    {tool.estimatedTokens ?? 0}{' '}
-                                                    tk
-                                                </p>
+                                                            )}
+                                                            segment={segment}
+                                                            isOpen={
+                                                                segmentOpenState[
+                                                                    getSegmentStateKey(
+                                                                        messageId,
+                                                                        segment.id,
+                                                                    )
+                                                                ] ??
+                                                                !group.collapsedByDefault
+                                                            }
+                                                            onOpenChange={(
+                                                                nextOpen,
+                                                            ) =>
+                                                                setSegmentOpenState(
+                                                                    (prev) => ({
+                                                                        ...prev,
+                                                                        [getSegmentStateKey(
+                                                                            messageId,
+                                                                            segment.id,
+                                                                        )]:
+                                                                            nextOpen,
+                                                                    }),
+                                                                )
+                                                            }
+                                                        />
+                                                    ),
+                                                )}
                                             </div>
-                                        ),
-                                    )
+                                        </div>
+                                    ))
                                 ) : (
                                     <p className='text-sm text-slate-500'>
-                                        No assembled tools.
+                                        No prompt segments recorded.
                                     </p>
                                 )}
                             </div>
@@ -561,55 +543,69 @@ export function MessageContextDetailSheet({
                                 <DiagnosticCard
                                     title='Model messages'
                                     value={{
-                                        count: state.record.manifest
-                                            .modelRequest.modelMessages.length,
+                                        count:
+                                            trace?.prompt?.finalInput
+                                                .modelMessages.length ?? 0,
                                         messages:
-                                            state.record.manifest.modelRequest
-                                                .modelMessages,
+                                            trace?.prompt?.finalInput
+                                                .modelMessages ?? [],
                                     }}
                                 />
                                 <DiagnosticCard
-                                    title='Tool names'
+                                    title='Tools'
                                     value={
-                                        state.record.manifest.modelRequest
-                                            .toolNames
+                                        trace?.prompt?.finalInput.tools ?? []
                                     }
                                 />
                                 <DiagnosticCard
-                                    title='Resolved params'
+                                    title='Params'
                                     value={
-                                        state.record.manifest.modelRequest
-                                            .resolvedParams
+                                        trace?.prompt?.finalInput.params ?? {}
                                     }
                                 />
                                 <DiagnosticCard
-                                    title='Provider options'
+                                    title='System text'
                                     value={
-                                        state.record.manifest.modelRequest
-                                            .providerOptions
-                                    }
-                                />
-                                <DiagnosticCard
-                                    title='Max output tokens'
-                                    value={
-                                        state.record.manifest.modelRequest
-                                            .maxOutputTokens ?? 'Not set'
-                                    }
-                                />
-                                <DiagnosticCard
-                                    title='Tool request context'
-                                    value={
-                                        state.record.manifest.assembledContext
-                                            .tools
+                                        trace?.prompt?.finalInput.systemText ??
+                                        ''
                                     }
                                 />
                             </div>
                         </Section>
 
+                        <Section title='Cache'>
+                            <div className='grid gap-3 md:grid-cols-2'>
+                                <DiagnosticCard
+                                    title='Plan'
+                                    value={trace?.cache?.plan}
+                                />
+                                <DiagnosticCard
+                                    title='Provider request'
+                                    value={trace?.cache?.providerRequest}
+                                />
+                                <DiagnosticCard
+                                    title='Result'
+                                    value={trace?.cache?.result}
+                                />
+                            </div>
+                        </Section>
+
+                        {trace?.result ? (
+                            <Section title='Result'>
+                                <JsonBlock value={trace.result} />
+                            </Section>
+                        ) : null}
+
+                        {trace?.failure ? (
+                            <Section title='Failure'>
+                                <JsonBlock value={trace.failure} />
+                            </Section>
+                        ) : null}
+
                         <Section title='Raw inspect'>
                             <div className='flex items-center justify-between gap-3'>
                                 <p className='text-xs text-slate-500'>
-                                    Underlying payloads and request snapshots.
+                                    Full run trace record.
                                 </p>
                                 <button
                                     type='button'
@@ -636,85 +632,8 @@ export function MessageContextDetailSheet({
                                 </button>
                             </div>
                             {isRawOpen ? (
-                                <div
-                                    id={rawInspectId}
-                                    className='mt-3 space-y-3'
-                                >
-                                    <div>
-                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
-                                            System text
-                                        </p>
-                                        <JsonBlock
-                                            value={
-                                                state.record.manifest
-                                                    .modelRequest.systemText
-                                            }
-                                        />
-                                    </div>
-                                    <div>
-                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
-                                            Input raw messages
-                                        </p>
-                                        <JsonBlock
-                                            value={
-                                                state.record.manifest.input
-                                                    .rawMessages
-                                            }
-                                        />
-                                    </div>
-                                    <div>
-                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
-                                            Request model messages
-                                        </p>
-                                        <JsonBlock
-                                            value={
-                                                state.record.manifest
-                                                    .modelRequest.modelMessages
-                                            }
-                                        />
-                                    </div>
-                                    <div>
-                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
-                                            Resolved params candidates
-                                        </p>
-                                        <JsonBlock
-                                            value={
-                                                state.record.manifest
-                                                    .assembledContext.params
-                                                    .candidates
-                                            }
-                                        />
-                                    </div>
-                                    <div>
-                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
-                                            Tool request context
-                                        </p>
-                                        <JsonBlock
-                                            value={
-                                                state.record.manifest
-                                                    .assembledContext.tools
-                                            }
-                                        />
-                                    </div>
-                                    <div>
-                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
-                                            Plugin outputs
-                                        </p>
-                                        <JsonBlock
-                                            value={
-                                                state.record.manifest
-                                                    .pluginOutputs
-                                            }
-                                        />
-                                    </div>
-                                    <div>
-                                        <p className='mb-2 text-xs uppercase tracking-[0.16em] text-slate-500'>
-                                            Result snapshot
-                                        </p>
-                                        <JsonBlock
-                                            value={state.record.manifest.result}
-                                        />
-                                    </div>
+                                <div id={rawInspectId} className='mt-3'>
+                                    <JsonBlock value={trace} />
                                 </div>
                             ) : null}
                         </Section>
