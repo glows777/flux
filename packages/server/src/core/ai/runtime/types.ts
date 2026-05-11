@@ -115,7 +115,7 @@ export interface SystemContextSegmentSnapshot extends ContextSegment {
     readonly estimatedTokens: number
 }
 
-export interface MessageContextSegmentSnapshot extends ContextSegment {
+export interface PromptMessageSegmentSnapshot extends ContextSegment {
     readonly target: 'messages'
     readonly payload: {
         readonly format: 'messages'
@@ -125,7 +125,7 @@ export interface MessageContextSegmentSnapshot extends ContextSegment {
 
 export type ContextSegmentSnapshot =
     | SystemContextSegmentSnapshot
-    | MessageContextSegmentSnapshot
+    | PromptMessageSegmentSnapshot
 
 export interface ToolContributionSnapshot extends ToolContribution {
     readonly estimatedTokens: number
