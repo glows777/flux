@@ -367,6 +367,7 @@ describe('ChatPage', () => {
         sessions = defaultSessions
         chatMessages = []
         chatError = undefined
+        chatMessagesSetter = null
         runTraceResponses = {}
         mockMutateSessions.mockClear()
         mockSetMessages.mockClear()
@@ -1178,6 +1179,83 @@ describe('ChatPage', () => {
                 ([input]) => String(input) === '/api/runs/run-1/trace',
             ),
         ).toHaveLength(1)
+    })
+
+    it('refetches trace when an assistant message id is reused with a new run id', async () => {
+        const firstMessages = [
+            {
+                id: 'message-user-1',
+                role: 'user',
+                parts: [{ type: 'text', text: 'hello' }],
+            } as UIMessage,
+            {
+                id: 'message-assistant-shared',
+                role: 'assistant',
+                metadata: { sessionId: 'session-1', runId: 'run-1' },
+                parts: [{ type: 'text', text: 'first run' }],
+            } as UIMessage,
+        ]
+        chatMessages = firstMessages
+
+        runTraceResponses['/api/runs/run-1/trace'] = {
+            body: buildRunTraceResponse('run-1'),
+        }
+        runTraceResponses['/api/runs/run-2/trace'] = {
+            body: buildRunTraceResponse('run-2'),
+        }
+
+        fetchMock.mockImplementationOnce(((input: string | URL) => {
+            const url = String(input)
+            if (url === '/api/sessions/session-1/messages') {
+                return Promise.resolve({
+                    json: () =>
+                        Promise.resolve({
+                            success: true,
+                            data: {
+                                messages: firstMessages,
+                                error: null,
+                            },
+                        }),
+                })
+            }
+            throw new Error(`Unexpected fetch: ${url}`)
+        }) as typeof fetchMock)
+
+        render(<ChatPage />)
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) => String(input) === '/api/runs/run-1/trace',
+                ),
+            ).toBe(true),
+        )
+
+        act(() => {
+            chatMessagesSetter?.([
+                firstMessages[0] as UIMessage,
+                {
+                    id: 'message-assistant-shared',
+                    role: 'assistant',
+                    metadata: { sessionId: 'session-1', runId: 'run-2' },
+                    parts: [{ type: 'text', text: 'second run' }],
+                } as UIMessage,
+            ])
+        })
+
+        fireEvent.click(
+            screen.getByRole('button', {
+                name: /view trace for assistant message 1/i,
+            }),
+        )
+
+        await waitFor(() =>
+            expect(
+                fetchMock.mock.calls.some(
+                    ([input]) => String(input) === '/api/runs/run-2/trace',
+                ),
+            ).toBe(true),
+        )
     })
 
     it('clicking the selected assistant message closes the shared sheet', async () => {

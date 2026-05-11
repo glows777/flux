@@ -3,8 +3,36 @@ import {
     DEFAULT_TRACE_JSON_OPTIONS,
     measureTraceJsonBytes,
     sanitizeTraceJson,
+    truncateTraceText,
 } from './json'
-import type { AgentRunTracePayload, TracePhase, TraceStatus } from './types'
+import type {
+    AgentRunTracePayload,
+    CacheResultTrace,
+    CompactionTrace,
+    FailureTrace,
+    ResultTrace,
+    ToolTrace,
+    TracePhase,
+    TraceStatus,
+} from './types'
+
+const AGENT_RUN_TRACE_RUN_SELECT = {
+    id: true,
+    status: true,
+    source: true,
+    mode: true,
+    agentType: true,
+    sessionId: true,
+    messageId: true,
+    cronJobId: true,
+    inputSummary: true,
+    outputSummary: true,
+    error: true,
+    warnings: true,
+    startedAt: true,
+    finishedAt: true,
+    durationMs: true,
+} as const
 
 type TraceRow = {
     runId: string
@@ -14,23 +42,9 @@ type TraceRow = {
     updatedAt?: Date
 }
 
-type AgentRunSummaryRow = {
-    id: string
-    status: string
-    source: string
-    mode: string
-    agentType: string
-    sessionId: string | null
-    messageId: string | null
-    cronJobId: string | null
-    inputSummary: string | null
-    outputSummary: string | null
-    error: unknown
-    warnings: unknown
-    startedAt: Date
-    finishedAt: Date | null
-    durationMs: number | null
-}
+type AgentRunSummaryRow = Prisma.AgentRunGetPayload<{
+    select: typeof AGENT_RUN_TRACE_RUN_SELECT
+}>
 
 type TraceDelegate = {
     create(input: {
@@ -38,23 +52,13 @@ type TraceDelegate = {
             runId: string
             status: string
             phase: string
-            payload: unknown
+            payload: Prisma.InputJsonValue
         }
-    }): Promise<TraceRow>
-    upsert(input: {
-        where: { runId: string }
-        create: {
-            runId: string
-            status: string
-            phase: string
-            payload: unknown
-        }
-        update: { status: string; phase: string; payload: unknown }
     }): Promise<TraceRow>
     findUnique(input: { where: { runId: string } }): Promise<TraceRow | null>
     updateMany(input: {
         where: { runId: string; updatedAt?: Date }
-        data: { status: string; phase: string; payload: unknown }
+        data: { status: string; phase: string; payload: Prisma.InputJsonValue }
     }): Promise<{ count: number }>
 }
 
@@ -63,7 +67,7 @@ export type AgentRunTraceDb = Pick<PrismaClient, 'agentRunTrace'> & {
     agentRun: {
         findUnique(input: {
             where: { id: string }
-            select: Record<string, boolean>
+            select: typeof AGENT_RUN_TRACE_RUN_SELECT
         }): Promise<AgentRunSummaryRow | null>
     }
 }
@@ -93,6 +97,9 @@ const STORAGE_STRING_BYTE_LIMITS = [
     16 * 1024,
     4 * 1024,
 ]
+const STORAGE_FALLBACK_MESSAGE = `Trace payload exceeded ${MAX_TRACE_PAYLOAD_BYTES} bytes after normalization; stored compact trace metadata.`
+const FALLBACK_TEXT_BYTES = 4 * 1024
+const FALLBACK_LIST_ITEMS = 100
 
 function isUniqueConstraintError(error: unknown): boolean {
     return (error as { code?: unknown } | null)?.code === 'P2002'
@@ -152,6 +159,242 @@ function stripUndefinedObjectFields(value: unknown): unknown {
     return result
 }
 
+function truncateOptionalText(
+    value: string | undefined,
+    maxBytes = FALLBACK_TEXT_BYTES,
+): string | undefined {
+    return value === undefined
+        ? undefined
+        : truncateTraceText(value, maxBytes).text
+}
+
+function compactCompaction(compaction: CompactionTrace): CompactionTrace {
+    return {
+        applied: compaction.applied,
+        reason: compaction.reason,
+        beforeEstimatedInputTokens: compaction.beforeEstimatedInputTokens,
+        afterEstimatedInputTokens: compaction.afterEstimatedInputTokens,
+        affectedSegmentIds: compaction.affectedSegmentIds?.slice(
+            0,
+            FALLBACK_LIST_ITEMS,
+        ),
+        error: compaction.error
+            ? {
+                  message: truncateTraceText(
+                      compaction.error.message,
+                      FALLBACK_TEXT_BYTES,
+                  ).text,
+                  code: compaction.error.code,
+              }
+            : undefined,
+    }
+}
+
+function compactResult(result: ResultTrace): ResultTrace {
+    return {
+        finalOutput: {
+            text: truncateTraceText(
+                result.finalOutput.text,
+                FALLBACK_TEXT_BYTES,
+            ).text,
+            textHash: result.finalOutput.textHash,
+            messageId: result.finalOutput.messageId,
+            partsSummary: result.finalOutput.partsSummary,
+        },
+        usage: result.usage,
+        provider: result.provider,
+        finishReason: result.finishReason,
+    }
+}
+
+function compactFailure(failure: FailureTrace): FailureTrace {
+    return {
+        phase: failure.phase,
+        sourcePlugin: failure.sourcePlugin,
+        hookName: failure.hookName,
+        sourceTool: failure.sourceTool,
+        source: failure.source,
+        error: {
+            message: truncateTraceText(
+                failure.error.message,
+                FALLBACK_TEXT_BYTES,
+            ).text,
+            name: failure.error.name,
+            code: failure.error.code,
+            stack: truncateOptionalText(failure.error.stack),
+        },
+        occurredAt: failure.occurredAt,
+    }
+}
+
+function compactCacheResult(result: CacheResultTrace): CacheResultTrace {
+    return {
+        cacheObserved: result.cacheObserved,
+        evidenceSource: result.evidenceSource,
+        cacheReadObserved: result.cacheReadObserved,
+        cacheWriteObserved: result.cacheWriteObserved,
+        cacheReadEvidenceSource: result.cacheReadEvidenceSource,
+        cacheWriteEvidenceSource: result.cacheWriteEvidenceSource,
+        cacheReadTokens: result.cacheReadTokens,
+        cacheWriteTokens: result.cacheWriteTokens,
+        uncachedInputTokens: result.uncachedInputTokens,
+        cachedTokenRatio: result.cachedTokenRatio,
+        cacheDisabledReason: result.cacheDisabledReason,
+        rolloutGateStatus: result.rolloutGateStatus,
+        circuitBreakerState: result.circuitBreakerState,
+    }
+}
+
+function compactTools(tools: ToolTrace): ToolTrace {
+    return {
+        available: tools.available
+            .slice(0, FALLBACK_LIST_ITEMS)
+            .map((tool) => ({
+                name: tool.name,
+                sourcePlugin: tool.sourcePlugin,
+                category: tool.category,
+            })),
+        calls: tools.calls.slice(0, FALLBACK_LIST_ITEMS).map((call) => ({
+            index: call.index,
+            stepIndex: call.stepIndex,
+            toolName: call.toolName,
+            toolCallId: call.toolCallId,
+            args: sanitizeTraceJson(
+                {
+                    status: call.args.truncated
+                        ? 'truncated_before_storage_fallback'
+                        : 'omitted_by_storage_fallback',
+                    redacted: call.args.redacted,
+                    notes: call.args.notes,
+                },
+                DEFAULT_TRACE_JSON_OPTIONS,
+            ),
+            result: call.result
+                ? sanitizeTraceJson(
+                      {
+                          status: call.result.truncated
+                              ? 'truncated_before_storage_fallback'
+                              : 'omitted_by_storage_fallback',
+                          redacted: call.result.redacted,
+                          notes: call.result.notes,
+                      },
+                      DEFAULT_TRACE_JSON_OPTIONS,
+                  )
+                : undefined,
+            status: call.status,
+            error: call.error
+                ? {
+                      message: truncateTraceText(
+                          call.error.message,
+                          FALLBACK_TEXT_BYTES,
+                      ).text,
+                      name: call.error.name,
+                      code: call.error.code,
+                  }
+                : undefined,
+        })),
+    }
+}
+
+function createStorageFallbackPayload(
+    payload: AgentRunTracePayload,
+): AgentRunTracePayload {
+    const warnings = (payload.warnings ?? []).slice(-3).map((warning) => ({
+        source: warning.source,
+        message: truncateTraceText(warning.message, 1024).text,
+        occurredAt: warning.occurredAt,
+    }))
+
+    const fallback: AgentRunTracePayload = {
+        version: payload.version,
+        runId: payload.runId,
+        traceStatus: payload.traceStatus,
+        runOutcome: payload.runOutcome,
+        currentPhase: payload.currentPhase,
+        completedPhases: payload.completedPhases,
+        updatedAt: payload.updatedAt,
+        warnings: [
+            ...warnings,
+            {
+                source: 'trace.storage',
+                message: STORAGE_FALLBACK_MESSAGE,
+                occurredAt: payload.updatedAt,
+            },
+        ],
+    }
+
+    if (payload.compaction) {
+        fallback.compaction = compactCompaction(payload.compaction)
+    }
+
+    if (payload.prompt) {
+        fallback.prompt = {
+            finalInput: {
+                systemText: truncateTraceText(
+                    payload.prompt.finalInput.systemText,
+                    4 * 1024,
+                ).text,
+                modelMessages: [],
+                tools: [],
+                params: { resolved: {}, candidates: [] },
+            },
+            segments: [],
+            totalEstimatedInputTokens: payload.prompt.totalEstimatedInputTokens,
+        }
+    }
+    if (payload.result) {
+        fallback.result = compactResult(payload.result)
+    }
+    if (payload.failure) {
+        fallback.failure = compactFailure(payload.failure)
+    }
+    if (payload.cache?.result) {
+        fallback.cache = { result: compactCacheResult(payload.cache.result) }
+    }
+    if (payload.tools) {
+        fallback.tools = compactTools(payload.tools)
+    }
+
+    const safe = sanitizeTraceJson(stripUndefinedObjectFields(fallback), {
+        ...DEFAULT_TRACE_JSON_OPTIONS,
+        maxBytes: MAX_TRACE_PAYLOAD_BYTES,
+        maxDepth: 32,
+        maxArrayItems: FALLBACK_LIST_ITEMS,
+        maxStringBytes: FALLBACK_TEXT_BYTES,
+    })
+
+    if (
+        safe.value &&
+        typeof safe.value === 'object' &&
+        !Array.isArray(safe.value)
+    ) {
+        return safe.value as AgentRunTracePayload
+    }
+
+    return {
+        version: payload.version,
+        runId: payload.runId,
+        traceStatus: payload.traceStatus,
+        runOutcome: payload.runOutcome,
+        currentPhase: payload.currentPhase,
+        completedPhases: payload.completedPhases,
+        updatedAt: payload.updatedAt,
+        warnings: [
+            {
+                source: 'trace.storage',
+                message: STORAGE_FALLBACK_MESSAGE,
+                occurredAt: payload.updatedAt,
+            },
+            {
+                source: 'trace.storage',
+                message:
+                    'Compact trace fallback exceeded the storage cap; stored metadata only.',
+                occurredAt: payload.updatedAt,
+            },
+        ],
+    }
+}
+
 function normalizePayloadForStorage(
     payload: AgentRunTracePayload,
 ): AgentRunTracePayload {
@@ -180,12 +423,7 @@ function normalizePayloadForStorage(
         }
     }
 
-    throw Object.assign(
-        new Error(
-            `Agent run trace payload exceeds ${MAX_TRACE_PAYLOAD_BYTES} bytes after normalization`,
-        ),
-        { code: 'TRACE_PAYLOAD_TOO_LARGE' },
-    )
+    return createStorageFallbackPayload(payload)
 }
 
 function assertPayloadFits(payload: AgentRunTracePayload): void {
@@ -210,18 +448,6 @@ function preparePayloadForStorage(
     const storedPayload = normalizePayloadForStorage(payload)
     assertPayloadFits(storedPayload)
     return storedPayload
-}
-
-function shouldKeepExistingCompletedFailure(
-    existing: AgentRunTracePayload,
-    payload: AgentRunTracePayload,
-): boolean {
-    return Boolean(
-        existing.traceStatus === 'complete' &&
-            existing.runOutcome === 'failed' &&
-            existing.failure &&
-            payload.failure,
-    )
 }
 
 export function createPrismaAgentRunTraceStore(
@@ -297,17 +523,6 @@ export function createPrismaAgentRunTraceStore(
                     traceStatus: input.status,
                 })
 
-                if (
-                    existing.traceStatus === 'complete' &&
-                    existing.runOutcome === 'succeeded' &&
-                    payload.runOutcome === 'failed'
-                ) {
-                    return
-                }
-                if (shouldKeepExistingCompletedFailure(existing, payload)) {
-                    return
-                }
-
                 const storedPayload = preparePayloadForStorage(payload)
                 const result = await db.agentRunTrace.updateMany({
                     where: {
@@ -378,23 +593,7 @@ export function createPrismaAgentRunTraceStore(
                 db.agentRunTrace.findUnique({ where: { runId } }),
                 db.agentRun.findUnique({
                     where: { id: runId },
-                    select: {
-                        id: true,
-                        status: true,
-                        source: true,
-                        mode: true,
-                        agentType: true,
-                        sessionId: true,
-                        messageId: true,
-                        cronJobId: true,
-                        inputSummary: true,
-                        outputSummary: true,
-                        error: true,
-                        warnings: true,
-                        startedAt: true,
-                        finishedAt: true,
-                        durationMs: true,
-                    },
+                    select: AGENT_RUN_TRACE_RUN_SELECT,
                 }),
             ])
             const trace = asPayload(traceRow?.payload)

@@ -539,7 +539,30 @@ describe('createAIRuntime', () => {
         )
     })
 
-    test('throws when trace start fails before streaming begins', async () => {
+    test('consumeStream attaches run and session metadata to runtime-owned assistant messages', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore: createFakeAgentRunStore(),
+            traceRecorder: createFakeTraceRecorder(),
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'cron',
+            mode: 'trigger',
+            sessionId: 'session-1',
+        })
+        const consumed = await output.consumeStream()
+
+        expect(consumed.responseMessage.metadata).toMatchObject({
+            runId: output.runId,
+            sessionId: 'session-1',
+        })
+    })
+
+    test('continues when trace start fails before streaming begins', async () => {
         const createAIRuntime = await loadCreateAIRuntime()
         const agentRunStore = createFakeAgentRunStore()
         const traceRecorder = createFakeTraceRecorder({ failStart: true })
@@ -550,18 +573,64 @@ describe('createAIRuntime', () => {
             plugins: [],
         })
 
-        await expect(
-            runtime.chat({
-                messages: [],
-                channel: 'web',
-                mode: 'conversation',
-            }),
-        ).rejects.toThrow('trace start failed')
-        expect(mockStreamText).not.toHaveBeenCalled()
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        await output.consumeStream()
+
+        expect(mockStreamText).toHaveBeenCalled()
         expect(traceRecorder.markIncomplete).not.toHaveBeenCalled()
-        expect(agentRunStore.failIfRunning).toHaveBeenCalledWith(
-            expect.any(String),
-            expect.objectContaining({ error: expect.any(Error) }),
+        expect(agentRunStore.recordWarnings).toHaveBeenCalledWith(
+            output.runId,
+            [
+                expect.objectContaining({
+                    source: 'trace.recorder',
+                    message: 'trace start failed',
+                }),
+            ],
+        )
+        expect(agentRunStore.failIfRunning).not.toHaveBeenCalled()
+        expect(agentRunStore.succeedIfRunning).toHaveBeenCalled()
+    })
+
+    test('pre-stream trace checkpoint failures warn and do not block chat', async () => {
+        const createAIRuntime = await loadCreateAIRuntime()
+        const agentRunStore = createFakeAgentRunStore()
+        const traceRecorder = createFakeTraceRecorder({
+            failCheckpointPhase: 'assemble_context',
+        })
+        const runtime = await createAIRuntime({
+            model: mockModel,
+            agentRunStore,
+            traceRecorder,
+            plugins: [],
+        })
+
+        const output = await runtime.chat({
+            messages: [],
+            channel: 'web',
+            mode: 'conversation',
+        })
+        await output.consumeStream()
+
+        expect(traceRecorder.markIncomplete).toHaveBeenCalledWith(
+            output.runId,
+            expect.any(Error),
+        )
+        expect(agentRunStore.recordWarnings).toHaveBeenCalledWith(
+            output.runId,
+            [
+                expect.objectContaining({
+                    source: 'trace.recorder',
+                    message: 'trace checkpoint failed: assemble_context',
+                }),
+            ],
+        )
+        expect(agentRunStore.succeedIfRunning).toHaveBeenCalled()
+        expect(expectTrace(traceRecorder, output.runId).traceStatus).toBe(
+            'incomplete',
         )
     })
 

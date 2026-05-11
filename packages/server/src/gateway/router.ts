@@ -1,5 +1,6 @@
 import type { UIMessage } from 'ai'
 import { generateId } from 'ai'
+import type { TracePhase } from '@/core/ai/agent-run-trace'
 import type { AgentType, AIRuntime, ChatOutput } from '@/core/ai/runtime/types'
 import { clearChannelSession } from '@/core/ai/session'
 
@@ -30,6 +31,7 @@ export interface TriggerResult {
     readonly runId: string
     readonly success: boolean
     readonly error?: string
+    readonly failurePhase?: TracePhase
 }
 
 interface RouterDeps {

@@ -35,6 +35,35 @@ export const DEFAULT_TRACE_JSON_OPTIONS: TraceJsonOptions = {
 }
 
 const textEncoder = new TextEncoder()
+const REDACTED_TEXT = '[Redacted]'
+const REDACTED_URL_VALUE = 'REDACTED'
+const VALUE_REDACT_KEYS = [
+    'apiKey',
+    'accessKey',
+    'secret',
+    'clientSecret',
+    'password',
+    'authorization',
+    'cookie',
+    'sessionToken',
+    'accessToken',
+    'refreshToken',
+    'idToken',
+    'alpacaKey',
+    'accountId',
+]
+const EXACT_VALUE_REDACT_KEYS = new Set(['key', 'sig', 'signature'])
+const SECRET_ASSIGNMENT_KEY_PATTERN =
+    '(?:x[-_ ]?api[-_ ]?key|api[-_ ]?key|access[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|id[-_ ]?token|auth(?:orization)?|bearer[-_ ]?token|client[-_ ]?secret|secret|password|passwd|pwd|session[-_ ]?(?:id|token)?|alpaca[-_ ]?(?:key|secret)|account[-_ ]?id)'
+const SECRET_ASSIGNMENT_PATTERN = new RegExp(
+    `\\b(${SECRET_ASSIGNMENT_KEY_PATTERN})(\\s*[:=]\\s*)("[^"]*"|'[^']*'|\`[^\`]*\`|[^\\s,;)&]+)`,
+    'gi',
+)
+const AUTH_HEADER_PATTERN =
+    /\b(authorization\s*[:=]\s*)(?:(?:Bearer|Basic)\s+)?[A-Za-z0-9._~+/=-]{8,}/gi
+const COOKIE_HEADER_PATTERN = /\b(cookie\s*[:=]\s*)[^\n,]+/gi
+const AUTH_SCHEME_PATTERN = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi
+const URL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s"'<>]+/gi
 
 function byteLength(value: string): number {
     return textEncoder.encode(value).byteLength
@@ -57,6 +86,89 @@ function shouldRedactKey(key: string, redactKeys: readonly string[]): boolean {
             compact.includes(compactCandidate)
         )
     })
+}
+
+function getValueRedactKeys(redactKeys: readonly string[]): string[] {
+    if (redactKeys.length === 0) return []
+    return Array.from(new Set([...redactKeys, ...VALUE_REDACT_KEYS]))
+}
+
+function shouldRedactStringKey(
+    key: string,
+    redactKeys: readonly string[],
+): boolean {
+    const compact = key.toLowerCase().replace(/[^a-z0-9]/g, '')
+    if (EXACT_VALUE_REDACT_KEYS.has(compact)) return true
+    return shouldRedactKey(key, getValueRedactKeys(redactKeys))
+}
+
+function redactUrlString(
+    value: string,
+    redactKeys: readonly string[],
+): { text: string; redacted: boolean } {
+    let redacted = false
+    const text = value.replace(URL_PATTERN, (match) => {
+        try {
+            const url = new URL(match)
+            if (url.username) {
+                url.username = REDACTED_URL_VALUE
+                redacted = true
+            }
+            if (url.password) {
+                url.password = REDACTED_URL_VALUE
+                redacted = true
+            }
+            for (const key of Array.from(url.searchParams.keys())) {
+                if (!shouldRedactStringKey(key, redactKeys)) continue
+                url.searchParams.set(key, REDACTED_URL_VALUE)
+                redacted = true
+            }
+            return url.toString()
+        } catch {
+            return match
+        }
+    })
+
+    return { text, redacted }
+}
+
+function redactSecretString(
+    value: string,
+    options: TraceJsonOptions,
+): { text: string; redacted: boolean } {
+    if (options.redactKeys.length === 0) {
+        return { text: value, redacted: false }
+    }
+
+    const urlRedacted = redactUrlString(value, options.redactKeys)
+    let redacted = urlRedacted.redacted
+    let text = urlRedacted.text
+
+    text = text.replace(COOKIE_HEADER_PATTERN, (_match, prefix: string) => {
+        redacted = true
+        return `${prefix}${REDACTED_TEXT}`
+    })
+    text = text.replace(AUTH_HEADER_PATTERN, (_match, prefix: string) => {
+        redacted = true
+        return `${prefix}${REDACTED_TEXT}`
+    })
+    text = text.replace(AUTH_SCHEME_PATTERN, (_match, scheme: string) => {
+        redacted = true
+        return `${scheme} ${REDACTED_TEXT}`
+    })
+    text = text.replace(
+        SECRET_ASSIGNMENT_PATTERN,
+        (_match, key: string, separator: string, rawValue: string) => {
+            redacted = true
+            const quote = rawValue[0]
+            if (quote === '"' || quote === "'" || quote === '`') {
+                return `${key}${separator}${quote}${REDACTED_TEXT}${quote}`
+            }
+            return `${key}${separator}${REDACTED_TEXT}`
+        },
+    )
+
+    return { text, redacted }
 }
 
 function isSecretTokenKey(compactKey: string): boolean {
@@ -121,10 +233,16 @@ function normalizeValue(
     if (typeof value === 'bigint') return value.toString()
     if (typeof value === 'function') return '[Function]'
     if (typeof value === 'string') {
-        const size = byteLength(value)
-        if (size <= options.maxStringBytes) return value
+        const scrubbed = redactSecretString(value, options)
+        if (scrubbed.redacted) {
+            redacted.value = true
+            notes.add('secret_redacted')
+        }
+        const textValue = scrubbed.text
+        const size = byteLength(textValue)
+        if (size <= options.maxStringBytes) return textValue
         notes.add('string_truncated')
-        return `${truncateStringByBytes(value, options.maxStringBytes)}[Truncated string from ${size} bytes]`
+        return `${truncateStringByBytes(textValue, options.maxStringBytes)}[Truncated string from ${size} bytes]`
     }
     if (typeof value !== 'object' || value === null) return value
 

@@ -41,6 +41,10 @@ type SessionLoadResult = {
 const MAX_Q_LENGTH = 500
 const SIDEBAR_STORAGE_KEY = 'flux-chat-sidebar'
 
+function getRunTraceStateKey(messageId: string, runId: string | null): string {
+    return runId == null ? `${messageId}:no-run` : `${messageId}:${runId}`
+}
+
 function getAdjacentSessionId(
     sessions: readonly ChatSession[],
     deletedSessionId: string,
@@ -150,14 +154,16 @@ export function ChatPage() {
             options?: { force?: boolean },
         ) => {
             if (!runId) {
+                const stateKey = getRunTraceStateKey(messageId, null)
                 setRunTraceStates((prev) => ({
                     ...prev,
-                    [messageId]: { status: 'unavailable' },
+                    [stateKey]: { status: 'unavailable' },
                 }))
                 return
             }
 
-            const cachedState = runTraceStatesRef.current[messageId]
+            const stateKey = getRunTraceStateKey(messageId, runId)
+            const cachedState = runTraceStatesRef.current[stateKey]
             if (
                 !options?.force &&
                 cachedState != null &&
@@ -165,16 +171,16 @@ export function ChatPage() {
             ) {
                 return
             }
-            if (inFlightRunTraceLoadsRef.current.has(messageId)) {
+            if (inFlightRunTraceLoadsRef.current.has(stateKey)) {
                 return
             }
 
             const generation = runTraceGenerationRef.current
-            inFlightRunTraceLoadsRef.current.add(messageId)
+            inFlightRunTraceLoadsRef.current.add(stateKey)
 
             setRunTraceStates((prev) => ({
                 ...prev,
-                [messageId]: { status: 'loading' },
+                [stateKey]: { status: 'loading' },
             }))
 
             try {
@@ -184,7 +190,7 @@ export function ChatPage() {
 
                 setRunTraceStates((prev) => ({
                     ...prev,
-                    [messageId]:
+                    [stateKey]:
                         record == null
                             ? { status: 'unavailable' }
                             : { status: 'ready', record },
@@ -194,7 +200,7 @@ export function ChatPage() {
 
                 setRunTraceStates((prev) => ({
                     ...prev,
-                    [messageId]: {
+                    [stateKey]: {
                         status: 'error',
                         error:
                             error instanceof Error
@@ -203,7 +209,7 @@ export function ChatPage() {
                     },
                 }))
             } finally {
-                inFlightRunTraceLoadsRef.current.delete(messageId)
+                inFlightRunTraceLoadsRef.current.delete(stateKey)
             }
         },
         [],
@@ -535,12 +541,6 @@ export function ChatPage() {
     }, [messageScrollSignature])
 
     const placeholder = symbol ? `询问关于 ${symbol} 的问题...` : '发送消息...'
-    const activeTraceState =
-        activeTraceMessageId == null
-            ? { status: 'idle' as const }
-            : (runTraceStates[activeTraceMessageId] ?? {
-                  status: 'idle' as const,
-              })
     const activeTraceRunId =
         activeTraceMessageId == null
             ? null
@@ -549,6 +549,16 @@ export function ChatPage() {
                       (message) => message.id === activeTraceMessageId,
                   ) as UIMessage<ChatMetadata> | undefined,
               )
+    const activeTraceStateKey =
+        activeTraceMessageId == null
+            ? null
+            : getRunTraceStateKey(activeTraceMessageId, activeTraceRunId)
+    const activeTraceState =
+        activeTraceStateKey == null
+            ? { status: 'idle' as const }
+            : (runTraceStates[activeTraceStateKey] ?? {
+                  status: 'idle' as const,
+              })
     const handleOpenTraceMessage = useCallback(
         (messageId: string, runId: string | null) => {
             const isSelected = activeTraceMessageIdRef.current === messageId
@@ -633,16 +643,21 @@ export function ChatPage() {
                                             assistantMessageCount += 1
                                             const isLast =
                                                 index === messages.length - 1
-                                            const contextState = runTraceStates[
-                                                msg.id
-                                            ] ?? {
-                                                status: 'idle',
-                                            }
                                             const isTraceOpen =
                                                 activeTraceMessageId === msg.id
                                             const actionLabel = `assistant message ${assistantMessageCount}`
                                             const runId =
                                                 getRunIdFromMessage(msg)
+                                            const traceStateKey =
+                                                getRunTraceStateKey(
+                                                    msg.id,
+                                                    runId,
+                                                )
+                                            const contextState = runTraceStates[
+                                                traceStateKey
+                                            ] ?? {
+                                                status: 'idle',
+                                            }
                                             messageNode = (
                                                 <div
                                                     key={msg.id}

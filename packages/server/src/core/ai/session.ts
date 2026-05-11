@@ -75,7 +75,13 @@ export async function deleteSession(id: string, deps?: SessionDeps) {
     const { db } = deps ?? getDefaultDeps()
 
     try {
-        await db.chatSession.delete({ where: { id } })
+        await db.$transaction([
+            db.chatSession.delete({ where: { id } }),
+            db.agentRunTrace.deleteMany({
+                where: { run: { sessionId: id } },
+            }),
+            db.agentRun.deleteMany({ where: { sessionId: id } }),
+        ])
     } catch (error) {
         if (isPrismaNotFoundError(error)) {
             throw new SessionError('Session not found', 'NOT_FOUND')

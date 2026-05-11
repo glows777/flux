@@ -58,6 +58,7 @@ export class Gateway {
                 runId,
                 success: false,
                 error: message,
+                failurePhase: 'before_run',
             }
         }
 
@@ -80,6 +81,7 @@ export class Gateway {
                 runId: output.runId,
                 success: false,
                 error: message,
+                failurePhase: 'model_stream',
             }
         }
 
@@ -103,6 +105,7 @@ export class Gateway {
                 runId: output.runId,
                 success: false,
                 error: 'Execution aborted',
+                failurePhase: 'model_stream',
             }
         }
 

@@ -12,10 +12,10 @@ import {
     isRunTraceResponse,
 } from '@/lib/ai/run-trace-visibility'
 
-function buildTrace(): RunTracePayload {
+function buildTrace(runId = 'run-1'): RunTracePayload {
     return {
         version: 1,
-        runId: 'run-1',
+        runId,
         traceStatus: 'complete',
         runOutcome: 'succeeded',
         currentPhase: 'after_run',
@@ -206,12 +206,12 @@ describe('fetchRunTrace', () => {
                         success: true,
                         data: {
                             run: {
-                                id: 'run-1',
+                                id: 'run/1',
                                 status: 'completed',
                                 startedAt: '2026-05-11T00:00:00.000Z',
                                 finishedAt: null,
                             },
-                            trace: buildTrace(),
+                            trace: buildTrace('run/1'),
                         },
                     }),
             }),
@@ -219,11 +219,38 @@ describe('fetchRunTrace', () => {
         global.fetch = fetchMock as typeof fetch
 
         await expect(fetchRunTrace('run/1')).resolves.toMatchObject({
-            trace: { runId: 'run-1' },
+            trace: { runId: 'run/1' },
         })
         expect(fetchMock).toHaveBeenCalledWith('/api/runs/run%2F1/trace', {
             headers: { Accept: 'application/json' },
         })
+    })
+
+    it('rejects traces whose run ids do not match the request', async () => {
+        const fetchMock = mock(() =>
+            Promise.resolve({
+                ok: true,
+                status: 200,
+                json: () =>
+                    Promise.resolve({
+                        success: true,
+                        data: {
+                            run: {
+                                id: 'run-2',
+                                status: 'completed',
+                                startedAt: '2026-05-11T00:00:00.000Z',
+                                finishedAt: null,
+                            },
+                            trace: buildTrace('run-2'),
+                        },
+                    }),
+            }),
+        )
+        global.fetch = fetchMock as typeof fetch
+
+        await expect(fetchRunTrace('run-1')).rejects.toThrow(
+            'Run trace response did not match requested run',
+        )
     })
 
     it('returns null for unavailable run traces', async () => {

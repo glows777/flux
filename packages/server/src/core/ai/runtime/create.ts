@@ -42,6 +42,7 @@ import {
 } from './provider-cache'
 import type {
     AIRuntime,
+    CacheResultSnapshot,
     ChatInput,
     ChatOutput,
     ChatParams,
@@ -416,7 +417,7 @@ function buildCacheProviderRequestTrace(
 }
 
 function buildCacheResultTrace(
-    result: CacheResultTrace | undefined,
+    result: CacheResultSnapshot | undefined,
 ): CacheResultTrace | undefined {
     if (!result) return undefined
     return {
@@ -612,6 +613,21 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
     return value != null && typeof value === 'object' && !Array.isArray(value)
 }
 
+function attachRunMetadata(
+    message: UIMessage,
+    metadata: { runId: string; sessionId: string },
+): UIMessage {
+    const existing = isPlainRecord(message.metadata) ? message.metadata : {}
+    return {
+        ...message,
+        metadata: {
+            ...existing,
+            runId: metadata.runId,
+            sessionId: metadata.sessionId,
+        },
+    }
+}
+
 function getAnthropicCacheControl(value: unknown): unknown | undefined {
     if (!isPlainRecord(value)) return undefined
 
@@ -780,7 +796,6 @@ export async function createAIRuntime(
         const runId = input.runId ?? createRunId()
         let runCreated = false
         let traceStarted = false
-        let providerRequestStarted = false
         let currentTracePhase: TracePhase = 'created'
         let streamAbortError: Error | undefined
         const recordedFailures = new WeakSet<object>()
@@ -798,6 +813,27 @@ export async function createAIRuntime(
         if (input.sourceId) runCtx.meta.set('sourceId', input.sourceId)
         if (input.userId) runCtx.meta.set('userId', input.userId)
 
+        async function recordTraceRecorderWarning(
+            error: unknown,
+            data: Record<string, unknown>,
+        ): Promise<void> {
+            const message =
+                error instanceof Error ? error.message : String(error)
+            const warning: TraceWarning = {
+                source: 'trace.recorder',
+                message,
+                data: sanitizeTraceJson(data),
+                occurredAt: new Date().toISOString(),
+            }
+            traceWarnings.push(warning)
+
+            await safeLedgerUpdate('recordWarnings', () =>
+                agentRunStore.recordWarnings(runId, [
+                    { source: warning.source, message: warning.message },
+                ]),
+            )
+        }
+
         async function writeTraceCheckpoint(
             phase: TracePhase,
             patch: Partial<AgentRunTracePayload>,
@@ -809,23 +845,7 @@ export async function createAIRuntime(
             try {
                 await traceRecorder.checkpoint(runId, phase, patch, status)
             } catch (error) {
-                if (!providerRequestStarted) throw error
-
-                const message =
-                    error instanceof Error ? error.message : String(error)
-                const warning: TraceWarning = {
-                    source: 'trace.recorder',
-                    message,
-                    data: sanitizeTraceJson({ phase, status }),
-                    occurredAt: new Date().toISOString(),
-                }
-                traceWarnings.push(warning)
-
-                await safeLedgerUpdate('recordWarnings', () =>
-                    agentRunStore.recordWarnings(runId, [
-                        { source: warning.source, message: warning.message },
-                    ]),
-                )
+                await recordTraceRecorderWarning(error, { phase, status })
 
                 try {
                     await traceRecorder.markIncomplete(runId, error)
@@ -906,8 +926,16 @@ export async function createAIRuntime(
                 inputSummary: buildInputSummary(input),
             })
             runCreated = true
-            await traceRecorder.startRun(runId)
-            traceStarted = true
+            try {
+                await traceRecorder.startRun(runId)
+                traceStarted = true
+            } catch (error) {
+                await recordTraceRecorderWarning(error, {
+                    operation: 'startRun',
+                    phase: currentTracePhase,
+                    status: 'recording',
+                })
+            }
 
             await runBeforeRunHooks(plugins, runCtx)
             await writeTraceCheckpoint('before_run', {})
@@ -1130,7 +1158,6 @@ export async function createAIRuntime(
             let streamResult: ChatOutput['streamResult']
             try {
                 streamResult = startStream(providerCacheRequest)
-                providerRequestStarted = true
                 if (usedCacheRequest) {
                     rolloutState.plannerFailures = 0
                     rolloutState.adapterFailures = 0
@@ -1155,7 +1182,6 @@ export async function createAIRuntime(
                 providerCacheRequest = fallbackProviderCacheRequest
                 usedCacheRequest = false
                 streamResult = startStream(providerCacheRequest)
-                providerRequestStarted = true
             }
 
             const modelRequestSnapshot = buildModelRequestSnapshot()
@@ -1215,6 +1241,13 @@ export async function createAIRuntime(
 
             async function finalize(responseMessage: UIMessage): Promise<void> {
                 if (finalizePromise) return finalizePromise
+                const responseMessageWithMetadata = attachRunMetadata(
+                    responseMessage,
+                    {
+                        runId,
+                        sessionId: runCtx.sessionId,
+                    },
+                )
 
                 finalizePromise = (async () => {
                     try {
@@ -1269,7 +1302,7 @@ export async function createAIRuntime(
                         await writeTraceCheckpoint('finalize', {
                             result: buildResultTrace({
                                 text,
-                                responseMessage,
+                                responseMessage: responseMessageWithMetadata,
                                 usage,
                                 provider,
                                 modelId: resolveModelId(model),
@@ -1293,7 +1326,7 @@ export async function createAIRuntime(
 
                         await safeLedgerUpdate('succeedIfRunning', () =>
                             agentRunStore.succeedIfRunning(runId, {
-                                messageId: responseMessage.id,
+                                messageId: responseMessageWithMetadata.id,
                                 outputSummary: text,
                                 usage,
                             }),
@@ -1302,7 +1335,7 @@ export async function createAIRuntime(
                         const warnings = await runAfterRunHooks(plugins, {
                             ...runCtx,
                             text,
-                            responseMessage,
+                            responseMessage: responseMessageWithMetadata,
                             toolCalls,
                             usage,
                         })
@@ -1367,6 +1400,13 @@ export async function createAIRuntime(
                             'Stream finished without producing a responseMessage',
                         )
                     }
+                    capturedResponseMessage = attachRunMetadata(
+                        capturedResponseMessage,
+                        {
+                            runId,
+                            sessionId: runCtx.sessionId,
+                        },
+                    )
 
                     await finalize(capturedResponseMessage)
                     const { text, usage, toolCalls } =

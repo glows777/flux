@@ -435,4 +435,241 @@ describe('AgentRunTraceStore', () => {
         )
         expect(JSON.stringify(payload).length).toBeLessThan(512 * 1024)
     })
+
+    test('stores a compact fallback when many short items keep the trace oversized', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        await store.createRecording(createPayload('run-many-items'))
+
+        const modelMessages = Array.from({ length: 12_000 }, (_, index) => ({
+            role: 'user',
+            content: `message-${index}-${'x'.repeat(120)}`,
+        }))
+
+        await expect(
+            store.mergeCheckpoint('run-many-items', {
+                status: 'recording',
+                phase: 'assemble_context',
+                patch: {
+                    prompt: {
+                        finalInput: {
+                            systemText: 'sys',
+                            modelMessages,
+                            tools: [],
+                            params: { resolved: {}, candidates: [] },
+                        },
+                        segments: [],
+                        totalEstimatedInputTokens: 84,
+                    },
+                },
+            }),
+        ).resolves.toBeUndefined()
+
+        const payload = rows.get('run-many-items')?.payload
+        expect(payload?.prompt?.totalEstimatedInputTokens).toBe(84)
+        expect(payload?.prompt?.finalInput.modelMessages).toHaveLength(0)
+        expect(JSON.stringify(payload).length).toBeLessThan(512 * 1024)
+    })
+
+    test('compact fallback still redacts secret-shaped strings', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        await store.createRecording(createPayload('run-fallback-secret'))
+
+        const modelMessages = Array.from({ length: 12_000 }, (_, index) => ({
+            role: 'user',
+            content: `message-${index}-${'x'.repeat(120)}`,
+        }))
+
+        await expect(
+            store.mergeCheckpoint('run-fallback-secret', {
+                status: 'complete',
+                phase: 'model_stream',
+                patch: {
+                    runOutcome: 'failed',
+                    prompt: {
+                        finalInput: {
+                            systemText: 'Authorization: Bearer sk-secret-value',
+                            modelMessages,
+                            tools: [],
+                            params: { resolved: {}, candidates: [] },
+                        },
+                        segments: [],
+                        totalEstimatedInputTokens: 84,
+                    },
+                    result: {
+                        finalOutput: {
+                            text: 'api_key=sk-result-value',
+                            textHash: 'hash-result',
+                        },
+                        usage: {},
+                        provider: { id: 'openai' },
+                    },
+                    failure: {
+                        phase: 'model_stream',
+                        source: 'runtime',
+                        error: {
+                            message: 'password=hunter2',
+                            name: 'ProviderError',
+                        },
+                        occurredAt: '2026-05-11T00:00:02.000Z',
+                    },
+                },
+            }),
+        ).resolves.toBeUndefined()
+
+        const serialized = JSON.stringify(
+            rows.get('run-fallback-secret')?.payload,
+        )
+        expect(serialized).not.toContain('sk-secret-value')
+        expect(serialized).not.toContain('sk-result-value')
+        expect(serialized).not.toContain('hunter2')
+        expect(serialized).toContain('[Redacted]')
+    })
+
+    test('compact fallback preserves bounded success result, cache, and tool evidence', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        await store.createRecording(createPayload('run-final-success'))
+
+        const modelMessages = Array.from({ length: 12_000 }, (_, index) => ({
+            role: 'user',
+            content: `message-${index}-${'x'.repeat(120)}`,
+        }))
+
+        await expect(
+            store.mergeCheckpoint('run-final-success', {
+                status: 'complete',
+                phase: 'after_run',
+                patch: {
+                    runOutcome: 'succeeded',
+                    prompt: {
+                        finalInput: {
+                            systemText: 'sys',
+                            modelMessages,
+                            tools: [],
+                            params: { resolved: {}, candidates: [] },
+                        },
+                        segments: [],
+                        totalEstimatedInputTokens: 84,
+                    },
+                    tools: {
+                        available: [
+                            {
+                                name: 'quote',
+                                sourcePlugin: 'market',
+                                category: 'data',
+                            },
+                        ],
+                        calls: [],
+                    },
+                    cache: {
+                        result: {
+                            cacheObserved: true,
+                            evidenceSource: 'both',
+                            cacheReadObserved: true,
+                            cacheWriteObserved: false,
+                            cacheReadEvidenceSource: 'providerMetadata',
+                            cacheWriteEvidenceSource: 'none',
+                            cacheReadTokens: 32,
+                            rolloutGateStatus: 'enabled',
+                            circuitBreakerState: 'closed',
+                        },
+                    },
+                    result: {
+                        finalOutput: {
+                            text: 'done',
+                            textHash: 'hash-done',
+                            messageId: 'assistant-1',
+                        },
+                        usage: {
+                            inputTokens: 10,
+                            outputTokens: 5,
+                            totalTokens: 15,
+                        },
+                        provider: { id: 'openai', modelId: 'gpt-test' },
+                    },
+                },
+            }),
+        ).resolves.toBeUndefined()
+
+        const payload = rows.get('run-final-success')?.payload
+        expect(payload?.runOutcome).toBe('succeeded')
+        expect(payload?.result?.finalOutput).toEqual({
+            text: 'done',
+            textHash: 'hash-done',
+            messageId: 'assistant-1',
+        })
+        expect(payload?.result?.usage).toEqual({
+            inputTokens: 10,
+            outputTokens: 5,
+            totalTokens: 15,
+        })
+        expect(payload?.result?.provider).toEqual({
+            id: 'openai',
+            modelId: 'gpt-test',
+        })
+        expect(payload?.cache?.result?.cacheReadTokens).toBe(32)
+        expect(payload?.tools?.available).toEqual([
+            { name: 'quote', sourcePlugin: 'market', category: 'data' },
+        ])
+        expect(JSON.stringify(payload).length).toBeLessThan(512 * 1024)
+    })
+
+    test('compact fallback preserves bounded terminal failure details', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        await store.createRecording(createPayload('run-final-failure'))
+
+        const modelMessages = Array.from({ length: 12_000 }, (_, index) => ({
+            role: 'user',
+            content: `message-${index}-${'x'.repeat(120)}`,
+        }))
+
+        await expect(
+            store.mergeCheckpoint('run-final-failure', {
+                status: 'complete',
+                phase: 'model_stream',
+                patch: {
+                    runOutcome: 'failed',
+                    prompt: {
+                        finalInput: {
+                            systemText: 'sys',
+                            modelMessages,
+                            tools: [],
+                            params: { resolved: {}, candidates: [] },
+                        },
+                        segments: [],
+                        totalEstimatedInputTokens: 84,
+                    },
+                    failure: {
+                        phase: 'model_stream',
+                        source: 'runtime',
+                        error: {
+                            message: 'provider failed',
+                            name: 'ProviderError',
+                            code: 'PROVIDER_FAILED',
+                            stack: 'stack line',
+                        },
+                        occurredAt: '2026-05-11T00:00:02.000Z',
+                    },
+                },
+            }),
+        ).resolves.toBeUndefined()
+
+        const payload = rows.get('run-final-failure')?.payload
+        expect(payload?.runOutcome).toBe('failed')
+        expect(payload?.failure).toEqual({
+            phase: 'model_stream',
+            source: 'runtime',
+            error: {
+                message: 'provider failed',
+                name: 'ProviderError',
+                code: 'PROVIDER_FAILED',
+                stack: 'stack line',
+            },
+            occurredAt: '2026-05-11T00:00:02.000Z',
+        })
+        expect(JSON.stringify(payload).length).toBeLessThan(512 * 1024)
+    })
 })

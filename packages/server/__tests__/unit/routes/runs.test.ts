@@ -140,4 +140,58 @@ describe('Run trace routes', () => {
         })
         expect(store.loadRecordByRunId).not.toHaveBeenCalled()
     })
+
+    it('keeps the default route disabled unless trace API is explicitly enabled', async () => {
+        const originalNodeEnv = process.env.NODE_ENV
+        const originalEnableTraceApi = process.env.FLUX_ENABLE_TRACE_API
+        delete process.env.NODE_ENV
+        delete process.env.FLUX_ENABLE_TRACE_API
+
+        try {
+            const store = createStore({
+                run: {
+                    id: 'run-default-disabled',
+                    status: 'succeeded',
+                    source: 'chat',
+                    mode: 'conversation',
+                    agentType: 'trading',
+                    sessionId: null,
+                    messageId: null,
+                    cronJobId: null,
+                    inputSummary: null,
+                    outputSummary: null,
+                    error: null,
+                    warnings: null,
+                    startedAt: new Date('2026-05-11T01:02:03.000Z'),
+                    finishedAt: null,
+                    durationMs: null,
+                },
+                trace: createPayload('run-default-disabled'),
+            })
+            const app = createApp({ traceStore: store })
+
+            const res = await app.request(
+                '/api/runs/run-default-disabled/trace',
+            )
+            const json = await res.json()
+
+            expect(res.status).toBe(404)
+            expect(json).toEqual({
+                success: false,
+                error: 'Run trace not found',
+            })
+            expect(store.loadRecordByRunId).not.toHaveBeenCalled()
+        } finally {
+            if (originalNodeEnv === undefined) {
+                delete process.env.NODE_ENV
+            } else {
+                process.env.NODE_ENV = originalNodeEnv
+            }
+            if (originalEnableTraceApi === undefined) {
+                delete process.env.FLUX_ENABLE_TRACE_API
+            } else {
+                process.env.FLUX_ENABLE_TRACE_API = originalEnableTraceApi
+            }
+        }
+    })
 })

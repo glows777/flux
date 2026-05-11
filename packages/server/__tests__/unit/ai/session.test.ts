@@ -17,6 +17,9 @@ import type { SessionDeps } from '@/core/ai/session'
 
 function createMockDb() {
     return {
+        $transaction: mock((operations: Array<Promise<unknown>>) =>
+            Promise.all(operations),
+        ),
         chatSession: {
             findMany: mock(() => Promise.resolve([])),
             count: mock(() => Promise.resolve(0)),
@@ -52,6 +55,12 @@ function createMockDb() {
         chatMessage: {
             findMany: mock(() => Promise.resolve([])),
             create: mock(() => Promise.resolve({})),
+        },
+        agentRunTrace: {
+            deleteMany: mock(() => Promise.resolve({ count: 0 })),
+        },
+        agentRun: {
+            deleteMany: mock(() => Promise.resolve({ count: 0 })),
         },
     }
 }
@@ -109,6 +118,22 @@ describe('deleteSession', () => {
         expect(db.chatSession.delete).toHaveBeenCalledWith({
             where: { id: 'session-1' },
         })
+    })
+
+    it('deletes run traces and agent runs for the session in the same transaction', async () => {
+        const { deleteSession } = await import('@/core/ai/session')
+        const db = createMockDb()
+        const deps = { db } as unknown as SessionDeps
+
+        await deleteSession('session-1', deps)
+
+        expect(db.agentRunTrace.deleteMany).toHaveBeenCalledWith({
+            where: { run: { sessionId: 'session-1' } },
+        })
+        expect(db.agentRun.deleteMany).toHaveBeenCalledWith({
+            where: { sessionId: 'session-1' },
+        })
+        expect(db.$transaction).toHaveBeenCalled()
     })
 
     it('T03-06: session 不存在时抛 NOT_FOUND', async () => {

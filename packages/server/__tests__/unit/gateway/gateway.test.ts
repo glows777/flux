@@ -262,6 +262,7 @@ describe('Gateway', () => {
             runId: 'run-abort',
             success: false,
             error: 'Execution aborted',
+            failurePhase: 'model_stream',
         })
         expect(chatOutput.recordFailure).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -308,6 +309,7 @@ describe('Gateway', () => {
             runId: 'run-abort',
             success: false,
             error: 'Execution aborted',
+            failurePhase: 'model_stream',
         })
         expect(adapter.send).not.toHaveBeenCalled()
     })
@@ -332,6 +334,7 @@ describe('Gateway', () => {
             runId: 'run-ai-fail',
             success: false,
             error: 'AI service down',
+            failurePhase: 'before_run',
         })
     })
 
@@ -376,6 +379,7 @@ describe('Gateway', () => {
             runId: 'run-ai-fail',
             success: false,
             error: 'AI service down',
+            failurePhase: 'before_run',
         })
         expect(agentRunStore.createFailedRun).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -427,6 +431,7 @@ describe('Gateway', () => {
             runId: 'run-ai-fail',
             success: false,
             error: 'AI service down',
+            failurePhase: 'before_run',
         })
     })
 
@@ -454,6 +459,7 @@ describe('Gateway', () => {
             runId: 'run-stream-fail',
             success: false,
             error: 'stream broke',
+            failurePhase: 'model_stream',
         })
     })
 

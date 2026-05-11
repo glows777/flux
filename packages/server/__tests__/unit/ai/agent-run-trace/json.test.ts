@@ -269,6 +269,48 @@ describe('trace JSON hygiene', () => {
         })
     })
 
+    test('redacts secret-shaped values embedded in strings and urls', () => {
+        const error = new Error(
+            'provider failed Authorization: Bearer sk-live-secret-1234567890 apiKey=plain-secret password="quoted-secret"',
+        )
+        error.stack =
+            'Error: https://user-secret:pass-secret@example.com/path?api_key=query-secret&safe=1'
+
+        const result = sanitizeTraceJson(
+            {
+                message:
+                    'curl -H "Authorization: Basic dXNlcjpwYXNzMTIz" https://api.example.com/data?access_token=url-token&safe=1',
+                error,
+                url: new URL(
+                    'https://client:client-secret@example.com/callback?refresh_token=refresh-secret&ok=1',
+                ),
+            },
+            {
+                maxBytes: 10_000,
+                maxDepth: 8,
+                maxArrayItems: 50,
+                maxStringBytes: 10_000,
+                redactKeys: ['token', 'apiKey', 'password', 'authorization'],
+            },
+        )
+
+        const serialized = JSON.stringify(result.value)
+        expect(result.redacted).toBe(true)
+        expect(result.notes).toContain('secret_redacted')
+        expect(serialized).not.toContain('sk-live-secret-1234567890')
+        expect(serialized).not.toContain('plain-secret')
+        expect(serialized).not.toContain('quoted-secret')
+        expect(serialized).not.toContain('pass-secret')
+        expect(serialized).not.toContain('query-secret')
+        expect(serialized).not.toContain('url-token')
+        expect(serialized).not.toContain('refresh-secret')
+        expect(serialized).not.toContain('client-secret')
+        expect(serialized).toContain('[Redacted]')
+        expect(serialized).toContain('REDACTED')
+        expect(serialized).toContain('safe=1')
+        expect(serialized).toContain('ok=1')
+    })
+
     test('truncates large arrays and records sizing metadata', () => {
         const result = sanitizeTraceJson(
             Array.from({ length: 5 }, (_, i) => i),

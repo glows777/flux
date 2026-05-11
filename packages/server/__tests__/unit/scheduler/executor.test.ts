@@ -327,4 +327,48 @@ describe('TaskExecutor', () => {
         expect(result.runId).toBe('run-trigger')
         expect(result.error).toBe('trigger failed')
     })
+
+    test('uses trigger failure phase when recording fallback trace', async () => {
+        const mockGateway = {
+            chat: mock(() =>
+                Promise.resolve({
+                    success: false,
+                    runId: 'run-trigger',
+                    sessionId: 'session-1',
+                    text: '',
+                    error: 'stream failed',
+                    failurePhase: 'model_stream',
+                }),
+            ),
+        }
+        const traceRecorder = {
+            recordMinimalFailure: mock(() => Promise.resolve()),
+        }
+        const agentRunStore = createFakeAgentRunStore()
+
+        const executor = new TaskExecutor({
+            gateway: mockGateway as unknown as Gateway,
+            agentRunStore,
+            traceRecorder: traceRecorder as never,
+        })
+        const job = {
+            id: 'job-1',
+            channel: 'discord',
+            userId: 'user-1',
+            taskType: 'trading-agent',
+            taskPayload: { prompt: 'Check NVDA' },
+            channelTarget: null,
+        } as unknown as CronJob
+
+        await executor.execute(job)
+
+        expect(traceRecorder.recordMinimalFailure).toHaveBeenCalledWith(
+            expect.objectContaining({
+                runId: 'run-trigger',
+                source: 'cron_executor',
+                phase: 'model_stream',
+                error: expect.any(Error),
+            }),
+        )
+    })
 })

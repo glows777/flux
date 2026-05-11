@@ -142,16 +142,21 @@ export class TaskExecutor {
         const triggerRunId = triggerResult.runId || runId
 
         if (!triggerResult.success) {
-            await this.recordFailedRun({
-                runId: triggerRunId,
-                source: 'cron',
-                mode: 'trigger',
-                agentType: job.taskType as AgentType,
-                cronJobId: job.id,
-                userId: job.userId,
-                sourceId: `cron:${job.id}`,
-                error: new Error(triggerResult.error ?? 'Cron trigger failed'),
-            })
+            await this.recordFailedRun(
+                {
+                    runId: triggerRunId,
+                    source: 'cron',
+                    mode: 'trigger',
+                    agentType: job.taskType as AgentType,
+                    cronJobId: job.id,
+                    userId: job.userId,
+                    sourceId: `cron:${job.id}`,
+                    error: new Error(
+                        triggerResult.error ?? 'Cron trigger failed',
+                    ),
+                },
+                triggerResult.failurePhase ?? 'before_run',
+            )
         }
 
         return {

@@ -12,10 +12,7 @@ interface RunsRouteDeps {
 let defaultTraceStore: AgentRunTraceStore | undefined
 
 function isTraceApiEnabled() {
-    return (
-        process.env.NODE_ENV !== 'production' ||
-        process.env.FLUX_ENABLE_TRACE_API === '1'
-    )
+    return process.env.FLUX_ENABLE_TRACE_API === '1'
 }
 
 async function getTraceStore(deps: RunsRouteDeps) {

@@ -462,6 +462,12 @@ export async function fetchRunTrace(
     }
 
     if (isRunTraceResponse(payload)) {
+        if (
+            payload.data.run.id !== runId ||
+            payload.data.trace.runId !== runId
+        ) {
+            throw new Error('Run trace response did not match requested run')
+        }
         return payload.data
     }
 
