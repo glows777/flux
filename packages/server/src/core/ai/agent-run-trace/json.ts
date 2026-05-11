@@ -85,40 +85,81 @@ function normalizeValue(
         return '[Circular]'
     }
     seen.add(value)
+    try {
+        if (value instanceof Error) {
+            const record: Record<string, unknown> = {
+                name: normalizeValue(
+                    value.name,
+                    options,
+                    seen,
+                    depth + 1,
+                    notes,
+                    redacted,
+                ),
+                message: normalizeValue(
+                    value.message,
+                    options,
+                    seen,
+                    depth + 1,
+                    notes,
+                    redacted,
+                ),
+            }
+            const code = (value as { code?: unknown }).code
+            if (typeof code === 'string') {
+                record.code = normalizeValue(
+                    code,
+                    options,
+                    seen,
+                    depth + 1,
+                    notes,
+                    redacted,
+                )
+            }
+            if (typeof value.stack === 'string') {
+                record.stack = normalizeValue(
+                    value.stack,
+                    options,
+                    seen,
+                    depth + 1,
+                    notes,
+                    redacted,
+                )
+            }
+            return record
+        }
 
-    if (value instanceof Error) {
-        const record: Record<string, unknown> = {
-            name: normalizeValue(
-                value.name,
-                options,
-                seen,
-                depth + 1,
-                notes,
-                redacted,
-            ),
-            message: normalizeValue(
-                value.message,
-                options,
-                seen,
-                depth + 1,
-                notes,
-                redacted,
-            ),
+        if (Array.isArray(value)) {
+            const kept = value
+                .slice(0, options.maxArrayItems)
+                .map((item) =>
+                    normalizeValue(
+                        item,
+                        options,
+                        seen,
+                        depth + 1,
+                        notes,
+                        redacted,
+                    ),
+                )
+            if (value.length > options.maxArrayItems) {
+                notes.add('array_items_truncated')
+                kept.push(
+                    `[Truncated ${value.length - options.maxArrayItems} items]`,
+                )
+            }
+            return kept
         }
-        const code = (value as { code?: unknown }).code
-        if (typeof code === 'string') {
-            record.code = normalizeValue(
-                code,
-                options,
-                seen,
-                depth + 1,
-                notes,
-                redacted,
-            )
-        }
-        if (typeof value.stack === 'string') {
-            record.stack = normalizeValue(
-                value.stack,
+
+        const record: Record<string, unknown> = {}
+        for (const [key, item] of Object.entries(value)) {
+            if (shouldRedactKey(key, options.redactKeys)) {
+                record[key] = '[Redacted]'
+                redacted.value = true
+                continue
+            }
+            record[key] = normalizeValue(
+                item,
                 options,
                 seen,
                 depth + 1,
@@ -127,40 +168,9 @@ function normalizeValue(
             )
         }
         return record
+    } finally {
+        seen.delete(value)
     }
-
-    if (Array.isArray(value)) {
-        const kept = value
-            .slice(0, options.maxArrayItems)
-            .map((item) =>
-                normalizeValue(item, options, seen, depth + 1, notes, redacted),
-            )
-        if (value.length > options.maxArrayItems) {
-            notes.add('array_items_truncated')
-            kept.push(
-                `[Truncated ${value.length - options.maxArrayItems} items]`,
-            )
-        }
-        return kept
-    }
-
-    const record: Record<string, unknown> = {}
-    for (const [key, item] of Object.entries(value)) {
-        if (shouldRedactKey(key, options.redactKeys)) {
-            record[key] = '[Redacted]'
-            redacted.value = true
-            continue
-        }
-        record[key] = normalizeValue(
-            item,
-            options,
-            seen,
-            depth + 1,
-            notes,
-            redacted,
-        )
-    }
-    return record
 }
 
 export function stableTraceStringify(value: unknown): string {
@@ -180,16 +190,22 @@ function sortForStableStringify(
 
     if (seen.has(value)) return '[Circular]'
     seen.add(value)
+    try {
+        if (Array.isArray(value)) {
+            return value.map((item) => sortForStableStringify(item, seen))
+        }
 
-    if (Array.isArray(value)) {
-        return value.map((item) => sortForStableStringify(item, seen))
+        return Object.fromEntries(
+            Object.entries(value as Record<string, unknown>)
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(([key, item]) => [
+                    key,
+                    sortForStableStringify(item, seen),
+                ]),
+        )
+    } finally {
+        seen.delete(value)
     }
-
-    return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>)
-            .sort(([left], [right]) => left.localeCompare(right))
-            .map(([key, item]) => [key, sortForStableStringify(item, seen)]),
-    )
 }
 
 export function hashTraceValue(value: unknown): string {

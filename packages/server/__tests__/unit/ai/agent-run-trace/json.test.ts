@@ -39,6 +39,27 @@ describe('trace JSON hygiene', () => {
         })
     })
 
+    test('serializes shared object references without marking them circular', () => {
+        const shared = { id: 'shared', count: 2 }
+
+        const result = sanitizeTraceJson(
+            { a: shared, b: shared },
+            {
+                maxBytes: 10_000,
+                maxDepth: 8,
+                maxArrayItems: 50,
+                maxStringBytes: 10_000,
+                redactKeys: [],
+            },
+        )
+
+        expect(result.notes ?? []).not.toContain('circular_reference')
+        expect(result.value).toEqual({
+            a: { id: 'shared', count: 2 },
+            b: { id: 'shared', count: 2 },
+        })
+    })
+
     test('redacts secret-shaped keys recursively', () => {
         const result = sanitizeTraceJson(
             {
@@ -124,6 +145,17 @@ describe('trace JSON hygiene', () => {
         )
         expect(() => measureTraceJsonBytes(cyclic)).not.toThrow()
         expect(measureTraceJsonBytes(cyclic)).toBeGreaterThan(0)
+    })
+
+    test('stable stringify serializes shared object references in each branch', () => {
+        const shared = { b: 2, a: 1 }
+
+        expect(stableTraceStringify({ a: shared, b: shared })).toBe(
+            '{"a":{"a":1,"b":2},"b":{"a":1,"b":2}}',
+        )
+        expect(() =>
+            measureTraceJsonBytes({ a: shared, b: shared }),
+        ).not.toThrow()
     })
 
     test('truncates trace text while leaving hashable original available to caller', () => {
