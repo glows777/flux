@@ -33,6 +33,14 @@ type AgentRunSummaryRow = {
 }
 
 type TraceDelegate = {
+    create(input: {
+        data: {
+            runId: string
+            status: string
+            phase: string
+            payload: unknown
+        }
+    }): Promise<TraceRow>
     upsert(input: {
         where: { runId: string }
         create: {
@@ -80,6 +88,10 @@ export interface AgentRunTraceStore {
 const MERGE_ATTEMPTS = 3
 const MAX_TRACE_PAYLOAD_BYTES = 512 * 1024
 
+function isUniqueConstraintError(error: unknown): boolean {
+    return (error as { code?: unknown } | null)?.code === 'P2002'
+}
+
 function asPayload(value: unknown): AgentRunTracePayload | null {
     if (!value || typeof value !== 'object') return null
 
@@ -112,6 +124,11 @@ function mergePayload(
     }
 }
 
+function isPlainObject(value: object): boolean {
+    const prototype = Object.getPrototypeOf(value)
+    return prototype === Object.prototype || prototype === null
+}
+
 function stripUndefinedObjectFields(value: unknown): unknown {
     if (Array.isArray(value)) {
         return value.map((item) =>
@@ -119,6 +136,7 @@ function stripUndefinedObjectFields(value: unknown): unknown {
         )
     }
     if (!value || typeof value !== 'object') return value
+    if (!isPlainObject(value)) return value
 
     const result: Record<string, unknown> = {}
     for (const [key, item] of Object.entries(value)) {
@@ -186,32 +204,56 @@ export function createPrismaAgentRunTraceStore(
         async createRecording(payload) {
             assertPayloadFits(payload)
 
-            const existing = await db.agentRunTrace.findUnique({
-                where: { runId: payload.runId },
-            })
-            const existingPayload = asPayload(existing?.payload)
-            if (
-                existingPayload?.traceStatus === 'complete' ||
-                existingPayload?.traceStatus === 'incomplete'
-            ) {
-                return
+            for (let attempt = 0; attempt < MERGE_ATTEMPTS; attempt++) {
+                const existing = await db.agentRunTrace.findUnique({
+                    where: { runId: payload.runId },
+                })
+                const existingPayload = asPayload(existing?.payload)
+                if (
+                    existingPayload?.traceStatus === 'complete' ||
+                    existingPayload?.traceStatus === 'incomplete'
+                ) {
+                    return
+                }
+
+                const storedPayload = toPrismaJson(payload)
+                if (existing) {
+                    const result = await db.agentRunTrace.updateMany({
+                        where: {
+                            runId: payload.runId,
+                            ...(existing.updatedAt
+                                ? { updatedAt: existing.updatedAt }
+                                : {}),
+                        },
+                        data: {
+                            status: payload.traceStatus,
+                            phase: payload.currentPhase,
+                            payload: storedPayload,
+                        },
+                    })
+                    if (result.count > 0) return
+                    continue
+                }
+
+                try {
+                    await db.agentRunTrace.create({
+                        data: {
+                            runId: payload.runId,
+                            status: payload.traceStatus,
+                            phase: payload.currentPhase,
+                            payload: storedPayload,
+                        },
+                    })
+                    return
+                } catch (error) {
+                    if (isUniqueConstraintError(error)) continue
+                    throw error
+                }
             }
 
-            const storedPayload = toPrismaJson(payload)
-            await db.agentRunTrace.upsert({
-                where: { runId: payload.runId },
-                create: {
-                    runId: payload.runId,
-                    status: payload.traceStatus,
-                    phase: payload.currentPhase,
-                    payload: storedPayload,
-                },
-                update: {
-                    status: payload.traceStatus,
-                    phase: payload.currentPhase,
-                    payload: storedPayload,
-                },
-            })
+            throw new Error(
+                `Failed to create agent run trace ${payload.runId} after ${MERGE_ATTEMPTS} attempts`,
+            )
         },
 
         async mergeCheckpoint(runId, input) {
@@ -267,6 +309,7 @@ export function createPrismaAgentRunTraceStore(
                 })
                 const existing = asPayload(row?.payload)
                 if (!existing) return
+                if (existing.traceStatus !== 'recording') return
 
                 const code = (error as { code?: unknown } | null)?.code
                 const payload: AgentRunTracePayload = {

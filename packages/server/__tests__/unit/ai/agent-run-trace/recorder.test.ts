@@ -34,6 +34,47 @@ describe('TraceRecorder', () => {
         expect(order).toContain('start:run-2')
     })
 
+    test('markIncomplete serializes behind an in-flight checkpoint for the same run', async () => {
+        const order: string[] = []
+        let releaseCheckpoint: () => void = () => {}
+        let checkpointStartedResolve: () => void = () => {}
+        const checkpointStarted = new Promise<void>((resolve) => {
+            checkpointStartedResolve = resolve
+        })
+        const store = {
+            createRecording: mock(async () => {}),
+            mergeCheckpoint: mock(async () => {
+                order.push('checkpoint:start')
+                checkpointStartedResolve()
+                await new Promise<void>((release) => {
+                    releaseCheckpoint = release
+                })
+                order.push('checkpoint:end')
+            }),
+            markIncomplete: mock(async () => {
+                order.push('incomplete')
+            }),
+            loadByRunId: mock(async () => null),
+        }
+        const recorder = new TraceRecorder({ store: store as never })
+        const checkpoint = recorder.checkpoint('run-1', 'model_stream', {})
+        const incomplete = recorder.markIncomplete(
+            'run-1',
+            new Error('trace failed'),
+        )
+
+        await checkpointStarted
+        expect(order).toEqual(['checkpoint:start'])
+        releaseCheckpoint()
+        await Promise.all([checkpoint, incomplete])
+
+        expect(order).toEqual([
+            'checkpoint:start',
+            'checkpoint:end',
+            'incomplete',
+        ])
+    })
+
     test('records minimal failure as complete failed trace', async () => {
         const store = {
             createRecording: mock(async () => {}),

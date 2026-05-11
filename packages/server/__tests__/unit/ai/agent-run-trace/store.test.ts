@@ -28,6 +28,22 @@ function createDb() {
     >()
     const db = {
         agentRunTrace: {
+            create: mock(async ({ data }) => {
+                if (rows.has(data.runId)) {
+                    throw Object.assign(new Error('Unique constraint failed'), {
+                        code: 'P2002',
+                    })
+                }
+                const next = {
+                    runId: data.runId,
+                    status: data.status,
+                    phase: data.phase,
+                    payload: data.payload,
+                    updatedAt: new Date(),
+                }
+                rows.set(data.runId, next)
+                return next
+            }),
             upsert: mock(async ({ where, create, update }) => {
                 const existing = rows.get(where.runId)
                 const next = existing
@@ -77,6 +93,55 @@ describe('AgentRunTraceStore', () => {
 
         expect(rows.get('run-1')?.status).toBe('recording')
         expect(rows.get('run-1')?.phase).toBe('created')
+    })
+
+    test('createRecording does not overwrite an existing complete trace', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        await store.createRecording(createPayload('run-1'))
+        await store.mergeCheckpoint('run-1', {
+            status: 'complete',
+            phase: 'after_run',
+            patch: { runOutcome: 'succeeded' },
+        })
+
+        await store.createRecording({
+            ...createPayload('run-1'),
+            updatedAt: '2026-05-11T00:00:02.000Z',
+        })
+
+        expect(rows.get('run-1')?.payload.traceStatus).toBe('complete')
+        expect(rows.get('run-1')?.payload.runOutcome).toBe('succeeded')
+        expect(rows.get('run-1')?.payload.currentPhase).toBe('after_run')
+    })
+
+    test('createRecording retries after one optimistic update conflict', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        rows.set('run-1', {
+            runId: 'run-1',
+            status: 'recording',
+            phase: 'created',
+            payload: createPayload('run-1'),
+            updatedAt: new Date('2026-05-11T00:00:00.000Z'),
+        })
+        const originalUpdateMany = db.agentRunTrace.updateMany
+        db.agentRunTrace.updateMany = mock(async (input) => {
+            if (db.agentRunTrace.updateMany.mock.calls.length === 1) {
+                return { count: 0 }
+            }
+            return originalUpdateMany(input)
+        })
+
+        await store.createRecording({
+            ...createPayload('run-1'),
+            updatedAt: '2026-05-11T00:00:02.000Z',
+        })
+
+        expect(db.agentRunTrace.updateMany).toHaveBeenCalledTimes(2)
+        expect(rows.get('run-1')?.payload.updatedAt).toBe(
+            '2026-05-11T00:00:02.000Z',
+        )
     })
 
     test('merges checkpoint payload without dropping existing sections', async () => {
@@ -194,6 +259,24 @@ describe('AgentRunTraceStore', () => {
         expect(payload?.recordingError?.message).toBe('trace failed')
     })
 
+    test('markIncomplete is a no-op for a completed trace', async () => {
+        const { db, rows } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        await store.createRecording(createPayload('run-1'))
+        await store.mergeCheckpoint('run-1', {
+            status: 'complete',
+            phase: 'after_run',
+            patch: { runOutcome: 'succeeded' },
+        })
+
+        await store.markIncomplete('run-1', new Error('trace failed'))
+
+        const payload = rows.get('run-1')?.payload
+        expect(payload?.traceStatus).toBe('complete')
+        expect(payload?.runOutcome).toBe('succeeded')
+        expect(payload?.recordingError).toBeUndefined()
+    })
+
     test('normalizes undefined payload fields before writing Prisma JSON', async () => {
         const { db } = createDb()
         const store = createPrismaAgentRunTraceStore(db as never)
@@ -210,7 +293,56 @@ describe('AgentRunTraceStore', () => {
             },
         } as never)
 
-        const createData = db.agentRunTrace.upsert.mock.calls[0]?.[0].create
+        const createData = db.agentRunTrace.create.mock.calls[0]?.[0].data
         expect(JSON.stringify(createData.payload)).not.toContain('undefined')
+    })
+
+    test('normalization preserves built-ins until sanitizer handles them', async () => {
+        const { db } = createDb()
+        const store = createPrismaAgentRunTraceStore(db as never)
+        const error = Object.assign(new Error('provider failed'), {
+            code: 'PROVIDER_ERROR',
+        })
+
+        await store.createRecording({
+            ...createPayload('run-built-ins'),
+            warnings: [
+                {
+                    code: 'metadata',
+                    message: 'provider metadata',
+                    data: {
+                        seenAt: new Date('2026-05-11T00:00:00.000Z'),
+                        labels: new Map([
+                            ['region', 'us'],
+                            ['token', 'secret'],
+                        ]),
+                        error,
+                        skipped: undefined,
+                    },
+                },
+            ],
+        } as never)
+
+        const createData = db.agentRunTrace.create.mock.calls[0]?.[0].data
+        const data = createData.payload.warnings[0].data
+        expect(data.seenAt).toEqual({
+            type: 'Date',
+            value: '2026-05-11T00:00:00.000Z',
+        })
+        expect(data.labels).toEqual({
+            type: 'Map',
+            entries: [
+                ['region', 'us'],
+                ['token', '[Redacted]'],
+            ],
+        })
+        expect(data.error).toEqual(
+            expect.objectContaining({
+                name: 'Error',
+                message: 'provider failed',
+                code: 'PROVIDER_ERROR',
+            }),
+        )
+        expect(data.skipped).toBeUndefined()
     })
 })

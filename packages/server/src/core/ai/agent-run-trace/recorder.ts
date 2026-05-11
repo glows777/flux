@@ -56,6 +56,23 @@ export class TraceRecorder {
 
     constructor(private readonly options: TraceRecorderOptions) {}
 
+    private enqueue(
+        runId: string,
+        operation: () => Promise<void>,
+    ): Promise<void> {
+        const current = this.queues.get(runId) ?? Promise.resolve()
+        const next = current.then(operation)
+        const stored = next
+            .catch(() => undefined)
+            .finally(() => {
+                if (this.queues.get(runId) === stored) {
+                    this.queues.delete(runId)
+                }
+            })
+        this.queues.set(runId, stored)
+        return next
+    }
+
     async startRun(runId: string): Promise<void> {
         const payload: AgentRunTracePayload = {
             version: 1,
@@ -76,19 +93,13 @@ export class TraceRecorder {
         patch: TraceCheckpointInput['patch'],
         status: TraceCheckpointInput['status'] = 'recording',
     ): Promise<void> {
-        const current = this.queues.get(runId) ?? Promise.resolve()
-        const next = current.then(() =>
+        return this.enqueue(runId, () =>
             this.options.store.mergeCheckpoint(runId, {
                 status,
                 phase,
                 patch,
             }),
         )
-        this.queues.set(
-            runId,
-            next.catch(() => undefined),
-        )
-        return next
     }
 
     async recordFailure(
@@ -127,6 +138,8 @@ export class TraceRecorder {
     }
 
     async markIncomplete(runId: string, error: unknown): Promise<void> {
-        await this.options.store.markIncomplete(runId, error)
+        await this.enqueue(runId, () =>
+            this.options.store.markIncomplete(runId, error),
+        )
     }
 }
